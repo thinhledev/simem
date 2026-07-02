@@ -1,0 +1,21 @@
+{
+  "routing": {
+    "providers": ["codex", "claude", "cursor"],
+    "credentialOrder": ["paid", "included", "free", "unknown"],
+    "fallbackOn": ["auth", "quota", "rate-limit", "unavailable", "timeout", "provider"]
+  },
+  "providers": {
+    "codex": {
+      "enabled": true,
+      "command": "codex"
+    },
+    "claude": {
+      "enabled": true,
+      "command": "claude"
+    },
+    "cursor": {
+      "enabled": true,
+      "command": "cursor-agent"
+    }
+  }
+}

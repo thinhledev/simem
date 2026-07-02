@@ -1,0 +1,24 @@
+{
+  "name": "coding-agents-orchestrator",
+  "version": "0.1.0",
+  "description": "Local-first gateway for Codex, Claude Code, and Cursor CLI",
+  "type": "module",
+  "bin": {
+    "cag": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}
