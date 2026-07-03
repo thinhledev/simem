@@ -70,9 +70,11 @@ export const DEFAULT_CONFIG: GatewayConfig = {
     codex: { enabled: true, command: "codex" },
     claude: { enabled: true, command: "claude" },
     cursor: { enabled: true },
-    // No non-interactive execution surface is wired up yet; `cag switch`/`fork`
-    // support Antigravity as a desktop-launch target regardless of this flag.
-    antigravity: { enabled: false },
+    // Enabled by default so `cag status` reports readiness (installed + runnable
+    // `agy` CLI). `cag run --provider antigravity` still fails cleanly: it has
+    // no non-interactive execution surface and isn't in the default routing
+    // order, so it's never auto-selected. Use `cag switch --surface interactive`.
+    antigravity: { enabled: true, command: "agy" },
   },
   memory: {
     enabled: true,

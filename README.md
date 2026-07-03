@@ -45,6 +45,8 @@ claude auth login
 
 Before launching a switched session, `cag` checks that the selected surface is ready. Desktop mode uses the desktop app's existing login and does not require `claude auth login`. Interactive terminal mode checks the CLI's separate authentication; if it is not ready, the checkpoint is still saved and `cag` prints the exact login command instead of failing silently.
 
+`cag status`'s "ready" column reflects whether the provider's **desktop app is installed** — not whether a CLI is separately authenticated or an API key is set, since `cag switch` is the primary way you'll use all four providers. `version` is the desktop app's own bundle version (not the CLI's). `detail` reports all three readiness dimensions so a "ready: yes" row that still can't run headlessly is self-explanatory, e.g. `desktop app ready, CLI not ready, credentials not ready`. This means `cag status` can say a provider is "ready" while `cag run`/`cag switch --surface interactive` still fail, because those genuinely execute the standalone CLI, which needs its own separate login regardless of the desktop app's state. `credential` stays CLI-derived.
+
 ## Usage
 
 ### Export vs. switch vs. fork
@@ -142,7 +144,7 @@ Checkpoint creation does not call a model, so it still works after provider quot
 ### Route a one-off task
 
 ```bash
-# Check readiness and see which credential tier will be used
+# See which desktop apps are installed and which credential tier each CLI would use
 cag status
 
 # Let the router choose; read-only by default

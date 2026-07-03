@@ -2,6 +2,7 @@ import type { GatewayConfig } from "../config.js";
 import type { CommandRunner } from "../process.js";
 import type { ProviderId } from "../types.js";
 import type { ProviderAdapter } from "./adapter.js";
+import { AntigravityAdapter } from "./antigravity.js";
 import { ClaudeAdapter } from "./claude.js";
 import { CodexAdapter } from "./codex.js";
 import { CursorAdapter } from "./cursor.js";
@@ -11,6 +12,7 @@ export function createAdapters(config: GatewayConfig, runner: CommandRunner): Ma
   const codex = config.providers.codex;
   const claude = config.providers.claude;
   const cursor = config.providers.cursor;
+  const antigravity = config.providers.antigravity;
 
   if (codex.enabled) {
     adapters.set(
@@ -39,6 +41,16 @@ export function createAdapters(config: GatewayConfig, runner: CommandRunner): Ma
         command: cursor.command ?? "cursor-agent",
         ...(cursor.model ? { model: cursor.model } : {}),
         ...(cursor.credentialTier ? { credentialTier: cursor.credentialTier } : {}),
+      }),
+    );
+  }
+  if (antigravity.enabled) {
+    adapters.set(
+      "antigravity",
+      new AntigravityAdapter(runner, {
+        command: antigravity.command ?? "agy",
+        ...(antigravity.model ? { model: antigravity.model } : {}),
+        ...(antigravity.credentialTier ? { credentialTier: antigravity.credentialTier } : {}),
       }),
     );
   }

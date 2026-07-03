@@ -11,6 +11,45 @@ export interface LaunchReadiness {
   loginCommand?: string;
 }
 
+export interface DesktopAppStatus {
+  installed: boolean;
+  /** The .app bundle's own CFBundleShortVersionString, not any CLI's version. */
+  version?: string;
+  path?: string;
+}
+
+async function readBundleVersion(runner: CommandRunner, appPath: string): Promise<string | undefined> {
+  const result = await runner.run({
+    command: "plutil",
+    args: ["-extract", "CFBundleShortVersionString", "raw", "-o", "-", join(appPath, "Contents", "Info.plist")],
+    timeoutMs: 5_000,
+  });
+  const version = result.exitCode === 0 ? result.stdout.trim() : "";
+  return version || undefined;
+}
+
+// macOS-only: checks the standard Applications directories for the
+// provider's desktop app and reads its bundle version. Shared by the
+// switch-desktop-surface preflight check below and by `cag status`'s
+// "ready"/"version" columns (see cli.ts), which treat "the app is installed"
+// as the readiness bar rather than requiring a separately authenticated
+// CLI/API key.
+export async function checkDesktopApp(runner: CommandRunner, provider: ProviderId): Promise<DesktopAppStatus> {
+  if (process.platform !== "darwin") return { installed: false };
+  const appName = `${PROVIDER_APP_NAME[provider]}.app`;
+  const locations = [join("/Applications", appName), join(homedir(), "Applications", appName)];
+  for (const path of locations) {
+    try {
+      await access(path);
+      const version = await readBundleVersion(runner, path);
+      return { installed: true, path, ...(version ? { version } : {}) };
+    } catch {
+      // Try the next standard application directory.
+    }
+  }
+  return { installed: false };
+}
+
 export async function checkLaunchReadiness(
   runner: CommandRunner,
   provider: ProviderId,
@@ -23,17 +62,11 @@ export async function checkLaunchReadiness(
         message: "Desktop launching is currently supported on macOS; use --surface interactive on this platform",
       };
     }
-    const appName = `${PROVIDER_APP_NAME[provider]}.app`;
-    const locations = [join("/Applications", appName), join(homedir(), "Applications", appName)];
-    for (const path of locations) {
-      try {
-        await access(path);
-        return { ready: true };
-      } catch {
-        // Try the next standard application directory.
-      }
-    }
-    return { ready: false, message: `${appName} is not installed in a standard Applications directory` };
+    if ((await checkDesktopApp(runner, provider)).installed) return { ready: true };
+    return {
+      ready: false,
+      message: `${PROVIDER_APP_NAME[provider]}.app is not installed in a standard Applications directory`,
+    };
   }
 
   if (provider === "claude") {

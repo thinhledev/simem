@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AntigravityAdapter } from "../src/adapters/antigravity.js";
 import { ClaudeAdapter } from "../src/adapters/claude.js";
 import { CodexAdapter } from "../src/adapters/codex.js";
 import { CursorAdapter } from "../src/adapters/cursor.js";
@@ -59,4 +60,45 @@ test("Cursor adapter only adds force in workspace-write mode", async () => {
   await adapter.run({ ...REQUEST, accessMode: "workspace-write" });
   assert.equal(runner.calls[0]?.args?.includes("--force"), false);
   assert.equal(runner.calls[1]?.args?.includes("--force"), true);
+});
+
+class VersionProbeRunner implements CommandRunner {
+  constructor(private readonly outcome: { available: true; version: string } | { available: false }) {}
+  async run(spec: CommandSpec): Promise<CommandResult> {
+    if (!this.outcome.available) {
+      const error = new Error(`spawn ${spec.command} ENOENT`) as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      return { exitCode: null, stdout: "", stderr: "", durationMs: 1, timedOut: false, error };
+    }
+    return { exitCode: 0, stdout: this.outcome.version, stderr: "", durationMs: 1, timedOut: false };
+  }
+}
+
+test("Antigravity adapter reports ready when the agy CLI is installed, without requiring an API key", async () => {
+  const adapter = new AntigravityAdapter(new VersionProbeRunner({ available: true, version: "1.0.16" }), {
+    command: "agy",
+  });
+  const health = await adapter.health();
+  assert.equal(health.available, true);
+  assert.equal(health.authenticated, true);
+  assert.equal(health.version, "1.0.16");
+  assert.equal(health.credential.source, "agy CLI");
+});
+
+test("Antigravity adapter reports not ready with an actionable detail when agy is missing", async () => {
+  const adapter = new AntigravityAdapter(new VersionProbeRunner({ available: false }), { command: "agy" });
+  const health = await adapter.health();
+  assert.equal(health.available, false);
+  assert.equal(health.authenticated, false);
+  assert.match(health.detail ?? "", /ENOENT/);
+});
+
+test("Antigravity adapter's run() always fails cleanly instead of throwing", async () => {
+  const adapter = new AntigravityAdapter(new VersionProbeRunner({ available: true, version: "1.0.16" }), {
+    command: "agy",
+  });
+  const result = await adapter.run(REQUEST);
+  assert.equal(result.ok, false);
+  assert.equal(result.failure, "unavailable");
+  assert.match(result.error ?? "", /cag switch antigravity --surface interactive/);
 });

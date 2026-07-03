@@ -6,7 +6,7 @@ import { createAdapters } from "./adapters/index.js";
 import { loadConfig, type GatewayConfig } from "./config.js";
 import { createCheckpoint } from "./handoff/checkpoints.js";
 import { discoverSessions } from "./handoff/sessions.js";
-import { checkLaunchReadiness } from "./handoff/preflight.js";
+import { checkDesktopApp, checkLaunchReadiness } from "./handoff/preflight.js";
 import {
   displayCommand,
   launchSwitch,
@@ -218,14 +218,40 @@ export function parseArgs(argv: string[]): CliOptions {
   return options;
 }
 
-function displayStatus(items: ProviderHealth[]): void {
+type StatusItem = ProviderHealth & { desktopInstalled: boolean; desktopVersion?: string };
+
+// "Ready" reflects whether the provider's desktop app is installed, not
+// whether its standalone CLI is separately authenticated (or an API key is
+// set) — since every provider here is primarily driven through `cag switch`
+// launching the desktop app. "version" is the desktop app's own bundle
+// version, not the CLI's; "detail" reports all three readiness dimensions
+// (desktop app / CLI / credentials) so a "ready: yes" row that still can't
+// run headlessly is self-explanatory. `credential` stays CLI-derived.
+async function collectStatusItems(runner: NodeCommandRunner, health: ProviderHealth[]): Promise<StatusItem[]> {
+  return await Promise.all(
+    health.map(async (item) => {
+      const app = await checkDesktopApp(runner, item.provider);
+      return { ...item, desktopInstalled: app.installed, ...(app.version ? { desktopVersion: app.version } : {}) };
+    }),
+  );
+}
+
+function describeReadiness(item: StatusItem): string {
+  return [
+    `desktop app ${item.desktopInstalled ? "ready" : "not installed"}`,
+    `CLI ${item.available ? "ready" : "not ready"}`,
+    `credentials ${item.authenticated ? "ready" : "not ready"}`,
+  ].join(", ");
+}
+
+function displayStatus(items: StatusItem[]): void {
   console.table(
     items.map((item) => ({
       provider: item.provider,
-      ready: item.available && item.authenticated ? "yes" : "no",
+      ready: item.desktopInstalled ? "yes" : "no",
       credential: `${item.credential.tier} (${item.credential.source})`,
-      version: item.version ?? "-",
-      detail: item.detail ?? "",
+      version: item.desktopVersion ?? "-",
+      detail: describeReadiness(item),
     })),
   );
 }
@@ -399,7 +425,7 @@ async function main(): Promise<void> {
   const config = await loadConfig(options.configPath);
   const orchestrator = new GatewayOrchestrator(config, createAdapters(config, runner));
   if (options.command === "status") {
-    const status = await orchestrator.status();
+    const status = await collectStatusItems(runner, await orchestrator.status());
     if (options.json) process.stdout.write(`${JSON.stringify(status)}\n`);
     else displayStatus(status);
     return;

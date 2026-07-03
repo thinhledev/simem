@@ -10,6 +10,13 @@ test("merges provider overrides without dropping defaults", () => {
   assert.equal(config.providers.codex.command, "codex");
 });
 
+test("antigravity is enabled by default, for status visibility, but excluded from default routing order", () => {
+  const config = mergeConfig();
+  assert.equal(config.providers.antigravity.enabled, true);
+  assert.equal(config.providers.antigravity.command, "agy");
+  assert.equal(config.routing.providers.includes("antigravity"), false);
+});
+
 test("rejects unknown routing values", () => {
   assert.throws(
     () => mergeConfig({ routing: { providers: ["bogus"] } }),

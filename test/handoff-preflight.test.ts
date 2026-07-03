@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkLaunchReadiness } from "../src/handoff/preflight.js";
+import { checkDesktopApp, checkLaunchReadiness } from "../src/handoff/preflight.js";
 import type { CommandResult, CommandRunner, CommandSpec } from "../src/process.js";
 
 class ResultRunner implements CommandRunner {
@@ -45,6 +45,28 @@ test("returns an actionable command when the agy CLI is missing", async () => {
   const readiness = await checkLaunchReadiness(new ResultRunner(missing), "antigravity");
   assert.equal(readiness.ready, false);
   assert.equal(readiness.loginCommand, "agy install");
+});
+
+test("checkDesktopApp reports not installed off macOS, regardless of provider", async () => {
+  if (process.platform === "darwin") return;
+  for (const provider of ["codex", "claude", "cursor", "antigravity"] as const) {
+    assert.deepEqual(await checkDesktopApp(new ResultRunner(result("")), provider), { installed: false });
+  }
+});
+
+test("checkDesktopApp resolves without throwing for every provider", async () => {
+  for (const provider of ["codex", "claude", "cursor", "antigravity"] as const) {
+    const status = await checkDesktopApp(new ResultRunner(result("")), provider);
+    assert.equal(typeof status.installed, "boolean");
+  }
+});
+
+test("checkDesktopApp reads the app's own bundle version, not any CLI version", async () => {
+  if (process.platform !== "darwin") return;
+  const status = await checkDesktopApp(new ResultRunner(result("9.9.9\n")), "claude");
+  // Only asserts the version shape when the app happens to be installed on
+  // the machine running this test; installation itself is environment-dependent.
+  if (status.installed) assert.equal(status.version, "9.9.9");
 });
 
 test("returns an actionable Claude login command when unauthenticated", async () => {
