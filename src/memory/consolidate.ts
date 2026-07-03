@@ -1,0 +1,292 @@
+import type { MemoryConfig } from "../config.js";
+import type { GatewayRunResult, RunRequest } from "../types.js";
+import type { MemoryDb } from "./db.js";
+import { openMemoryDb } from "./db.js";
+import {
+  MEMORY_CATEGORIES,
+  MEMORY_KINDS,
+  type ConsolidationItem,
+  type ConsolidationOutput,
+  type ConsolidationResult,
+} from "./types.js";
+
+// The minimal orchestrator surface consolidation needs; GatewayOrchestrator
+// satisfies it, and tests can fake it with an object literal.
+export interface ConsolidationRunner {
+  run(request: RunRequest, options?: { onEvent?: unknown }): Promise<GatewayRunResult>;
+}
+
+interface ActiveItemRow {
+  id: number;
+  kind: string;
+  category: string | null;
+  text: string;
+  importance: number;
+}
+
+function activeItems(memory: MemoryDb): ActiveItemRow[] {
+  return memory.db
+    .prepare(
+      "SELECT id, kind, category, text, importance FROM memory_items WHERE status = 'active' ORDER BY importance DESC, id",
+    )
+    .all() as unknown as ActiveItemRow[];
+}
+
+export function buildConsolidationPrompt(input: {
+  checkpointId: string;
+  createdAt: string;
+  existingItems: ActiveItemRow[];
+  messages: Array<{ role: string; text: string }>;
+  capChars: number;
+}): string {
+  const existing = input.existingItems.length
+    ? input.existingItems
+        .map((item) => `${item.id}. [${item.kind}${item.category ? `/${item.category}` : ""}, importance ${item.importance}] ${item.text}`)
+        .join("\n")
+    : "(none)";
+  // Keep the newest messages; they matter most for extracting new facts.
+  const parts: string[] = [];
+  let used = 0;
+  for (let index = input.messages.length - 1; index >= 0; index -= 1) {
+    const message = input.messages[index];
+    if (!message) continue;
+    const block = `${message.role === "user" ? "User" : "Assistant"}: ${message.text}`;
+    if (used + block.length > input.capChars && parts.length > 0) break;
+    parts.unshift(block.length > input.capChars ? `${block.slice(0, input.capChars)}…` : block);
+    used += block.length;
+  }
+  return `You are updating a persistent project memory store for a coding-agent handoff system.
+Respond with ONLY a JSON object (no prose, no markdown fences) of this exact shape:
+
+{
+  "summary": "<80-160 word summary of what happened in this checkpoint>",
+  "items": [
+    {
+      "kind": "semantic" | "episodic" | "procedural",
+      "category": "decision" | "constraint" | "preference" | "fact" | "todo" | null,
+      "text": "<one self-contained sentence, no pronouns without antecedents>",
+      "importance": <integer 1-10>,
+      "supersedes": <integer id from EXISTING ITEMS, or null>
+    }
+  ]
+}
+
+Rules:
+- Extract only NEW information not already covered by EXISTING ITEMS.
+- importance 8-10: hard constraints, explicit user decisions or preferences, irreversible actions.
+- importance 4-7: useful project facts and notable events.
+- importance 1-3: routine detail — omit such items entirely.
+- Set "supersedes" when a new item corrects or replaces an existing one; never duplicate.
+- If nothing new and important happened, return "items": [].
+
+EXISTING ITEMS (active):
+${existing}
+
+LATEST CHECKPOINT (${input.checkpointId}, ${input.createdAt}):
+${parts.join("\n\n")}`;
+}
+
+function asConsolidationItem(value: unknown, existingIds: Set<number>): ConsolidationItem | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.text !== "string" || !record.text.trim()) return undefined;
+  if (!MEMORY_KINDS.includes(record.kind as (typeof MEMORY_KINDS)[number])) return undefined;
+  const importance = Number(record.importance);
+  if (!Number.isInteger(importance) || importance < 1 || importance > 10) return undefined;
+  const category = MEMORY_CATEGORIES.includes(record.category as (typeof MEMORY_CATEGORIES)[number])
+    ? (record.category as (typeof MEMORY_CATEGORIES)[number])
+    : undefined;
+  const supersedes =
+    typeof record.supersedes === "number" && existingIds.has(record.supersedes)
+      ? record.supersedes
+      : undefined;
+  return {
+    kind: record.kind as ConsolidationItem["kind"],
+    ...(category ? { category } : {}),
+    text: record.text.trim(),
+    importance,
+    ...(supersedes !== undefined ? { supersedes } : {}),
+  };
+}
+
+export function parseConsolidationOutput(raw: string, existingIds: Set<number>): ConsolidationOutput | undefined {
+  const candidates = [raw.trim()];
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(raw);
+  if (fenced?.[1]) candidates.push(fenced[1].trim());
+  const first = raw.indexOf("{");
+  const last = raw.lastIndexOf("}");
+  if (first !== -1 && last > first) candidates.push(raw.slice(first, last + 1));
+  for (const candidate of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (!parsed || typeof parsed !== "object") continue;
+      const record = parsed as Record<string, unknown>;
+      if (typeof record.summary !== "string" || !Array.isArray(record.items)) continue;
+      const items = record.items
+        .map((item) => asConsolidationItem(item, existingIds))
+        .filter((item): item is ConsolidationItem => Boolean(item));
+      return { summary: record.summary.trim(), items };
+    } catch {
+      // Try the next extraction strategy.
+    }
+  }
+  return undefined;
+}
+
+function queueCheckpoint(memory: MemoryDb, checkpointId: string, error: string): void {
+  memory.db
+    .prepare(
+      `INSERT INTO consolidation_queue (checkpoint_id, queued_at, attempts, last_error)
+       VALUES (?, ?, 1, ?)
+       ON CONFLICT(checkpoint_id) DO UPDATE SET attempts = attempts + 1, last_error = excluded.last_error`,
+    )
+    .run(checkpointId, new Date().toISOString(), error);
+}
+
+function writeConsolidation(
+  memory: MemoryDb,
+  checkpointId: string,
+  createdAt: string,
+  output: ConsolidationOutput,
+): number {
+  const now = new Date().toISOString();
+  // One level-1 summary per checkpoint: replace any previous attempt.
+  memory.db
+    .prepare("DELETE FROM summaries WHERE level = 1 AND covers_from = ? AND covers_to = ?")
+    .run(checkpointId, checkpointId);
+  memory.db
+    .prepare(
+      "INSERT INTO summaries (level, text, covers_from, covers_to, checkpoint_count, created_at) VALUES (1, ?, ?, ?, 1, ?)",
+    )
+    .run(output.summary, checkpointId, checkpointId, createdAt);
+  const insertItem = memory.db.prepare(
+    `INSERT INTO memory_items (kind, category, text, importance, status, source_checkpoint_id, created_at, last_reinforced_at)
+     VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
+  );
+  const supersede = memory.db.prepare(
+    "UPDATE memory_items SET status = 'superseded', superseded_by = ? WHERE id = ? AND status = 'active'",
+  );
+  let written = 0;
+  for (const item of output.items) {
+    const result = insertItem.run(
+      item.kind,
+      item.category ?? null,
+      item.text,
+      item.importance,
+      checkpointId,
+      now,
+      now,
+    );
+    written += 1;
+    if (item.supersedes !== undefined) supersede.run(Number(result.lastInsertRowid), item.supersedes);
+  }
+  memory.db.prepare("UPDATE checkpoints SET consolidation_status = 'done' WHERE id = ?").run(checkpointId);
+  memory.db.prepare("DELETE FROM consolidation_queue WHERE checkpoint_id = ?").run(checkpointId);
+  return written;
+}
+
+export async function consolidateCheckpoint(
+  memory: MemoryDb,
+  orchestrator: ConsolidationRunner,
+  checkpointId: string,
+  config: MemoryConfig,
+): Promise<ConsolidationResult> {
+  const checkpoint = memory.db
+    .prepare("SELECT id, created_at, workspace, consolidation_status FROM checkpoints WHERE id = ?")
+    .get(checkpointId) as
+    | { id: string; created_at: string; workspace: string; consolidation_status: string }
+    | undefined;
+  if (!checkpoint) return { status: "skipped", checkpointId, itemsWritten: 0, detail: "not indexed" };
+  if (checkpoint.consolidation_status === "done") {
+    return { status: "done", checkpointId, itemsWritten: 0, detail: "already consolidated" };
+  }
+  const messages = memory.db
+    .prepare("SELECT role, text FROM messages WHERE checkpoint_id = ? ORDER BY seq")
+    .all(checkpointId) as Array<{ role: string; text: string }>;
+  const existing = activeItems(memory);
+  const existingIds = new Set(existing.map((item) => item.id));
+  const prompt = buildConsolidationPrompt({
+    checkpointId,
+    createdAt: checkpoint.created_at,
+    existingItems: existing,
+    messages,
+    capChars: config.consolidationTokenCapChars,
+  });
+
+  let result: GatewayRunResult;
+  try {
+    result = await orchestrator.run({
+      prompt,
+      cwd: checkpoint.workspace,
+      accessMode: "read-only",
+      timeoutMs: config.consolidationTimeoutMs,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    queueCheckpoint(memory, checkpointId, detail);
+    return { status: "queued", checkpointId, itemsWritten: 0, detail };
+  }
+  if (!result.ok || !result.result) {
+    const detail =
+      result.attempts.length === 0
+        ? "no provider ready"
+        : result.attempts.at(-1)?.result.error ?? "provider run failed";
+    queueCheckpoint(memory, checkpointId, detail);
+    return { status: "queued", checkpointId, itemsWritten: 0, detail };
+  }
+  const output = parseConsolidationOutput(result.result.output, existingIds);
+  if (!output) {
+    queueCheckpoint(memory, checkpointId, "unparseable consolidation output");
+    return { status: "queued", checkpointId, itemsWritten: 0, detail: "unparseable consolidation output" };
+  }
+  const itemsWritten = writeConsolidation(memory, checkpointId, checkpoint.created_at, output);
+  return { status: "done", checkpointId, itemsWritten };
+}
+
+export async function drainConsolidationQueue(
+  memory: MemoryDb,
+  orchestrator: ConsolidationRunner,
+  config: MemoryConfig,
+): Promise<ConsolidationResult[]> {
+  const queued = memory.db
+    .prepare("SELECT checkpoint_id FROM consolidation_queue ORDER BY queued_at LIMIT ?")
+    .all(config.queueDrainLimit) as Array<{ checkpoint_id: string }>;
+  const results: ConsolidationResult[] = [];
+  for (const entry of queued) {
+    const result = await consolidateCheckpoint(memory, orchestrator, entry.checkpoint_id, config);
+    results.push(result);
+    // A queued retry that fails again means the provider is still unavailable;
+    // stop early instead of paying the same failure for every queued row.
+    if (result.status === "queued") break;
+  }
+  return results;
+}
+
+// Best-effort entry point for the switch/export path: drains a few queued
+// checkpoints, consolidates the new one, and never throws. The token-free
+// checkpoint write has already completed before this runs.
+export async function consolidateBestEffort(
+  cwd: string,
+  orchestrator: ConsolidationRunner,
+  checkpointId: string,
+  config: MemoryConfig,
+): Promise<ConsolidationResult> {
+  const fallback: ConsolidationResult = {
+    status: "disabled",
+    checkpointId,
+    itemsWritten: 0,
+  };
+  if (!config.enabled) return fallback;
+  try {
+    const memory = await openMemoryDb(cwd, { quiet: true });
+    if (!memory) return fallback;
+    try {
+      await drainConsolidationQueue(memory, orchestrator, config);
+      return await consolidateCheckpoint(memory, orchestrator, checkpointId, config);
+    } finally {
+      memory.close();
+    }
+  } catch (error) {
+    return { ...fallback, status: "skipped", detail: error instanceof Error ? error.message : String(error) };
+  }
+}

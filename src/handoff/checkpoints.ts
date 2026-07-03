@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
+import { DEFAULT_CONFIG, type MemoryConfig } from "../config.js";
+import { assembleContext } from "../memory/budget.js";
+import { openMemoryDb } from "../memory/db.js";
+import { indexCheckpointBestEffort } from "../memory/index-checkpoint.js";
 import type { CommandRunner } from "../process.js";
 import type { ProviderId } from "../types.js";
 import { extractTranscript } from "./sessions.js";
@@ -73,6 +77,7 @@ function formatHandoff(input: {
   recentCommits: string;
   note?: string;
   parentCheckpointId?: string;
+  memorySection?: string;
 }): string {
   return `# Coding-agent handoff
 
@@ -112,7 +117,30 @@ ${input.recentCommits || "No commits available"}
 ## Recent conversation context
 
 ${recentContext(input.messages)}
-`;
+${input.memorySection ? `\n${input.memorySection}` : ""}`;
+}
+
+// Best-effort: reads previously consolidated memory (durable decisions, top
+// retrieval hits, latest digest) into a budgeted markdown block. Returns ""
+// when memory is disabled, unavailable, or empty, so HANDOFF.md stays byte-
+// identical to the Phase 1 format in those cases.
+async function buildMemorySection(
+  cwd: string,
+  latestObjective: string,
+  memoryConfig: MemoryConfig,
+): Promise<string> {
+  if (!memoryConfig.enabled) return "";
+  try {
+    const memory = await openMemoryDb(cwd, { quiet: true });
+    if (!memory) return "";
+    try {
+      return (await assembleContext(memory, latestObjective, memoryConfig.budget, memoryConfig.scoring)).text;
+    } finally {
+      memory.close();
+    }
+  } catch {
+    return "";
+  }
 }
 
 export interface CreateCheckpointOptions {
@@ -120,6 +148,7 @@ export interface CreateCheckpointOptions {
   targetProvider?: ProviderId;
   targetSessionId?: string;
   note?: string;
+  memoryConfig?: MemoryConfig;
 }
 
 export async function createCheckpoint(
@@ -183,6 +212,11 @@ export async function createCheckpoint(
     },
   };
 
+  const memorySection = await buildMemorySection(
+    cwd,
+    latestText(messages, "user"),
+    options.memoryConfig ?? DEFAULT_CONFIG.memory,
+  );
   const handoff = formatHandoff({
     id,
     createdAt,
@@ -194,6 +228,7 @@ export async function createCheckpoint(
     ...(workspace.head ? { head: workspace.head } : {}),
     ...(options.note ? { note: options.note } : {}),
     ...(parentCheckpointId ? { parentCheckpointId } : {}),
+    ...(memorySection ? { memorySection } : {}),
   });
   const transcript = formatTranscript(messages, session);
   const patch = `${workspace.diff}\n`;
@@ -218,5 +253,8 @@ export async function createCheckpoint(
   state.sessions[session.provider] = session.id;
   if (options.targetProvider && options.targetSessionId) state.sessions[options.targetProvider] = options.targetSessionId;
   const statePath = await writeGatewayState(cwd, state);
+  // Best-effort memory indexing: pure parsing (token-free) and silent on
+  // runtimes without node:sqlite; checkpoint creation never depends on it.
+  await indexCheckpointBestEffort(cwd, manifest, messages, directory);
   return { manifest, directory, handoffPath, transcriptPath, patchPath, statePath };
 }

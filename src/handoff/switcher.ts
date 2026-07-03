@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import type { MemoryConfig } from "../config.js";
 import type { CommandRunner } from "../process.js";
 import { PROVIDER_APP_NAME, type ProviderId } from "../types.js";
 import { createCheckpoint, readGatewayState } from "./checkpoints.js";
@@ -19,6 +20,7 @@ export interface SwitchOptions {
   fork?: boolean;
   note?: string;
   surface?: SwitchSurface;
+  memoryConfig?: MemoryConfig;
 }
 
 export interface SwitchPlan {
@@ -125,6 +127,7 @@ export async function prepareSwitch(runner: CommandRunner, options: SwitchOption
     targetProvider: options.target,
     ...(targetSession ? { targetSessionId: targetSession.id } : {}),
     ...(options.note ? { note: options.note } : {}),
+    ...(options.memoryConfig ? { memoryConfig: options.memoryConfig } : {}),
   });
   const claudeMemory = options.target === "claude" && surface === "desktop"
     ? await ensureClaudeHandoffMemory(cwd)

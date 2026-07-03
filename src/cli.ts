@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdapters } from "./adapters/index.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, type GatewayConfig } from "./config.js";
 import { createCheckpoint } from "./handoff/checkpoints.js";
 import { discoverSessions } from "./handoff/sessions.js";
 import { checkLaunchReadiness } from "./handoff/preflight.js";
@@ -14,11 +14,14 @@ import {
   resolveSourceSession,
   type SwitchSurface,
 } from "./handoff/switcher.js";
+import { handleMemoryCommand } from "./memory/cli-commands.js";
+import { consolidateBestEffort } from "./memory/consolidate.js";
+import { runMcpServer } from "./memory/mcp-server.js";
 import { GatewayOrchestrator } from "./orchestrator.js";
 import { NodeCommandRunner } from "./process.js";
 import { PROVIDER_APP_NAME, PROVIDER_IDS, type ProviderHealth, type ProviderId } from "./types.js";
 
-type Command = "run" | "status" | "sessions" | "export" | "switch" | "fork" | "help";
+type Command = "run" | "status" | "sessions" | "export" | "switch" | "fork" | "memory" | "mcp" | "help";
 
 interface CliOptions {
   command: Command;
@@ -38,6 +41,13 @@ interface CliOptions {
   launch: boolean;
   timeoutMs: number;
   prompt: string;
+  subcommand?: string;
+  positional: string[];
+  rebuild: boolean;
+  embed: boolean;
+  includeSuperseded: boolean;
+  limit?: number;
+  kind?: string;
 }
 
 const HELP = `coding-agents-orchestrator (cag)
@@ -55,6 +65,14 @@ Agent routing:
   cag status [--json] [--config PATH]
   cag run [options] <prompt>
 
+Persistent memory:
+  cag memory search <query> [--kind semantic|episodic|procedural] [--limit N] [--include-superseded]
+  cag memory show <checkpoint-id|item-id>
+  cag memory stats
+  cag memory compact
+  cag memory reindex [--rebuild] [--embed]
+  cag mcp [--cwd PATH]            Serve memory tools over MCP stdio (requires Node >= 22.5)
+
 Handoff options:
   --from PROVIDER                 Source app; default is latest local Codex/Claude session
   --session ID                    Source session (default: latest in this workspace)
@@ -63,6 +81,13 @@ Handoff options:
   --surface desktop|interactive  Desktop is the default on macOS; interactive launches the terminal client
   --no-launch                     Export and print the continuation command without opening an app
   --note TEXT                     Add an operator note to the checkpoint
+
+Memory options:
+  --kind semantic|episodic|procedural  Filter memory search/list results
+  --limit N                       Cap the number of search results (default: 10)
+  --rebuild                       Drop and recreate the memory index before reindexing
+  --embed                         Also (re)compute embeddings via a local Ollama, if configured
+  --include-superseded             Also match summaries rolled up by compaction
 
 Common options:
   --cwd PATH                      Project workspace (default: current directory)
@@ -92,7 +117,7 @@ function takeValue(args: string[], index: number, flag: string): string {
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   const first = args.shift();
-  const known: Command[] = ["run", "status", "sessions", "export", "switch", "fork", "help"];
+  const known: Command[] = ["run", "status", "sessions", "export", "switch", "fork", "memory", "mcp", "help"];
   const command: Command = first && known.includes(first as Command)
     ? (first as Command)
     : first === "--help" || first === "-h" || !first
@@ -110,6 +135,10 @@ export function parseArgs(argv: string[]): CliOptions {
     launch: true,
     timeoutMs: 900_000,
     prompt: "",
+    positional: [],
+    rebuild: false,
+    embed: false,
+    includeSuperseded: false,
   };
   const positional: string[] = [];
   for (let index = 0; index < args.length; ) {
@@ -126,6 +155,21 @@ export function parseArgs(argv: string[]): CliOptions {
     } else if (arg === "--no-launch") {
       options.launch = false;
       args.splice(index, 1);
+    } else if (arg === "--rebuild") {
+      options.rebuild = true;
+      args.splice(index, 1);
+    } else if (arg === "--embed") {
+      options.embed = true;
+      args.splice(index, 1);
+    } else if (arg === "--include-superseded") {
+      options.includeSuperseded = true;
+      args.splice(index, 1);
+    } else if (arg === "--limit") {
+      const limit = Number(takeValue(args, index, arg));
+      if (!Number.isInteger(limit) || limit <= 0) throw new Error("--limit must be a positive integer");
+      options.limit = limit;
+    } else if (arg === "--kind") {
+      options.kind = takeValue(args, index, arg);
     } else if (arg === "--config") {
       options.configPath = takeValue(args, index, arg);
     } else if (arg === "--cwd") {
@@ -165,7 +209,11 @@ export function parseArgs(argv: string[]): CliOptions {
   } else if (command === "sessions") {
     const selected = positional.shift();
     if (selected) options.provider = provider(selected, command);
+  } else if (command === "memory") {
+    const sub = positional.shift();
+    if (sub !== undefined) options.subcommand = sub;
   }
+  options.positional = [...positional];
   options.prompt = positional.join(" ").trim();
   return options;
 }
@@ -218,10 +266,34 @@ async function handleSessions(options: CliOptions): Promise<void> {
   );
 }
 
+// Best-effort memory distillation after the token-free checkpoint write.
+// Failures surface as one stderr line and never affect the command outcome.
+async function maybeConsolidate(
+  config: GatewayConfig,
+  runner: NodeCommandRunner,
+  workspace: string,
+  checkpointId: string,
+): Promise<void> {
+  try {
+    if (!config.memory.enabled) return;
+    const orchestrator = new GatewayOrchestrator(config, createAdapters(config, runner));
+    const result = await consolidateBestEffort(workspace, orchestrator, checkpointId, config.memory);
+    if (result.status === "done") {
+      process.stderr.write(`[cag] memory: consolidated ${result.itemsWritten} item(s)\n`);
+    } else if (result.status === "queued") {
+      process.stderr.write(`[cag] memory: consolidation queued (${result.detail ?? "provider unavailable"})\n`);
+    }
+  } catch {
+    // Memory is additive; switch/export must never fail because of it.
+  }
+}
+
 async function handleExport(options: CliOptions, runner: NodeCommandRunner): Promise<void> {
+  const config = await loadConfig(options.configPath);
   const session = await resolveSourceSession(options.cwd, options.source, options.sessionId ?? "latest");
   const checkpoint = await createCheckpoint(runner, session, {
     mode: "export",
+    memoryConfig: config.memory,
     ...(options.note ? { note: options.note } : {}),
   });
   if (options.json) process.stdout.write(`${JSON.stringify(checkpoint)}\n`);
@@ -231,6 +303,7 @@ async function handleExport(options: CliOptions, runner: NodeCommandRunner): Pro
     process.stdout.write(`Transcript: ${checkpoint.transcriptPath}\n`);
     process.stdout.write(`Patch: ${checkpoint.patchPath}\n`);
   }
+  await maybeConsolidate(config, runner, checkpoint.manifest.workspace, checkpoint.manifest.id);
 }
 
 async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Promise<void> {
@@ -238,6 +311,7 @@ async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Pro
   if (options.source === "cursor" || options.source === "antigravity") {
     throw new Error(`${options.source} local transcript export is not implemented yet`);
   }
+  const config = await loadConfig(options.configPath);
   const plan = await prepareSwitch(runner, {
     cwd: options.cwd,
     target: options.target,
@@ -248,6 +322,7 @@ async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Pro
     newSession: options.newSession,
     fork: options.command === "fork",
     surface: options.surface,
+    memoryConfig: config.memory,
   });
   if (options.json) {
     process.stdout.write(`${JSON.stringify({
@@ -279,6 +354,7 @@ async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Pro
       process.stdout.write(`Continue with:\n${displayCommand(plan)}\n`);
     }
   }
+  await maybeConsolidate(config, runner, plan.checkpoint.manifest.workspace, plan.checkpoint.manifest.id);
   if (options.launch) {
     const readiness = await checkLaunchReadiness(runner, options.target, plan.surface);
     if (!readiness.ready) {
@@ -303,6 +379,22 @@ async function main(): Promise<void> {
   if (options.command === "sessions") return await handleSessions(options);
   if (options.command === "export") return await handleExport(options, runner);
   if (options.command === "switch" || options.command === "fork") return await handleSwitch(options, runner);
+  if (options.command === "memory") {
+    const memoryConfig = await loadConfig(options.configPath);
+    return await handleMemoryCommand(options.subcommand, {
+      cwd: options.cwd,
+      json: options.json,
+      args: options.positional,
+      rebuild: options.rebuild,
+      embed: options.embed,
+      includeSuperseded: options.includeSuperseded,
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
+      ...(options.kind !== undefined ? { kind: options.kind } : {}),
+      orchestrator: new GatewayOrchestrator(memoryConfig, createAdapters(memoryConfig, runner)),
+      memoryConfig: memoryConfig.memory,
+    });
+  }
+  if (options.command === "mcp") return await runMcpServer(options.cwd);
 
   const config = await loadConfig(options.configPath);
   const orchestrator = new GatewayOrchestrator(config, createAdapters(config, runner));

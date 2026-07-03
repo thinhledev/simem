@@ -17,5 +17,32 @@
       "enabled": true,
       "command": "cursor-agent"
     }
+  },
+  "memory": {
+    "enabled": true,
+    "verbatimCheckpoints": 8,
+    "epochSize": 10,
+    "projectDigestEpochs": 5,
+    "consolidationTokenCapChars": 16000,
+    "consolidationTimeoutMs": 30000,
+    "queueDrainLimit": 3,
+    "budget": {
+      "totalChars": 12000,
+      "verbatimChars": 6000,
+      "semanticChars": 2000,
+      "retrievedChars": 2000,
+      "digestChars": 2000
+    },
+    "scoring": {
+      "recencyWeight": 0.2,
+      "importanceWeight": 0.3,
+      "relevanceWeight": 0.5,
+      "halfLifeDays": 30
+    },
+    "embeddings": {
+      "enabled": true,
+      "ollamaUrl": "http://localhost:11434",
+      "model": "nomic-embed-text"
+    }
   }
 }

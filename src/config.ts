@@ -16,6 +16,40 @@ export interface ProviderConfig {
   credentialTier?: CredentialTier;
 }
 
+export interface MemoryBudgetConfig {
+  totalChars: number;
+  verbatimChars: number;
+  semanticChars: number;
+  retrievedChars: number;
+  digestChars: number;
+}
+
+export interface MemoryScoringConfig {
+  recencyWeight: number;
+  importanceWeight: number;
+  relevanceWeight: number;
+  halfLifeDays: number;
+}
+
+export interface MemoryEmbeddingsConfig {
+  enabled: boolean;
+  ollamaUrl: string;
+  model: string;
+}
+
+export interface MemoryConfig {
+  enabled: boolean;
+  verbatimCheckpoints: number;
+  epochSize: number;
+  projectDigestEpochs: number;
+  consolidationTokenCapChars: number;
+  consolidationTimeoutMs: number;
+  queueDrainLimit: number;
+  budget: MemoryBudgetConfig;
+  scoring: MemoryScoringConfig;
+  embeddings: MemoryEmbeddingsConfig;
+}
+
 export interface GatewayConfig {
   routing: {
     providers: ProviderId[];
@@ -23,6 +57,7 @@ export interface GatewayConfig {
     fallbackOn: FailureKind[];
   };
   providers: Record<ProviderId, ProviderConfig>;
+  memory: MemoryConfig;
 }
 
 export const DEFAULT_CONFIG: GatewayConfig = {
@@ -39,6 +74,33 @@ export const DEFAULT_CONFIG: GatewayConfig = {
     // support Antigravity as a desktop-launch target regardless of this flag.
     antigravity: { enabled: false },
   },
+  memory: {
+    enabled: true,
+    verbatimCheckpoints: 8,
+    epochSize: 10,
+    projectDigestEpochs: 5,
+    consolidationTokenCapChars: 16_000,
+    consolidationTimeoutMs: 30_000,
+    queueDrainLimit: 3,
+    budget: {
+      totalChars: 12_000,
+      verbatimChars: 6_000,
+      semanticChars: 2_000,
+      retrievedChars: 2_000,
+      digestChars: 2_000,
+    },
+    scoring: {
+      recencyWeight: 0.2,
+      importanceWeight: 0.3,
+      relevanceWeight: 0.5,
+      halfLifeDays: 30,
+    },
+    embeddings: {
+      enabled: true,
+      ollamaUrl: "http://localhost:11434",
+      model: "nomic-embed-text",
+    },
+  },
 };
 
 type PartialConfig = {
@@ -48,7 +110,29 @@ type PartialConfig = {
     fallbackOn?: unknown;
   };
   providers?: Partial<Record<ProviderId, Partial<ProviderConfig>>>;
+  memory?: unknown;
 };
+
+function mergeSection<T extends Record<string, unknown>>(defaults: T, override: unknown, field: string): T {
+  if (override === undefined) return { ...defaults };
+  if (!override || typeof override !== "object" || Array.isArray(override)) {
+    throw new Error(`${field} must be an object`);
+  }
+  const merged: Record<string, unknown> = { ...defaults };
+  for (const [key, value] of Object.entries(override)) {
+    if (!(key in defaults)) throw new Error(`${field}.${key} is not a recognized option`);
+    const defaultValue = defaults[key];
+    if (defaultValue && typeof defaultValue === "object" && !Array.isArray(defaultValue)) {
+      merged[key] = mergeSection(defaultValue as Record<string, unknown>, value, `${field}.${key}`);
+    } else {
+      if (typeof value !== typeof defaultValue) {
+        throw new Error(`${field}.${key} must be a ${typeof defaultValue}`);
+      }
+      merged[key] = value;
+    }
+  }
+  return merged as T;
+}
 
 function enumArray<T extends string>(value: unknown, allowed: readonly T[], field: string): T[] | undefined {
   if (value === undefined) return undefined;
@@ -93,6 +177,11 @@ export function mergeConfig(input: PartialConfig = {}): GatewayConfig {
       fallbackOn: fallbackOn ?? [...DEFAULT_CONFIG.routing.fallbackOn],
     },
     providers,
+    memory: mergeSection(
+      DEFAULT_CONFIG.memory as unknown as Record<string, unknown>,
+      input.memory,
+      "memory",
+    ) as unknown as MemoryConfig,
   };
 }
 

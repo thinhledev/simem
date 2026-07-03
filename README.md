@@ -16,10 +16,11 @@ A local-first bridge between Codex, Claude Code, Cursor, and Antigravity. You ke
 - Falls back on auth, quota, rate-limit, availability, timeout, and provider failures.
 - Stops on permission and invalid-request failures so another backend cannot silently bypass intent.
 - Defaults to read-only/plan behavior; workspace changes require `--write`.
+- Indexes every checkpoint into a local, queryable memory that never loses important context but never grows unbounded either (see [Persistent memory](#persistent-memory)).
 
 ## Setup
 
-Requires Node.js 20 or newer.
+Requires Node.js 22.5 or newer for the core handoff/routing features. Persistent memory (`cag memory ...`, `cag mcp`) additionally requires **Node.js 22.5+** for the built-in `node:sqlite` module; on older Node, those commands report the database as unavailable and everything else keeps working unchanged.
 
 ```bash
 npm install
@@ -176,8 +177,54 @@ Cursor defaults to the documented `cursor-agent` binary. If an installation expo
 }
 ```
 
+## Persistent memory
+
+**Design goal: never lose important context, but don't grow forever.** Decisions, constraints, and preferences stay reachable indefinitely, no matter how old they are; everything else compresses progressively the further back it goes, so the context handed to an agent stays bounded in size even as the project's history keeps growing.
+
+Every `cag switch`/`export`/`fork` indexes its checkpoint (manifest + transcript) into a local SQLite database, `.cag/memory.db`, and distills it into durable, queryable memory — so the next agent (any provider) can pick up decisions and constraints from weeks ago without re-reading every past transcript, and without the handoff growing without bound.
+
+- **Index (free).** Every checkpoint's manifest and messages are parsed into the database as part of the normal checkpoint write. No model call, no cost — this is the same token-free guarantee Phase 1 already made for checkpoint creation.
+- **Consolidate (best-effort).** After the checkpoint is written, `cag` asks the cheapest ready provider (via the same router `cag run` uses) to extract durable facts — decisions, constraints, preferences — each tagged with an importance score (1–10), plus a short summary of that checkpoint. If no provider is ready or the model's output can't be parsed, the checkpoint is queued and retried on the next switch; it never blocks or fails the command.
+- **Compact (bounded, nothing important lost).** The most recent 8 checkpoints stay verbatim. Older ones are represented by their per-checkpoint summary; once 10 of those accumulate, they roll up into one epoch digest; once 5 epochs accumulate, those roll up into one project digest. Rolled-up summaries are marked superseded, not deleted — `cag memory search --include-superseded` (or `show`) can still reach them. **Durable facts (decisions/constraints/preferences) are a separate table and are never rolled up or expire** — they stay in every future HANDOFF.md verbatim until a newer fact explicitly supersedes them.
+- **Assemble.** HANDOFF.md gains an additive `## Project memory` section — durable decisions, the most relevant retrieved history for the current objective, and the latest digest — capped to a token budget (~3k tokens by default) so context never grows unbounded. When memory has nothing to say (fresh project, or `memory.enabled: false`), the section is omitted entirely and HANDOFF.md is byte-identical to the Phase 1 format.
+- **Query.** Any agent (any provider) can query memory directly, mid-session, over the shell or MCP — see below.
+
+```bash
+cag memory search "auth middleware rewrite" --kind semantic --limit 5
+cag memory show <checkpoint-id-or-item-id>
+cag memory stats
+cag memory compact              # drain the consolidation queue and run any due rollups by hand
+cag memory reindex [--rebuild] [--embed]
+```
+
+`cag memory reindex` backfills the database from `.cag/checkpoints/*` — useful after upgrading `cag` in an existing project, or with `--rebuild` to recompute everything from scratch (checkpoint files on disk are always the source of truth; nothing in the database is unrecoverable).
+
+### Search: keyword now, optional semantic later
+
+Search runs on SQLite FTS5 (BM25 keyword ranking) by default — no extra setup. Results are re-ranked by a blend of relevance, recency (exponential decay), and importance.
+
+If a local [Ollama](https://ollama.com) with `nomic-embed-text` is reachable (`http://localhost:11434` by default, probed with a 300 ms timeout so a missing Ollama never slows anything down), `cag` automatically layers in vector search and fuses the two rankings with [reciprocal rank fusion](https://alexgarcia.xyz/blog/2024/sqlite-vec-hybrid-search/index.html) — this catches conceptually related results that share no keywords (e.g. a query about "login flow" surfacing a past decision about "OAuth2"). Run `ollama pull nomic-embed-text` once, then `cag memory reindex --embed` to backfill vectors for existing memory; new items are embedded automatically after that. Nothing changes if Ollama isn't installed — it's fully optional. Embedding-model changes are handled safely: vectors are tagged with the model that produced them, and a mismatched model is treated as absent rather than compared across incompatible spaces.
+
+### MCP server
+
+`cag mcp [--cwd PATH]` serves the same memory tools over an [MCP](https://modelcontextprotocol.io) stdio server (hand-rolled JSON-RPC 2.0, no SDK dependency), for agents that support MCP tool calls natively instead of shelling out:
+
+```bash
+# Claude Code
+claude mcp add cag-memory -- cag mcp --cwd /path/to/project
+
+# Cursor: .cursor/mcp.json
+{ "mcpServers": { "cag-memory": { "command": "cag", "args": ["mcp", "--cwd", "/path/to/project"] } } }
+```
+
+Tools: `memory_search(query, kind?, limit?)`, `memory_get(selector)`, and `memory_save(text, kind, category?, importance)` — the last lets an agent record a durable fact immediately, mid-session, without waiting for the next checkpoint's consolidation pass.
+
+### Configuration
+
+All of the above is tunable under `memory` in `gateway.config.json` (see `gateway.config.example.json`): `enabled`, `verbatimCheckpoints` (default 8), `epochSize` (10), `projectDigestEpochs` (5), `consolidationTokenCapChars`, `consolidationTimeoutMs` (30s — consolidation has its own timeout so a slow provider can't make `switch` feel hung; it just gets queued), `queueDrainLimit`, `budget.*` (per-section character caps in HANDOFF.md), `scoring.*` (recency/importance/relevance weights), and `embeddings.*` (Ollama URL and model). Set `memory.enabled: false` to disable everything and keep pure Phase 1 behavior.
+
 ## Phase boundary
 
-Phase 1 now includes file-backed checkpoints and lineage. Phase 2 can move the manifest/state index into SQLite, add FTS5 retrieval, and generate richer summaries, while keeping this handoff format stable.
+Phase 1 shipped file-backed checkpoints and lineage. Phase 2 shipped the persistent memory system above — SQLite index, FTS5/hybrid retrieval, and bounded recursive summarization — while keeping the Phase 1 handoff file format stable.
 
 Provider integrations follow the official automation surfaces: [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive), [Claude Code CLI reference](https://docs.anthropic.com/en/docs/claude-code/cli-usage), and [Cursor headless CLI](https://docs.cursor.com/en/cli/headless). Antigravity's `agy` CLI (`agy --print`/`agy --prompt-interactive`) is not yet wired into `cag run`'s adapter/routing system and cannot be used as a `--from` source, since there is no local session discovery for it; it is currently reachable only through `cag switch`/`fork --surface interactive`.
