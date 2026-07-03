@@ -98,32 +98,16 @@ cag switch claude --from codex
 cag switch codex --from claude
 ```
 
-For Claude, `cag` focuses Claude Desktop and installs an idempotent local-memory bridge:
+### Manual steps by provider
 
-- `CLAUDE.local.md` imports `.cag/current/HANDOFF.md`, so the latest checkpoint is loaded into context at the start of every new Claude Code session.
-- `.worktreeinclude` copies that private memory plus the stable `.cag/current/` handoff, transcript, patch, status, and manifest into the isolated worktree Claude Desktop creates for a new session.
-- `.gitignore` keeps `.cag/` and `CLAUDE.local.md` out of version control.
+| Provider | Desktop command | Opens the right folder | Manual steps |
+|---|---|---|---|
+| Codex | `cag switch codex --from <source>` | Yes | Paste the printed prompt into the conversation |
+| Claude | `cag switch claude --from <source>` | No | Click **Code** → select the printed project path → create a new session → send `Continue.` |
+| Cursor | `cag switch cursor --from <source>` | Yes | Paste the printed prompt into the conversation |
+| Antigravity | `cag switch antigravity --from <source>` | No | Open the printed project folder yourself, then paste the printed prompt into the agent panel |
 
-Claude Desktop does not document a URL or launcher argument that selects the Code tab. Passing a folder to macOS opens that folder in Cowork, so `cag` deliberately opens the app without a folder. Click **Code**, select the project, create a new session, and send `Continue.` Claude already has the objective, previous outcome, recent conversation, and workspace state in context, so you do not need to paste the handoff. Claude cannot respond before a user message exists; sending `Continue.` is the only remaining manual step. Existing sessions do not reload startup memory, so create a new session when moving in a fresh checkpoint.
-
-Desktop app authentication is used directly.
-
-Anthropic's documented fully automatic bridge into an exact Desktop session is the `/desktop` command from an authenticated Claude Code terminal session. Direct Desktop switching intentionally avoids that CLI authentication requirement, so it stops at opening the project and preparing the handoff prompt.
-
-For Cursor, `cag switch` opens the desktop app directly on the project folder (`open -a Cursor <workspace>`), the same way `code <folder>` opens a workspace in an editor. Cursor declares itself as a document handler for the relevant file/folder types, so macOS forwards the path correctly.
-
-```bash
-cag switch cursor --from codex
-```
-
-Cursor also supports `--surface interactive`, which resumes or forks a session through the `cursor-agent` CLI and can attach the handoff prompt automatically.
-
-Antigravity is different on both surfaces:
-
-- **Desktop.** Its `.app` bundle declares no document types, so `open -a Antigravity <folder>` is silently ignored by macOS (verified against Antigravity 2.2.1 — the folder never appears in its `history.recentlyOpenedPathsList`). No known mechanism opens the GUI on a specific folder, so `cag switch antigravity` on the desktop surface just brings the app forward and prints the folder path plus the continuation prompt for you to paste in by hand.
-- **Interactive.** Antigravity ships a real terminal agent CLI, `agy` (separate from the `antigravity`/`agy` symlinks the desktop app installs under `~/.antigravity/antigravity/bin/`, which can be dangling even on a fresh install — that broken symlink is not the CLI to use). `cag switch antigravity --surface interactive` runs `agy --continue -i "<prompt>"` to resume the CLI's own most recent conversation, or `agy --new-project -i "<prompt>"` with `--new`. `agy` has no flag to point the desktop GUI at a folder, so this only starts a terminal session; it does not open the Antigravity window. There is no local session discovery for it yet, so `--to-session` cannot target a specific `agy` conversation ID.
-
-To use terminal clients instead, opt in explicitly. This mode can attach the handoff prompt automatically and use native resume/fork commands, but it requires separate CLI authentication:
+Add `--surface interactive` to skip the desktop app entirely and run the provider's terminal CLI instead — Codex, Claude, and Cursor attach the prompt and resume automatically; Antigravity attaches the prompt automatically too but always starts a fresh `agy` conversation (no resume). This requires separate CLI authentication for each provider:
 
 ```bash
 cag switch claude --from codex --surface interactive
