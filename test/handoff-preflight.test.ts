@@ -1,0 +1,45 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { checkLaunchReadiness } from "../src/handoff/preflight.js";
+import type { CommandResult, CommandRunner, CommandSpec } from "../src/process.js";
+
+class ResultRunner implements CommandRunner {
+  constructor(private readonly result: CommandResult) {}
+  async run(_spec: CommandSpec): Promise<CommandResult> {
+    return this.result;
+  }
+}
+
+function result(stdout: string, exitCode = 0): CommandResult {
+  return { exitCode, stdout, stderr: "", durationMs: 1, timedOut: false };
+}
+
+test("accepts an authenticated Claude subscription without an API key", async () => {
+  const previous = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  try {
+    const readiness = await checkLaunchReadiness(
+      new ResultRunner(result(JSON.stringify({ loggedIn: true, authMethod: "oauth" }))),
+      "claude",
+    );
+    assert.equal(readiness.ready, true);
+  } finally {
+    if (previous !== undefined) process.env.ANTHROPIC_API_KEY = previous;
+  }
+});
+
+test("returns an actionable Claude login command when unauthenticated", async () => {
+  const previous = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  try {
+    const readiness = await checkLaunchReadiness(
+      new ResultRunner(result(JSON.stringify({ loggedIn: false }), 1)),
+      "claude",
+    );
+    assert.equal(readiness.ready, false);
+    assert.equal(readiness.loginCommand, "claude auth login");
+    assert.match(readiness.message ?? "", /API key is optional/);
+  } finally {
+    if (previous !== undefined) process.env.ANTHROPIC_API_KEY = previous;
+  }
+});

@@ -1,10 +1,14 @@
 # Coding Agents Orchestrator
 
-A local-first gateway shell for Codex, Claude Code, and Cursor CLI. Phase 1 owns provider discovery, credential-aware routing, normalized run events, session references, and safe fallback. Durable SQLite memory arrives in Phase 2.
+A local-first bridge between Codex, Claude Code, and Cursor. You keep working in the native coding-agent apps; `cag` creates provider-neutral checkpoints and moves the work between them when quota, cost, or preference changes.
 
 ## What works
 
 - Discovers installed and authenticated provider CLIs without spending tokens.
+- Discovers local Codex Desktop/CLI and Claude Code conversations for the current workspace.
+- Exports a token-free checkpoint containing the handoff, extracted conversation, Git status, and tracked patch.
+- Switches into a new or existing target conversation and supports native session forks.
+- Records checkpoint lineage so Claude → Codex → Claude round trips remain traceable.
 - Prefers paid API credentials, then included/subscription credentials, then free and unknown tiers.
 - Uses Codex, Claude, then Cursor as the tie-break order within a credential tier.
 - Normalizes provider JSONL into one event model.
@@ -32,7 +36,110 @@ No provider credential is copied into the project. Each adapter invokes its prov
 
 The first usable paid credential wins, even if it belongs to a later provider. When tiers tie, the default order is Codex → Claude → Cursor.
 
+API keys are optional for native subscription use. Terminal mode has its own authentication; for example, authenticate the Claude Code CLI with a Claude Pro/Max account using:
+
+```bash
+claude auth login
+```
+
+Before launching a switched session, `cag` checks that the selected surface is ready. Desktop mode uses the desktop app's existing login and does not require `claude auth login`. Interactive terminal mode checks the CLI's separate authentication; if it is not ready, the checkpoint is still saved and `cag` prints the exact login command instead of failing silently.
+
 ## Usage
+
+### Export vs. switch vs. fork
+
+| Command | Creates a checkpoint | Opens the target agent | Conversation behavior |
+|---|---:|---:|---|
+| `cag export` | Yes | No | Saves the current work for later without starting another agent. |
+| `cag switch` | Yes | Yes | Interactive mode resumes a known target conversation; Desktop opens the app so you can select or create the target session. |
+| `cag fork` | Yes | Yes | Records separate branch lineage and uses the target's native fork feature in interactive mode. |
+
+Examples:
+
+```bash
+# Save Codex work without opening another agent
+cag export --from codex
+
+# Continue Codex work in the existing Claude conversation
+cag switch claude --from codex
+
+# Continue in a separate Claude branch without changing its existing conversation
+cag fork claude --from codex
+```
+
+`cag switch --new` also starts a new conversation, but `cag fork` explicitly records branch lineage and forks the provider's existing target session when the selected surface supports it. None of these commands deletes or modifies the source conversation.
+
+### Switch between coding-agent apps
+
+The normal workflow is one command from the project directory:
+
+```bash
+# Codex Desktop/CLI → Claude Code
+# Exports the latest Codex conversation, then resumes the known Claude
+# conversation for this project or starts a new one.
+cag switch claude --from codex
+
+# Claude Code → Codex when Codex quota resets
+cag switch codex --from claude
+
+# Force a new target conversation
+cag switch claude --from codex --new
+
+# Branch the work. If the target already has a session, its native fork
+# command is used; otherwise a new conversation starts from the checkpoint.
+cag fork claude --from codex
+cag fork codex --from claude
+```
+
+On macOS, switching opens the desktop app by default:
+
+```bash
+cag switch claude --from codex
+cag switch codex --from claude
+```
+
+For Claude, `cag` focuses Claude Desktop and installs an idempotent local-memory bridge:
+
+- `CLAUDE.local.md` imports `.cag/current/HANDOFF.md`, so the latest checkpoint is loaded into context at the start of every new Claude Code session.
+- `.worktreeinclude` copies that private memory plus the stable `.cag/current/` handoff, transcript, patch, status, and manifest into the isolated worktree Claude Desktop creates for a new session.
+- `.gitignore` keeps `.cag/` and `CLAUDE.local.md` out of version control.
+
+Claude Desktop does not document a URL or launcher argument that selects the Code tab. Passing a folder to macOS opens that folder in Cowork, so `cag` deliberately opens the app without a folder. Click **Code**, select the project, create a new session, and send `Continue.` Claude already has the objective, previous outcome, recent conversation, and workspace state in context, so you do not need to paste the handoff. Claude cannot respond before a user message exists; sending `Continue.` is the only remaining manual step. Existing sessions do not reload startup memory, so create a new session when moving in a fresh checkpoint.
+
+Desktop app authentication is used directly.
+
+Anthropic's documented fully automatic bridge into an exact Desktop session is the `/desktop` command from an authenticated Claude Code terminal session. Direct Desktop switching intentionally avoids that CLI authentication requirement, so it stops at opening the project and preparing the handoff prompt.
+
+To use terminal clients instead, opt in explicitly. This mode can attach the handoff prompt automatically and use native resume/fork commands, but it requires separate CLI authentication:
+
+```bash
+cag switch claude --from codex --surface interactive
+cag switch codex --from claude --surface interactive
+```
+
+To prepare without opening an app:
+
+```bash
+cag switch claude --from codex --no-launch
+cag export --from codex
+cag sessions
+```
+
+Use `--session SOURCE_ID` or `--to-session TARGET_ID` when the automatic latest/bound-session choice is not the one you want.
+
+### Checkpoint contents
+
+Each export is stored under `.cag/checkpoints/<id>/`:
+
+- `HANDOFF.md`: latest objective, latest outcome, recent context, and workspace state.
+- `TRANSCRIPT.md`: full extracted user/assistant conversation, excluding injected system instructions and raw tool noise.
+- `WORKSPACE.patch`: staged and unstaged tracked Git changes, including binary patches.
+- `STATUS.txt` and `manifest.json`: untracked-file inventory, source/target sessions, and parent checkpoint.
+- `.cag/CURRENT.md`: stable pointer content for the next agent.
+
+Checkpoint creation does not call a model, so it still works after provider quota is exhausted. The project remains the live source of truth, including untracked files; the checkpoint is a handoff bundle, not a duplicate repository. `.cag/` is gitignored because transcripts may contain sensitive project context.
+
+### Route a one-off task
 
 ```bash
 # Check readiness and see which credential tier will be used
@@ -72,6 +179,6 @@ Cursor defaults to the documented `cursor-agent` binary. If an installation expo
 
 ## Phase boundary
 
-Phase 1 deliberately keeps state in memory. Phase 2 will add the SQLite system of record, checkpoints, FTS5 retrieval, repo snapshots, and provider-neutral handoff packets. The current normalized event and session contracts are the seam for that work.
+Phase 1 now includes file-backed checkpoints and lineage. Phase 2 can move the manifest/state index into SQLite, add FTS5 retrieval, and generate richer summaries, while keeping this handoff format stable.
 
 Provider integrations follow the official automation surfaces: [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive), [Claude Code CLI reference](https://docs.anthropic.com/en/docs/claude-code/cli-usage), and [Cursor headless CLI](https://docs.cursor.com/en/cli/headless).
