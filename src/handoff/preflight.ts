@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CommandRunner } from "../process.js";
-import type { ProviderId } from "../types.js";
+import { PROVIDER_APP_NAME, type ProviderId } from "../types.js";
 import type { SwitchSurface } from "./switcher.js";
 
 export interface LaunchReadiness {
@@ -23,7 +23,7 @@ export async function checkLaunchReadiness(
         message: "Desktop launching is currently supported on macOS; use --surface interactive on this platform",
       };
     }
-    const appName = provider === "codex" ? "Codex.app" : provider === "claude" ? "Claude.app" : "Cursor.app";
+    const appName = `${PROVIDER_APP_NAME[provider]}.app`;
     const locations = [join("/Applications", appName), join(homedir(), "Applications", appName)];
     for (const path of locations) {
       try {
@@ -64,6 +64,16 @@ export async function checkLaunchReadiness(
     return result.exitCode === 0
       ? { ready: true }
       : { ready: false, message: "Codex is not authenticated", loginCommand: "codex login" };
+  }
+
+  if (provider === "antigravity") {
+    const result = await runner.run({ command: "agy", args: ["--version"], timeoutMs: 5_000 });
+    if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+      return { ready: false, message: "Antigravity CLI (agy) is not installed", loginCommand: "agy install" };
+    }
+    return result.exitCode === 0
+      ? { ready: true }
+      : { ready: false, message: "Antigravity CLI (agy) is not ready", loginCommand: "agy install" };
   }
 
   if (process.env.CURSOR_API_KEY) return { ready: true };

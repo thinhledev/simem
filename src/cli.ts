@@ -16,7 +16,7 @@ import {
 } from "./handoff/switcher.js";
 import { GatewayOrchestrator } from "./orchestrator.js";
 import { NodeCommandRunner } from "./process.js";
-import { PROVIDER_IDS, type ProviderHealth, type ProviderId } from "./types.js";
+import { PROVIDER_APP_NAME, PROVIDER_IDS, type ProviderHealth, type ProviderId } from "./types.js";
 
 type Command = "run" | "status" | "sessions" | "export" | "switch" | "fork" | "help";
 
@@ -47,6 +47,9 @@ Cross-agent handoff:
   cag export [--from codex|claude] [--session ID]
   cag switch <target> [--from PROVIDER] [--session SOURCE_ID] [--to-session TARGET_ID]
   cag fork <target> [--from PROVIDER] [--session SOURCE_ID] [--to-session TARGET_ID]
+                                   <target>: codex, claude, cursor, or antigravity
+                                   (antigravity: --surface desktop cannot select a project folder;
+                                    --surface interactive uses the agy CLI and supports --continue)
 
 Agent routing:
   cag status [--json] [--config PATH]
@@ -232,8 +235,8 @@ async function handleExport(options: CliOptions, runner: NodeCommandRunner): Pro
 
 async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Promise<void> {
   if (!options.target) throw new Error(`${options.command} requires a target provider`);
-  if (options.target === "cursor" && options.source === "cursor") {
-    throw new Error("Cursor local transcript export is not implemented yet");
+  if (options.source === "cursor" || options.source === "antigravity") {
+    throw new Error(`${options.source} local transcript export is not implemented yet`);
   }
   const plan = await prepareSwitch(runner, {
     cwd: options.cwd,
@@ -258,7 +261,7 @@ async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Pro
       claudeMemory: plan.claudeMemory,
     })}\n`);
   } else {
-    const targetAppName = options.target === "codex" ? "Codex Desktop" : options.target === "claude" ? "Claude Desktop" : "Cursor Desktop";
+    const targetAppName = `${PROVIDER_APP_NAME[options.target]} Desktop`;
     process.stdout.write(`Exported ${plan.sourceSession.provider}:${plan.sourceSession.id}\n`);
     process.stdout.write(`Checkpoint: ${plan.checkpoint.handoffPath}\n`);
     process.stdout.write(`${plan.surface === "desktop" ? `Opening ${targetAppName}` : plan.targetSession ? `${options.command === "fork" ? "Forking" : "Resuming"} ${plan.targetSession.provider}:${plan.targetSession.id}` : `Starting a new ${options.target} conversation`}\n`);
@@ -266,6 +269,8 @@ async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Pro
       if (options.target === "claude" && plan.claudeMemory) {
         process.stdout.write(`Claude startup memory: ${plan.claudeMemory.memoryPath}\n`);
         process.stdout.write(`Claude Desktop has no documented Code-tab launch link. Click Code, select ${plan.checkpoint.manifest.workspace}, create a new session, then send \"Continue.\" The checkpoint loads automatically.\n`);
+      } else if (options.target === "antigravity") {
+        process.stdout.write(`Antigravity Desktop cannot be launched with a project preselected. Open ${plan.checkpoint.manifest.workspace} yourself, then paste this into the agent panel:\n\n${plan.prompt}\n\n`);
       } else {
         process.stdout.write(`${targetAppName}'s launcher cannot receive an initial prompt. In the coding project, open or create the conversation and send:\n\n${plan.prompt}\n\n`);
       }

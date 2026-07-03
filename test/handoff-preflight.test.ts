@@ -28,6 +28,25 @@ test("accepts an authenticated Claude subscription without an API key", async ()
   }
 });
 
+test("reports Antigravity ready when the agy CLI responds", async () => {
+  const readiness = await checkLaunchReadiness(new ResultRunner(result("1.0.16")), "antigravity");
+  assert.equal(readiness.ready, true);
+});
+
+test("returns an actionable command when the agy CLI is missing", async () => {
+  const missing: CommandResult = {
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    durationMs: 1,
+    timedOut: false,
+    error: Object.assign(new Error("spawn agy ENOENT"), { code: "ENOENT" }),
+  };
+  const readiness = await checkLaunchReadiness(new ResultRunner(missing), "antigravity");
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.loginCommand, "agy install");
+});
+
 test("returns an actionable Claude login command when unauthenticated", async () => {
   const previous = process.env.ANTHROPIC_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import type { CommandRunner } from "../process.js";
-import type { ProviderId } from "../types.js";
+import { PROVIDER_APP_NAME, type ProviderId } from "../types.js";
 import { createCheckpoint, readGatewayState } from "./checkpoints.js";
 import { ensureClaudeHandoffMemory, type ClaudeMemoryIntegration } from "./claude-memory.js";
 import { discoverSessions, resolveSession } from "./sessions.js";
@@ -74,6 +74,7 @@ function targetCommand(
   session: SessionInfo | undefined,
   fork: boolean,
   surface: SwitchSurface,
+  newSession: boolean,
 ): { command: string; args: string[] } {
   if (target === "codex") {
     if (surface === "desktop") return { command: "codex", args: ["app", cwd] };
@@ -92,9 +93,26 @@ function targetCommand(
     args.push(prompt);
     return { command: "claude", args };
   }
-  if (surface === "desktop") throw new Error("Cursor desktop launch is not implemented; use the interactive surface");
-  const args = session ? [`--resume=${session.id}`, prompt] : [prompt];
-  return { command: "cursor-agent", args };
+  if (target === "cursor") {
+    if (surface === "desktop") {
+      if (process.platform === "darwin") return { command: "open", args: ["-a", PROVIDER_APP_NAME.cursor, cwd] };
+      throw new Error("Cursor Desktop launch is currently supported on macOS; use --surface interactive");
+    }
+    const args = session ? [`--resume=${session.id}`, prompt] : [prompt];
+    return { command: "cursor-agent", args };
+  }
+  if (surface === "desktop") {
+    if (process.platform === "darwin") return { command: "open", args: ["-a", PROVIDER_APP_NAME.antigravity] };
+    throw new Error("Antigravity Desktop launch is currently supported on macOS; use --surface interactive");
+  }
+  // `agy` is Antigravity's real terminal agent CLI (distinct from the
+  // `antigravity`/`agy` symlinks the desktop app installs under
+  // ~/.antigravity, which can be dangling on a fresh or updated install).
+  // It has no flag to point the *desktop app* at a folder, so this only
+  // covers --surface interactive, not opening a specific project in the GUI.
+  const args = newSession ? ["--new-project"] : ["--continue"];
+  args.push("-i", prompt);
+  return { command: "agy", args };
 }
 
 export async function prepareSwitch(runner: CommandRunner, options: SwitchOptions): Promise<SwitchPlan> {
@@ -112,7 +130,15 @@ export async function prepareSwitch(runner: CommandRunner, options: SwitchOption
     ? await ensureClaudeHandoffMemory(cwd)
     : undefined;
   const prompt = continuationPrompt(checkpoint);
-  const launch = targetCommand(options.target, cwd, prompt, targetSession, Boolean(options.fork), surface);
+  const launch = targetCommand(
+    options.target,
+    cwd,
+    prompt,
+    targetSession,
+    Boolean(options.fork),
+    surface,
+    Boolean(options.newSession),
+  );
   return {
     checkpoint,
     sourceSession,

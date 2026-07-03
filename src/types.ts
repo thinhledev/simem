@@ -1,5 +1,15 @@
-export const PROVIDER_IDS = ["codex", "claude", "cursor"] as const;
+export const PROVIDER_IDS = ["codex", "claude", "cursor", "antigravity"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
+
+// Desktop app bundle name, without the ".app" suffix. Shared by preflight
+// (Applications lookup), the switcher (`open -a`), and CLI display text so
+// they cannot drift out of sync per-provider.
+export const PROVIDER_APP_NAME: Record<ProviderId, string> = {
+  codex: "Codex",
+  claude: "Claude",
+  cursor: "Cursor",
+  antigravity: "Antigravity",
+};
 
 export const CREDENTIAL_TIERS = ["paid", "included", "free", "unknown"] as const;
 export type CredentialTier = (typeof CREDENTIAL_TIERS)[number];

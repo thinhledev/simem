@@ -1,6 +1,6 @@
 # Coding Agents Orchestrator
 
-A local-first bridge between Codex, Claude Code, and Cursor. You keep working in the native coding-agent apps; `cag` creates provider-neutral checkpoints and moves the work between them when quota, cost, or preference changes.
+A local-first bridge between Codex, Claude Code, Cursor, and Antigravity. You keep working in the native coding-agent apps; `cag` creates provider-neutral checkpoints and moves the work between them when quota, cost, or preference changes.
 
 ## What works
 
@@ -110,11 +110,26 @@ Desktop app authentication is used directly.
 
 Anthropic's documented fully automatic bridge into an exact Desktop session is the `/desktop` command from an authenticated Claude Code terminal session. Direct Desktop switching intentionally avoids that CLI authentication requirement, so it stops at opening the project and preparing the handoff prompt.
 
+For Cursor, `cag switch` opens the desktop app directly on the project folder (`open -a Cursor <workspace>`), the same way `code <folder>` opens a workspace in an editor. Cursor declares itself as a document handler for the relevant file/folder types, so macOS forwards the path correctly.
+
+```bash
+cag switch cursor --from codex
+```
+
+Cursor also supports `--surface interactive`, which resumes or forks a session through the `cursor-agent` CLI and can attach the handoff prompt automatically.
+
+Antigravity is different on both surfaces:
+
+- **Desktop.** Its `.app` bundle declares no document types, so `open -a Antigravity <folder>` is silently ignored by macOS (verified against Antigravity 2.2.1 — the folder never appears in its `history.recentlyOpenedPathsList`). No known mechanism opens the GUI on a specific folder, so `cag switch antigravity` on the desktop surface just brings the app forward and prints the folder path plus the continuation prompt for you to paste in by hand.
+- **Interactive.** Antigravity ships a real terminal agent CLI, `agy` (separate from the `antigravity`/`agy` symlinks the desktop app installs under `~/.antigravity/antigravity/bin/`, which can be dangling even on a fresh install — that broken symlink is not the CLI to use). `cag switch antigravity --surface interactive` runs `agy --continue -i "<prompt>"` to resume the CLI's own most recent conversation, or `agy --new-project -i "<prompt>"` with `--new`. `agy` has no flag to point the desktop GUI at a folder, so this only starts a terminal session; it does not open the Antigravity window. There is no local session discovery for it yet, so `--to-session` cannot target a specific `agy` conversation ID.
+
 To use terminal clients instead, opt in explicitly. This mode can attach the handoff prompt automatically and use native resume/fork commands, but it requires separate CLI authentication:
 
 ```bash
 cag switch claude --from codex --surface interactive
 cag switch codex --from claude --surface interactive
+cag switch cursor --from codex --surface interactive
+cag switch antigravity --from claude --surface interactive
 ```
 
 To prepare without opening an app:
@@ -181,4 +196,4 @@ Cursor defaults to the documented `cursor-agent` binary. If an installation expo
 
 Phase 1 now includes file-backed checkpoints and lineage. Phase 2 can move the manifest/state index into SQLite, add FTS5 retrieval, and generate richer summaries, while keeping this handoff format stable.
 
-Provider integrations follow the official automation surfaces: [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive), [Claude Code CLI reference](https://docs.anthropic.com/en/docs/claude-code/cli-usage), and [Cursor headless CLI](https://docs.cursor.com/en/cli/headless).
+Provider integrations follow the official automation surfaces: [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive), [Claude Code CLI reference](https://docs.anthropic.com/en/docs/claude-code/cli-usage), and [Cursor headless CLI](https://docs.cursor.com/en/cli/headless). Antigravity's `agy` CLI (`agy --print`/`agy --prompt-interactive`) is not yet wired into `cag run`'s adapter/routing system and cannot be used as a `--from` source, since there is no local session discovery for it; it is currently reachable only through `cag switch`/`fork --surface interactive`.

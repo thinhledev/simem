@@ -35,6 +35,9 @@ export const DEFAULT_CONFIG: GatewayConfig = {
     codex: { enabled: true, command: "codex" },
     claude: { enabled: true, command: "claude" },
     cursor: { enabled: true },
+    // No non-interactive execution surface is wired up yet; `cag switch`/`fork`
+    // support Antigravity as a desktop-launch target regardless of this flag.
+    antigravity: { enabled: false },
   },
 };
 
