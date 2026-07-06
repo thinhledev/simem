@@ -13,6 +13,7 @@ interface JsonRecord {
   sessionId?: unknown;
   cwd?: unknown;
   message?: unknown;
+  role?: unknown;
 }
 
 const INJECTED_PREFIXES = [
@@ -160,7 +161,70 @@ function sessionRoot(provider: ProviderId): string | undefined {
   return undefined;
 }
 
+// Cursor keys its per-project storage by a slugified absolute path
+// (`/`→`-`, leading separator dropped). Only cwd→slug is deterministic —
+// a directory name containing "-" makes the reverse ambiguous — so cursor
+// and antigravity discovery both REQUIRE a cwd and return [] without one.
+function cursorSlug(cwd: string): string {
+  return resolve(cwd).replace(/^[/\\]/, "").replace(/[/\\]/g, "-");
+}
+
+function cursorProjectsRoot(): string {
+  return join(process.env.CURSOR_CONFIG_DIR ?? join(homedir(), ".cursor"), "projects");
+}
+
+function antigravityRoot(): string {
+  return process.env.ANTIGRAVITY_CONFIG_DIR ?? join(homedir(), ".gemini", "antigravity-cli");
+}
+
+function byModifiedDesc(left: SessionInfo, right: SessionInfo): number {
+  return Date.parse(right.modifiedAt) - Date.parse(left.modifiedAt);
+}
+
+async function discoverCursorSessions(cwd: string | undefined): Promise<SessionInfo[]> {
+  if (!cwd) return [];
+  const wantedCwd = resolve(cwd);
+  const transcripts = join(cursorProjectsRoot(), cursorSlug(wantedCwd), "agent-transcripts");
+  const paths = await walkJsonl(transcripts);
+  const sessions = await Promise.all(
+    paths.map(async (path): Promise<SessionInfo | undefined> => {
+      const id = path.split(/[\\/]/).at(-1)?.replace(/\.jsonl$/, "");
+      if (!id) return undefined;
+      try {
+        const fileStat = await stat(path);
+        return { provider: "cursor", id, path, cwd: wantedCwd, modifiedAt: fileStat.mtime.toISOString(), origin: "Cursor" };
+      } catch {
+        return undefined;
+      }
+    }),
+  );
+  return sessions.filter((session): session is SessionInfo => Boolean(session)).sort(byModifiedDesc);
+}
+
+// Discovery-only: `cache/last_conversations.json` maps absolute cwd → the
+// current conversation id, and the conversation itself is a SQLite .db with
+// an undocumented schema, so `extractTranscript` yields [] for antigravity.
+// Knowing the id is still enough to resume via `agy --conversation <id>`.
+async function discoverAntigravitySessions(cwd: string | undefined): Promise<SessionInfo[]> {
+  if (!cwd) return [];
+  const wantedCwd = resolve(cwd);
+  const root = antigravityRoot();
+  try {
+    const raw = await readFile(join(root, "cache", "last_conversations.json"), "utf8");
+    const conversations = JSON.parse(raw) as Record<string, unknown>;
+    const id = conversations[wantedCwd];
+    if (typeof id !== "string" || !id) return [];
+    const path = join(root, "conversations", `${id}.db`);
+    const fileStat = await stat(path);
+    return [{ provider: "antigravity", id, path, cwd: wantedCwd, modifiedAt: fileStat.mtime.toISOString(), origin: "Antigravity" }];
+  } catch {
+    return [];
+  }
+}
+
 export async function discoverSessions(provider: ProviderId, cwd?: string): Promise<SessionInfo[]> {
+  if (provider === "cursor") return await discoverCursorSessions(cwd);
+  if (provider === "antigravity") return await discoverAntigravitySessions(cwd);
   const root = sessionRoot(provider);
   if (!root) return [];
   const wantedCwd = cwd ? resolve(cwd) : undefined;
@@ -211,8 +275,21 @@ function addMessage(messages: TranscriptMessage[], role: "user" | "assistant", t
   messages.push({ role, text: cleaned, ...(timestamp ? { timestamp } : {}) });
 }
 
+// Cursor wraps the user's actual words in scaffolding: a <timestamp> header
+// plus a <user_query> envelope. The interesting content is INSIDE the tags,
+// so this unwraps rather than dropping the whole message like isInjected.
+function cleanCursorText(text: string): string {
+  const withoutTimestamp = text.replace(/<timestamp>[\s\S]*?<\/timestamp>\s*/g, "");
+  const query = /<user_query>\s*([\s\S]*?)\s*<\/user_query>/.exec(withoutTimestamp);
+  return (query?.[1] ?? withoutTimestamp).trim();
+}
+
 export async function extractTranscript(session: SessionInfo): Promise<TranscriptMessage[]> {
   const messages: TranscriptMessage[] = [];
+  // Antigravity conversations are SQLite databases with an undocumented
+  // schema, not JSONL — no transcript extraction yet (checkpoints degrade
+  // to "Not available in the local transcript").
+  if (session.provider === "antigravity") return messages;
   await forEachJsonLine(session.path, (event) => {
     const timestamp = typeof event.timestamp === "string" ? event.timestamp : undefined;
     if (session.provider === "codex") {
@@ -220,6 +297,12 @@ export async function extractTranscript(session: SessionInfo): Promise<Transcrip
       const role = event.payload.role;
       if (role !== "user" && role !== "assistant") return;
       for (const text of contentTexts(event.payload.content)) addMessage(messages, role, text, timestamp);
+      return;
+    }
+    if (session.provider === "cursor") {
+      const role = event.role;
+      if ((role !== "user" && role !== "assistant") || !isRecord(event.message)) return;
+      for (const text of contentTexts(event.message.content)) addMessage(messages, role, cleanCursorText(text), timestamp);
       return;
     }
     if ((event.type !== "user" && event.type !== "assistant") || !isRecord(event.message)) return;

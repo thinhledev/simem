@@ -4,7 +4,17 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdapters } from "./adapters/index.js";
 import { loadConfig, type GatewayConfig } from "./config.js";
+import { buildBrief } from "./handoff/brief.js";
 import { createCheckpoint } from "./handoff/checkpoints.js";
+import {
+  HOOK_EVENTS,
+  handlePreCompact,
+  handleSessionStart,
+  handleUserPromptSubmit,
+  readHookInput,
+  type HookEvent,
+} from "./handoff/hooks.js";
+import { checkIntegration, integrateProvider } from "./handoff/integrate.js";
 import { discoverSessions } from "./handoff/sessions.js";
 import { checkDesktopApp, checkLaunchReadiness } from "./handoff/preflight.js";
 import {
@@ -23,7 +33,7 @@ import { GatewayOrchestrator } from "./orchestrator.js";
 import { NodeCommandRunner } from "./process.js";
 import { PROVIDER_APP_NAME, PROVIDER_IDS, type ProviderHealth, type ProviderId } from "./types.js";
 
-type Command = "run" | "status" | "sessions" | "export" | "switch" | "fork" | "memory" | "mcp" | "help";
+type Command = "run" | "status" | "sessions" | "export" | "switch" | "fork" | "memory" | "mcp" | "brief" | "hook" | "integrate" | "help";
 
 interface CliOptions {
   command: Command;
@@ -56,6 +66,12 @@ interface CliOptions {
   since?: string;
   until?: string;
   full: boolean;
+  objective?: string;
+  maxChars?: number;
+  /** True when --cwd was passed explicitly (beats a hook payload's cwd). */
+  cwdExplicit: boolean;
+  check: boolean;
+  remove: boolean;
 }
 
 const HELP = `coding-agents-orchestrator (cag)
@@ -83,6 +99,18 @@ Persistent memory:
   cag memory compact
   cag memory reindex [--rebuild] [--embed]
   cag mcp [--cwd PATH]            Serve memory tools over MCP stdio (requires Node >= 22.5)
+
+Context revival:
+  cag brief [--objective TEXT] [--max-chars N] [--json]
+                                  Print a deterministic revival brief (latest objective/outcome,
+                                  live git state, budgeted project memory) — zero LLM calls
+  cag hook <session-start|pre-compact|user-prompt-submit> --provider P [--cwd PATH]
+                                  Host-agent lifecycle hook entry (reads the hook JSON from stdin;
+                                  wired automatically by "cag integrate"; always exits 0)
+  cag integrate [--provider P] [--check] [--remove] [--cwd PATH]
+                                  Wire a coding agent to call cag automatically: lifecycle hooks,
+                                  MCP registration, and instruction blocks (default: all four);
+                                  --check reports drift without writing, --remove undoes it
 
 Handoff options:
   --from PROVIDER                 Source app; default is latest local Codex/Claude session
@@ -134,7 +162,7 @@ function takeValue(args: string[], index: number, flag: string): string {
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   const first = args.shift();
-  const known: Command[] = ["run", "status", "sessions", "export", "switch", "fork", "memory", "mcp", "help"];
+  const known: Command[] = ["run", "status", "sessions", "export", "switch", "fork", "memory", "mcp", "brief", "hook", "integrate", "help"];
   const command: Command = first && known.includes(first as Command)
     ? (first as Command)
     : first === "--help" || first === "-h" || !first
@@ -157,6 +185,9 @@ export function parseArgs(argv: string[]): CliOptions {
     embed: false,
     includeSuperseded: false,
     full: false,
+    cwdExplicit: false,
+    check: false,
+    remove: false,
   };
   const positional: string[] = [];
   for (let index = 0; index < args.length; ) {
@@ -185,6 +216,12 @@ export function parseArgs(argv: string[]): CliOptions {
     } else if (arg === "--full") {
       options.full = true;
       args.splice(index, 1);
+    } else if (arg === "--check") {
+      options.check = true;
+      args.splice(index, 1);
+    } else if (arg === "--remove") {
+      options.remove = true;
+      args.splice(index, 1);
     } else if (arg === "--limit") {
       const limit = Number(takeValue(args, index, arg));
       if (!Number.isInteger(limit) || limit <= 0) throw new Error("--limit must be a positive integer");
@@ -205,10 +242,17 @@ export function parseArgs(argv: string[]): CliOptions {
       options.category = takeValue(args, index, arg);
     } else if (arg === "--group-by") {
       options.groupBy = takeValue(args, index, arg);
+    } else if (arg === "--objective") {
+      options.objective = takeValue(args, index, arg);
+    } else if (arg === "--max-chars") {
+      const maxChars = Number(takeValue(args, index, arg));
+      if (!Number.isInteger(maxChars) || maxChars <= 0) throw new Error("--max-chars must be a positive integer");
+      options.maxChars = maxChars;
     } else if (arg === "--config") {
       options.configPath = takeValue(args, index, arg);
     } else if (arg === "--cwd") {
       options.cwd = resolve(takeValue(args, index, arg));
+      options.cwdExplicit = true;
     } else if (arg === "--session") {
       options.sessionId = takeValue(args, index, arg);
     } else if (arg === "--to-session") {
@@ -312,7 +356,9 @@ function compactGatewayResult(result: Awaited<ReturnType<GatewayOrchestrator["ru
 }
 
 async function handleSessions(options: CliOptions): Promise<void> {
-  const selected = options.provider ? [options.provider] : (["codex", "claude"] as ProviderId[]);
+  // Cursor/antigravity discovery is cwd-keyed, so all four providers can be
+  // listed here — the cwd always accompanies the call.
+  const selected = options.provider ? [options.provider] : [...PROVIDER_IDS];
   const sessions = (await Promise.all(selected.map(async (id) => await discoverSessions(id, options.cwd)))).flat();
   if (options.json) {
     process.stdout.write(`${JSON.stringify(sessions)}\n`);
@@ -372,6 +418,86 @@ async function recordRunLedger(
   } catch {
     // Ledger is additive; `cag run` must never fail because of it.
   }
+}
+
+// Wires host agents to call cag automatically: lifecycle hooks + MCP server
+// registration + standing instruction blocks, all idempotent file writes.
+// --check reports drift without writing (exit 1 on drift, for CI);
+// --remove strips exactly what integrate added and nothing else.
+async function handleIntegrate(options: CliOptions): Promise<void> {
+  const providers = options.provider ? [options.provider] : [...PROVIDER_IDS];
+  const plans = [];
+  for (const provider of providers) {
+    if (options.check) plans.push(await checkIntegration(options.cwd, provider));
+    else plans.push(await integrateProvider(options.cwd, provider, { remove: options.remove }));
+  }
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(plans)}\n`);
+  } else if (options.check) {
+    const checks = plans as Awaited<ReturnType<typeof checkIntegration>>[];
+    for (const check of checks) {
+      process.stdout.write(`${check.provider}: ${check.upToDate ? "up to date" : "drift detected"}\n`);
+      for (const line of check.drift) process.stdout.write(`  ${line}\n`);
+      for (const note of check.notes) process.stdout.write(`  note: ${note}\n`);
+    }
+  } else {
+    const integrations = plans as Awaited<ReturnType<typeof integrateProvider>>[];
+    console.table(
+      integrations.flatMap((plan) =>
+        plan.files.map((file) => ({ provider: plan.provider, file: file.path, action: file.action, note: file.note ?? "" })),
+      ),
+    );
+    for (const plan of integrations) {
+      for (const note of plan.notes) process.stdout.write(`[${plan.provider}] ${note}\n`);
+    }
+  }
+  if (options.check && plans.some((plan) => "upToDate" in plan && !plan.upToDate)) process.exitCode = 1;
+  const failed = plans.flatMap((plan) => ("files" in plan ? plan.files.filter((file) => file.action === "failed") : []));
+  if (failed.length > 0) process.exitCode = 1;
+}
+
+// Entry point for host-agent lifecycle hooks (Claude Code / Codex / Cursor).
+// Contract: ALWAYS exit 0 and never throw — a failing hook can abort the
+// host agent's turn or compaction, which is the single worst outcome cag
+// could cause. Errors go to stderr only.
+async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promise<void> {
+  try {
+    const event = options.positional[0];
+    if (!event || !HOOK_EVENTS.includes(event as HookEvent)) {
+      throw new Error(`cag hook requires an event: ${HOOK_EVENTS.join(", ")}`);
+    }
+    const provider = options.provider;
+    if (!provider) throw new Error("cag hook requires --provider so ledger rows carry a real provider");
+    const config = await loadConfig(options.configPath);
+    const input = await readHookInput(process.stdin);
+    // The hook payload's cwd (where the host agent runs) beats our own
+    // process.cwd() default; an explicit --cwd flag beats both.
+    const cwd = options.cwdExplicit ? options.cwd : input.cwd ?? options.cwd;
+    if (event === "session-start") {
+      process.stdout.write(await handleSessionStart(input, cwd, provider, config, runner));
+    } else if (event === "pre-compact") {
+      await handlePreCompact(input, cwd, provider, config, runner, undefined, options.configPath);
+    } else {
+      process.stdout.write(await handleUserPromptSubmit(input, cwd, provider, config));
+    }
+  } catch (error) {
+    process.stderr.write(`[cag] hook: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
+// Deterministic context revival: prints the latest objective/outcome, live
+// git state, and budgeted project memory. Zero LLM calls — safe to run on
+// every session start or after a context-window compaction.
+async function handleBrief(options: CliOptions, runner: NodeCommandRunner): Promise<void> {
+  const config = await loadConfig(options.configPath);
+  const brief = await buildBrief(runner, {
+    cwd: options.cwd,
+    memoryConfig: config.memory,
+    ...(options.objective !== undefined ? { objective: options.objective } : {}),
+    ...(options.maxChars !== undefined ? { maxChars: options.maxChars } : {}),
+  });
+  if (options.json) process.stdout.write(`${JSON.stringify(brief)}\n`);
+  else process.stdout.write(brief.text);
 }
 
 async function handleExport(options: CliOptions, runner: NodeCommandRunner): Promise<void> {
@@ -463,6 +589,9 @@ async function main(): Promise<void> {
   }
   const runner = new NodeCommandRunner();
   if (options.command === "sessions") return await handleSessions(options);
+  if (options.command === "integrate") return await handleIntegrate(options);
+  if (options.command === "hook") return await handleHook(options, runner);
+  if (options.command === "brief") return await handleBrief(options, runner);
   if (options.command === "export") return await handleExport(options, runner);
   if (options.command === "switch" || options.command === "fork") return await handleSwitch(options, runner);
   if (options.command === "memory") {
@@ -486,7 +615,10 @@ async function main(): Promise<void> {
       memoryConfig: memoryConfig.memory,
     });
   }
-  if (options.command === "mcp") return await runMcpServer(options.cwd);
+  if (options.command === "mcp") {
+    const mcpConfig = await loadConfig(options.configPath);
+    return await runMcpServer(options.cwd, undefined, { runner, memoryConfig: mcpConfig.memory });
+  }
 
   const config = await loadConfig(options.configPath);
   const orchestrator = new GatewayOrchestrator(config, createAdapters(config, runner));

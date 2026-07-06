@@ -1,6 +1,6 @@
 import type { MemoryConfig } from "../config.js";
 import { runCompaction } from "./compaction.js";
-import { drainConsolidationQueue, type ConsolidationRunner } from "./consolidate.js";
+import { consolidateBestEffort, drainConsolidationQueue, type ConsolidationRunner } from "./consolidate.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
 import { detectOllama } from "./embeddings.js";
@@ -271,6 +271,24 @@ export async function handleMemoryCommand(
       }
     } finally {
       memory.close();
+    }
+    return;
+  }
+  // Advanced/internal: the pre-compact hook spawns this detached so LLM
+  // consolidation happens off the host agent's critical path. Also usable by
+  // hand to retry one specific checkpoint.
+  if (sub === "consolidate-checkpoint") {
+    const checkpointId = options.args[0];
+    if (!checkpointId) throw new Error("memory consolidate-checkpoint requires a checkpoint id");
+    if (!options.orchestrator || !options.memoryConfig) {
+      throw new Error("memory consolidate-checkpoint needs the routing configuration; run it via the cag CLI");
+    }
+    const result = await consolidateBestEffort(options.cwd, options.orchestrator, checkpointId, options.memoryConfig);
+    if (options.json) process.stdout.write(`${JSON.stringify(result)}\n`);
+    else {
+      process.stdout.write(
+        `${result.checkpointId}: ${result.status}${result.detail ? ` (${result.detail})` : ""}, ${result.itemsWritten} item(s)\n`,
+      );
     }
     return;
   }

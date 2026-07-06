@@ -45,6 +45,12 @@
       "enabled": true,
       "ollamaUrl": "http://localhost:11434",
       "model": "nomic-embed-text"
+    },
+    "hooks": {
+      "perPromptInjection": true,
+      "perPromptMaxChars": 600,
+      "sessionStartBrief": true,
+      "briefMaxChars": 4000
     }
   }
 }

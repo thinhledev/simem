@@ -1,5 +1,8 @@
 import { createInterface } from "node:readline";
+import { DEFAULT_CONFIG, type MemoryConfig } from "../config.js";
+import { buildBrief } from "../handoff/brief.js";
 import { readGatewayState } from "../handoff/checkpoints.js";
+import { NodeCommandRunner, type CommandRunner } from "../process.js";
 import { showRecord } from "./cli-commands.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
@@ -70,6 +73,19 @@ const TOOLS = [
       type: "object",
       properties: { selector: { type: "string" } },
       required: ["selector"],
+    },
+  },
+  {
+    name: "context_brief",
+    description:
+      "Rebuild working context after a compaction or reset: the latest objective/outcome, live git state, " +
+      "and the most relevant project memory — deterministic, no LLM call. Use this instead of re-exploring the repository.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        objective: { type: "string", description: "Optional retrieval focus; defaults to the latest checkpoint's objective" },
+        maxChars: { type: "integer", minimum: 500, maximum: 32_000 },
+      },
     },
   },
   {
@@ -155,12 +171,24 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
   throw new Error(`Unknown tool: ${name}`);
 }
 
+// Dependencies for tools that reach outside the memory database (git state,
+// config-driven budgets). Defaults are real implementations; tests inject fakes.
+export interface McpDeps {
+  runner: CommandRunner;
+  memoryConfig: MemoryConfig;
+}
+
+function defaultDeps(): McpDeps {
+  return { runner: new NodeCommandRunner(), memoryConfig: DEFAULT_CONFIG.memory };
+}
+
 // Exported for direct unit testing without spawning a child process; the
 // stdio loop below is a thin wrapper around this pure request handler.
 export async function handleRequest(
   memory: MemoryDb | undefined,
   cwd: string,
   raw: string,
+  deps: McpDeps = defaultDeps(),
 ): Promise<JsonRpcResponse | undefined> {
   let request: JsonRpcRequest;
   try {
@@ -186,13 +214,31 @@ export async function handleRequest(
     return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
   }
   if (request.method === "tools/call") {
-    if (!memory) return errorResponse(id, INTERNAL_ERROR, "The memory database is unavailable on this runtime");
     const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
     if (!params || typeof params.name !== "string") {
       return errorResponse(id, INVALID_PARAMS, "tools/call requires params.name");
     }
+    const args = (params.arguments as Record<string, unknown>) ?? {};
+    // context_brief opens (and can live without) its own memory connection,
+    // so it stays available even when this server's DB handle is absent
+    // (Node < 22.5) — the brief degrades to checkpoint + git state.
+    if (params.name === "context_brief") {
+      try {
+        const objective = typeof args.objective === "string" ? args.objective : undefined;
+        const maxChars = typeof args.maxChars === "number" && Number.isInteger(args.maxChars) ? args.maxChars : undefined;
+        const brief = await buildBrief(deps.runner, {
+          cwd,
+          memoryConfig: deps.memoryConfig,
+          ...(objective !== undefined ? { objective } : {}),
+          ...(maxChars !== undefined ? { maxChars } : {}),
+        });
+        return { jsonrpc: "2.0", id, result: toolResult(brief) };
+      } catch (error) {
+        return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (!memory) return errorResponse(id, INTERNAL_ERROR, "The memory database is unavailable on this runtime");
     try {
-      const args = (params.arguments as Record<string, unknown>) ?? {};
       const result = await callTool(memory, cwd, params.name, args);
       return { jsonrpc: "2.0", id, result };
     } catch (error) {
@@ -208,6 +254,7 @@ export async function runMcpServer(
     input: process.stdin,
     output: process.stdout,
   },
+  deps: McpDeps = defaultDeps(),
 ): Promise<void> {
   const memory = await openMemoryDb(cwd, { quiet: true });
   const rl = createInterface({ input: io.input, crlfDelay: Infinity });
@@ -216,7 +263,7 @@ export async function runMcpServer(
       if (!line.trim()) continue;
       let response: JsonRpcResponse | undefined;
       try {
-        response = await handleRequest(memory, cwd, line);
+        response = await handleRequest(memory, cwd, line, deps);
       } catch (error) {
         response = errorResponse(null, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
       }

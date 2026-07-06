@@ -54,6 +54,15 @@ export interface CheckpointManifest {
     patch: string;
     status: string;
   };
+  /**
+   * Capped copies of the transcript's last user/assistant messages, stored so
+   * `cag brief` can rebuild a revival context without scraping HANDOFF.md.
+   * Absent on checkpoints created before Phase 4.
+   */
+  summary?: {
+    latestObjective: string;
+    latestOutcome: string;
+  };
 }
 
 export interface GatewayState {

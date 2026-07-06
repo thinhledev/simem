@@ -20,6 +20,10 @@ import { captureWorkspace } from "./workspace.js";
 
 const EMPTY_STATE: GatewayState = { version: 1, checkpoints: {}, sessions: {} };
 
+// Bounds manifest.summary so one tool-output-heavy final message can't bloat
+// every manifest.json; `cag brief` re-caps to its own budget on read anyway.
+const MANIFEST_SUMMARY_CAP = 2_000;
+
 function gatewayDirectory(cwd: string): string {
   return join(resolve(cwd), ".cag");
 }
@@ -221,6 +225,10 @@ export async function createCheckpoint(
       transcript: transcriptName,
       patch: patchName,
       status: statusName,
+    },
+    summary: {
+      latestObjective: capText(latestText(messages, "user"), MANIFEST_SUMMARY_CAP).text,
+      latestOutcome: capText(latestText(messages, "assistant"), MANIFEST_SUMMARY_CAP).text,
     },
   };
 

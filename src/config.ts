@@ -37,6 +37,20 @@ export interface MemoryEmbeddingsConfig {
   model: string;
 }
 
+// Behavior of `cag hook` when a host agent's lifecycle hooks call in.
+// Everything here is about what gets INJECTED into the agent's context, so it
+// lives under `memory` rather than as a new top-level section.
+export interface MemoryHooksConfig {
+  /** Prepend relevant memory previews to every user prompt (UserPromptSubmit hooks). */
+  perPromptInjection: boolean;
+  /** Character cap for the per-prompt injection block. */
+  perPromptMaxChars: number;
+  /** Emit a revival brief on session-start after compact/resume/clear. */
+  sessionStartBrief: boolean;
+  /** Character cap for the session-start revival brief. */
+  briefMaxChars: number;
+}
+
 export interface MemoryConfig {
   enabled: boolean;
   verbatimCheckpoints: number;
@@ -52,6 +66,7 @@ export interface MemoryConfig {
   budget: MemoryBudgetConfig;
   scoring: MemoryScoringConfig;
   embeddings: MemoryEmbeddingsConfig;
+  hooks: MemoryHooksConfig;
 }
 
 export interface GatewayConfig {
@@ -107,6 +122,12 @@ export const DEFAULT_CONFIG: GatewayConfig = {
       enabled: true,
       ollamaUrl: "http://localhost:11434",
       model: "nomic-embed-text",
+    },
+    hooks: {
+      perPromptInjection: true,
+      perPromptMaxChars: 600,
+      sessionStartBrief: true,
+      briefMaxChars: 4_000,
     },
   },
 };

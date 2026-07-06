@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { DEFAULT_CONFIG } from "../src/config.js";
 import { loadSqlite, openMemoryDb, type MemoryDb } from "../src/memory/db.js";
 import { handleRequest, PROTOCOL_VERSION, runMcpServer, SERVER_INFO } from "../src/memory/mcp-server.js";
 
@@ -37,12 +38,42 @@ test("initialize returns server info and capabilities", withSqlite, async () => 
   });
 });
 
-test("tools/list advertises memory_search, memory_get, and memory_save", withSqlite, async () => {
+test("tools/list advertises memory_search, memory_get, memory_save, and context_brief", withSqlite, async () => {
   await withMemory(async (memory, cwd) => {
     const response = await handleRequest(memory, cwd, JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }));
     const tools = (response?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name);
-    assert.deepEqual(tools.sort(), ["memory_get", "memory_save", "memory_search"]);
+    assert.deepEqual(tools.sort(), ["context_brief", "memory_get", "memory_save", "memory_search"]);
   });
+});
+
+test("tools/call context_brief returns a brief and works even without a memory database", withSqlite, async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "cag-mcp-brief-"));
+  const fakeRunner = {
+    async run() {
+      return { exitCode: 0, stdout: "main\n", stderr: "", durationMs: 1, timedOut: false };
+    },
+  };
+  const deps = { runner: fakeRunner, memoryConfig: { ...DEFAULT_CONFIG.memory, enabled: false } };
+  // memory === undefined simulates a Node < 22.5 runtime; context_brief must
+  // still answer while the DB-backed tools error out.
+  const response = await handleRequest(
+    undefined,
+    cwd,
+    JSON.stringify({ jsonrpc: "2.0", id: 30, method: "tools/call", params: { name: "context_brief", arguments: {} } }),
+    deps,
+  );
+  const brief = JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]?.text ?? "{}");
+  assert.match(brief.text, /## Context brief/);
+  assert.match(brief.text, /Checkpoint: none yet/);
+  assert.equal(brief.hasMemory, false);
+
+  const dbTool = await handleRequest(
+    undefined,
+    cwd,
+    JSON.stringify({ jsonrpc: "2.0", id: 31, method: "tools/call", params: { name: "memory_search", arguments: { query: "x" } } }),
+    deps,
+  );
+  assert.match(dbTool?.error?.message ?? "", /memory database is unavailable/);
 });
 
 test("tools/call memory_save writes a row, then memory_search finds it", withSqlite, async () => {

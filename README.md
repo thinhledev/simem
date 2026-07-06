@@ -244,8 +244,54 @@ All of the above is tunable under `memory` in `gateway.config.json` (see `gatewa
 - **Milestone-aware compaction.** When consolidation judges a checkpoint completed a distinct, nameable objective (not routine progress), it flags that checkpoint's summary as a milestone. Milestone summaries are annotated `[MILESTONE]` in rollup prompts with an instruction to weight them more heavily, so a shipped feature is less likely to get diluted into a same-size sentence alongside routine checkpoints during epoch/project digestion.
 - **Session-reuse: considered and cut.** Reusing a provider session across consolidation calls (to benefit from prompt caching) was on the table but didn't survive analysis: `cag`'s consolidation/rollup calls fire at switch cadence, which typically exceeds Claude's ~5-minute cache TTL, and `--resume`-style session reuse would replay a linearly growing history at full price on every cache miss anyway — for calls that are logically independent one-shots (`EXISTING ITEMS` is already re-supplied in-prompt each time). The ledger records `cache_read`/`cache_write` tokens and `session_id` so this can be revisited later with real data instead of guesswork.
 
+## Phase 4: auto-invocation and context-window survival
+
+**Design goal: agents call `cag` automatically, and context survives resets at zero LLM cost.** Phases 1–3 were on-demand — memory only updated on `cag switch/export/fork`, and agents only consulted it if a human ran a command. Phase 4 wires the host agents' own lifecycle hooks to `cag`, so memory works on every prompt and, critically, a compacted or cleared context window is rebuilt from local memory instead of re-explored token-by-token.
+
+### One-time setup
+
+```bash
+cag integrate                      # wire all four agents (or --provider claude|codex|cursor|antigravity)
+cag integrate --check              # report drift without writing (exit 1 on drift — CI-friendly)
+cag integrate --remove             # strip exactly what integrate added, nothing else
+```
+
+Everything `integrate` writes is an idempotent, marker-delimited file edit that preserves any existing user configuration:
+
+| Provider | Lifecycle hooks | MCP registration | Instructions |
+|---|---|---|---|
+| Claude Code | `.claude/settings.json` (SessionStart / PreCompact / UserPromptSubmit) | `.mcp.json` | `CLAUDE.local.md` block (plus the Phase-1 handoff import) |
+| Codex | `.codex/hooks.json` (same events; loads once the project is trusted) | `.codex/config.toml` marker block | `AGENTS.md` block |
+| Cursor | `.cursor/hooks.json` — **best-guess schema, flagged unverified** | `.cursor/mcp.json` | `.cursor/rules/cag-memory.mdc` |
+| Antigravity | none (`agy` has no hooks) | unverified | global `~/.gemini/GEMINI.md` block |
+
+### What the hooks do
+
+- **Pre-compact** (`cag hook pre-compact`): the moment before the host agent compacts its context window, the current session is checkpointed and indexed — token-free, synchronous, fast — and LLM consolidation is handed to a **detached background `cag` process** so compaction never waits on a model call. Nothing the agent knew is lost: the raw transcript is on disk and distills into durable memory shortly after.
+- **Session-start** (`cag hook session-start`): after a compaction, resume, or `/clear`, the hook injects `cag brief` — the latest objective and outcome, **live** git state, and the budgeted project-memory section. Deterministic file reads and SQL only, zero LLM calls. (On Claude Code, plain resume is suppressed because the `CLAUDE.local.md` import already loads the handoff there.)
+- **Every prompt** (`cag hook user-prompt-submit`, on by default): the top memory previews matching the submitted prompt are prepended, hard-capped at `memory.hooks.perPromptMaxChars` (600 chars default). Empty output when nothing matches — no noise. Disable with `memory.hooks.perPromptInjection: false`; each injection is recorded in the ledger (purpose `inject`, always $0 — it's char accounting, not an LLM call), so `cag memory spend --group-by purpose` shows exactly what this feature adds before you decide to keep it.
+
+Hooks always exit 0 and never block: a `cag` bug degrades to a missing injection, never a broken agent turn.
+
+### Mid-session revival (any agent, no hooks needed)
+
+```bash
+cag brief                          # latest objective/outcome + live git state + relevant memory
+cag brief --objective "invoice tax rules" --max-chars 2000
+```
+
+Also exposed as the `context_brief` MCP tool, so an agent that feels its context thinning can self-revive without re-reading the repository. The brief works even without `node:sqlite` (Node 20) — it degrades to checkpoint + git state.
+
+### Session discovery went four-for-four
+
+Phase 4 also taught `cag` to find Cursor sessions (`~/.cursor/projects/<slugified-cwd>/agent-transcripts/`, full transcript extraction) and Antigravity conversations (`~/.gemini/antigravity-cli/cache/last_conversations.json`, discovery-only — the conversation `.db` schema is undocumented, so transcripts stay empty until a future spike). `cag sessions` now lists all four providers.
+
+### Verifying a live integration
+
+In a scratch repo: `cag integrate --provider claude`, open Claude Code, work a bit, trigger `/compact`, then confirm (a) a fresh checkpoint appeared in `.cag/checkpoints/`, (b) the post-compaction context shows the injected brief, (c) `ps` briefly shows a background `cag memory consolidate-checkpoint` process, and (d) `cag memory spend` gained `inject`/`consolidate` rows. The same pass on Cursor doubles as verification of its unverified hooks schema.
+
 ## Phase boundary
 
-Phase 1 shipped file-backed checkpoints and lineage. Phase 2 shipped the persistent memory system above — SQLite index, FTS5/hybrid retrieval, and bounded recursive summarization — while keeping the Phase 1 handoff file format stable. Phase 3 added the token ledger, previews-by-default search, bounded prompt assembly, and milestone-aware compaction described above, without changing the HANDOFF.md format or the Phase 1/2 command surface (aside from the previews-by-default change to `cag memory search --json` and the MCP `memory_search` tool, both of which keep the old full-text shape behind `--full`/`full: true`).
+Phase 1 shipped file-backed checkpoints and lineage. Phase 2 shipped the persistent memory system above — SQLite index, FTS5/hybrid retrieval, and bounded recursive summarization — while keeping the Phase 1 handoff file format stable. Phase 3 added the token ledger, previews-by-default search, bounded prompt assembly, and milestone-aware compaction described above, without changing the HANDOFF.md format or the Phase 1/2 command surface (aside from the previews-by-default change to `cag memory search --json` and the MCP `memory_search` tool, both of which keep the old full-text shape behind `--full`/`full: true`). Phase 4 added `cag integrate`/`cag hook`/`cag brief` (agents call `cag` automatically; context survives compaction), Cursor and Antigravity session discovery, and the `context_brief` MCP tool; `package.json` engines dropped to `>=20` to match the graceful-degradation story that was already true in code.
 
 Provider integrations follow the official automation surfaces: [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive), [Claude Code CLI reference](https://docs.anthropic.com/en/docs/claude-code/cli-usage), and [Cursor headless CLI](https://docs.cursor.com/en/cli/headless). Antigravity's `agy` CLI (`agy --print`/`agy --prompt-interactive`) is not yet wired into `cag run`'s adapter/routing system and cannot be used as a `--from` source, since there is no local session discovery for it; it is currently reachable only through `cag switch`/`fork --surface interactive`.
