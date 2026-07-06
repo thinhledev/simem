@@ -5,6 +5,7 @@ import { DEFAULT_CONFIG, type MemoryConfig } from "../config.js";
 import { assembleContext } from "../memory/budget.js";
 import { openMemoryDb } from "../memory/db.js";
 import { indexCheckpointBestEffort } from "../memory/index-checkpoint.js";
+import { capText } from "../memory/text-cap.js";
 import type { CommandRunner } from "../process.js";
 import type { ProviderId } from "../types.js";
 import { extractTranscript } from "./sessions.js";
@@ -51,11 +52,21 @@ function formatTranscript(messages: TranscriptMessage[], session: SessionInfo): 
   return `# Extracted ${session.provider} conversation\n\nSession: ${session.id}\nWorkspace: ${session.cwd}\n\n${sections.join("\n\n---\n\n")}\n`;
 }
 
-function recentContext(messages: TranscriptMessage[], count = 8): string {
-  return messages
-    .slice(-count)
-    .map((message) => `### ${message.role === "user" ? "User" : "Assistant"}\n\n${message.text}`)
-    .join("\n\n");
+// `verbatimBudget` is only passed when memory is enabled: it caps this
+// section the same way the memory system caps everything else it touches,
+// so a handful of huge tool-output-heavy messages can't blow up every future
+// HANDOFF.md's first read. When memory is disabled, this stays fully
+// unbounded — the original Phase 1 behavior, byte-identical.
+function recentContext(messages: TranscriptMessage[], verbatimBudget: number | undefined, count = 8): string {
+  const recent = messages.slice(-count);
+  const blocks = (message: TranscriptMessage, text: string) =>
+    `### ${message.role === "user" ? "User" : "Assistant"}\n\n${text}`;
+  if (verbatimBudget === undefined) {
+    return recent.map((message) => blocks(message, message.text)).join("\n\n");
+  }
+  const perMessageCap = Math.max(200, Math.floor(verbatimBudget / Math.max(1, recent.length)));
+  const joined = recent.map((message) => blocks(message, capText(message.text, perMessageCap).text)).join("\n\n");
+  return capText(joined, verbatimBudget).text;
 }
 
 function latestText(messages: TranscriptMessage[], role: TranscriptMessage["role"]): string {
@@ -78,6 +89,7 @@ function formatHandoff(input: {
   note?: string;
   parentCheckpointId?: string;
   memorySection?: string;
+  verbatimBudget?: number;
 }): string {
   return `# Coding-agent handoff
 
@@ -116,7 +128,7 @@ ${input.recentCommits || "No commits available"}
 
 ## Recent conversation context
 
-${recentContext(input.messages)}
+${recentContext(input.messages, input.verbatimBudget)}
 ${input.memorySection ? `\n${input.memorySection}` : ""}`;
 }
 
@@ -212,11 +224,8 @@ export async function createCheckpoint(
     },
   };
 
-  const memorySection = await buildMemorySection(
-    cwd,
-    latestText(messages, "user"),
-    options.memoryConfig ?? DEFAULT_CONFIG.memory,
-  );
+  const memoryConfig = options.memoryConfig ?? DEFAULT_CONFIG.memory;
+  const memorySection = await buildMemorySection(cwd, latestText(messages, "user"), memoryConfig);
   const handoff = formatHandoff({
     id,
     createdAt,
@@ -229,6 +238,7 @@ export async function createCheckpoint(
     ...(options.note ? { note: options.note } : {}),
     ...(parentCheckpointId ? { parentCheckpointId } : {}),
     ...(memorySection ? { memorySection } : {}),
+    ...(memoryConfig.enabled ? { verbatimBudget: memoryConfig.budget.verbatimChars } : {}),
   });
   const transcript = formatTranscript(messages, session);
   const patch = `${workspace.diff}\n`;

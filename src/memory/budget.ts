@@ -2,6 +2,7 @@ import type { MemoryBudgetConfig, MemoryScoringConfig } from "../config.js";
 import type { MemoryDb } from "./db.js";
 import type { EmbeddingClient } from "./embeddings.js";
 import { search } from "./retrieval.js";
+import { capText, oneLine, type CapResult } from "./text-cap.js";
 
 export interface AssembledContext {
   /** The full "## Project memory" markdown block, or "" when there is nothing to show. */
@@ -9,26 +10,9 @@ export interface AssembledContext {
   truncated: boolean;
 }
 
-interface CapResult {
-  text: string;
-  truncated: boolean;
-}
-
-function capText(text: string, maxChars: number): CapResult {
-  if (text.length <= maxChars) return { text, truncated: false };
-  const slice = text.slice(0, maxChars);
-  const lastBreak = slice.lastIndexOf("\n");
-  const cut = lastBreak > maxChars * 0.6 ? slice.slice(0, lastBreak) : slice;
-  return { text: `${cut}…`, truncated: true };
-}
-
 // Per-item cap keeps one long raw message (e.g. a multi-paragraph transcript
 // hit) from consuming the whole section budget and crowding out other items.
 const MAX_BULLET_CHARS = 240;
-
-function oneLine(text: string): string {
-  return text.replaceAll(/\s+/g, " ").trim();
-}
 
 function buildBulletSection(lines: string[], maxChars: number): CapResult {
   const kept: string[] = [];

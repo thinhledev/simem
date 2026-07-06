@@ -8,7 +8,7 @@ import {
   type ConsolidationRunner,
 } from "../src/memory/consolidate.js";
 import { loadSqlite, openMemoryDb, type MemoryDb } from "../src/memory/db.js";
-import type { GatewayRunResult } from "../src/types.js";
+import type { GatewayRunResult, RunRequest } from "../src/types.js";
 
 const sqlite = await loadSqlite();
 const withSqlite = { skip: sqlite ? false : "node:sqlite unavailable on this Node runtime" };
@@ -38,6 +38,17 @@ function runnerReturning(results: GatewayRunResult[]): ConsolidationRunner & { c
       fake.calls += 1;
       if (!result) throw new Error("no canned result");
       return result;
+    },
+  };
+  return fake;
+}
+
+function capturingRunner(output: string): ConsolidationRunner & { prompts: string[] } {
+  const fake = {
+    prompts: [] as string[],
+    async run(request: RunRequest): Promise<GatewayRunResult> {
+      fake.prompts.push(request.prompt);
+      return okResult(output);
     },
   };
   return fake;
@@ -77,6 +88,15 @@ test("parses fenced and noisy JSON output tolerantly", () => {
   );
   assert.equal(partial?.items.length, 1);
   assert.equal(partial?.items[0]?.importance, 9);
+});
+
+test("parses milestone flag, defaulting to false when absent or not exactly true", () => {
+  const flagged = parseConsolidationOutput('{"summary":"s","milestone":true,"items":[]}', new Set());
+  assert.equal(flagged?.milestone, true);
+  const absent = parseConsolidationOutput('{"summary":"s","items":[]}', new Set());
+  assert.equal(absent?.milestone, false);
+  const wrongType = parseConsolidationOutput('{"summary":"s","milestone":"true","items":[]}', new Set());
+  assert.equal(wrongType?.milestone, false);
 });
 
 test("writes summary and items, applies supersession, marks checkpoint done", withSqlite, async () => {
@@ -135,6 +155,32 @@ test("writes summary and items, applies supersession, marks checkpoint done", wi
   }
 });
 
+test("persists the milestone flag onto the checkpoint's summary row", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedCheckpoint(memory, "cp-milestone");
+    const runner = runnerReturning([
+      okResult(JSON.stringify({ summary: "Shipped the v2 auth flow.", milestone: true, items: [] })),
+    ]);
+    await consolidateCheckpoint(memory, runner, "cp-milestone", memoryConfig);
+    const row = memory.db.prepare("SELECT milestone FROM summaries WHERE covers_from = 'cp-milestone'").get() as {
+      milestone: number;
+    };
+    assert.equal(row.milestone, 1);
+
+    seedCheckpoint(memory, "cp-routine");
+    const routineRunner = runnerReturning([okResult('{"summary":"Routine progress.","items":[]}')]);
+    await consolidateCheckpoint(memory, routineRunner, "cp-routine", memoryConfig);
+    const routineRow = memory.db.prepare("SELECT milestone FROM summaries WHERE covers_from = 'cp-routine'").get() as {
+      milestone: number;
+    };
+    assert.equal(routineRow.milestone, 0);
+  } finally {
+    memory.close();
+  }
+});
+
 test("queues on no ready provider and drains later without duplicating", withSqlite, async () => {
   const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
   assert.ok(memory);
@@ -153,6 +199,64 @@ test("queues on no ready provider and drains later without duplicating", withSql
     assert.equal(drained[0]?.status, "done");
     const after = memory.db.prepare("SELECT COUNT(*) AS n FROM consolidation_queue").get() as { n: number };
     assert.equal(after.n, 0);
+  } finally {
+    memory.close();
+  }
+});
+
+test("caps EXISTING ITEMS to consolidationExistingItemsLimit and notes how many were omitted", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedCheckpoint(memory, "cp-cap");
+    const insertItem = memory.db.prepare(
+      "INSERT INTO memory_items (kind, text, importance, status, created_at, last_reinforced_at) " +
+        "VALUES ('semantic', ?, ?, 'active', '2026-06-01T00:00:00Z', '2026-06-01T00:00:00Z')",
+    );
+    for (let i = 0; i < 120; i += 1) insertItem.run(`standing fact number ${i}`, (i % 10) + 1);
+
+    const smallLimitConfig: MemoryConfig = { ...memoryConfig, consolidationExistingItemsLimit: 50 };
+    const runner = capturingRunner('{"summary":"s","items":[]}');
+    await consolidateCheckpoint(memory, runner, "cp-cap", smallLimitConfig);
+
+    const prompt = runner.prompts[0] ?? "";
+    const itemLines = prompt.split("\n").filter((line) => /^\d+\. \[semantic/.test(line));
+    assert.equal(itemLines.length, 50);
+    assert.match(prompt, /\(\+70 older lower-importance items omitted; use memory_search to find them\)/);
+  } finally {
+    memory.close();
+  }
+});
+
+test("does not print an omitted-items note when everything fits under the cap", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedCheckpoint(memory, "cp-nocap");
+    memory.db
+      .prepare(
+        "INSERT INTO memory_items (kind, text, importance, status, created_at, last_reinforced_at) " +
+          "VALUES ('semantic', 'a small standing fact', 5, 'active', '2026-06-01T00:00:00Z', '2026-06-01T00:00:00Z')",
+      )
+      .run();
+    const runner = capturingRunner('{"summary":"s","items":[]}');
+    await consolidateCheckpoint(memory, runner, "cp-nocap", memoryConfig);
+    assert.doesNotMatch(runner.prompts[0] ?? "", /omitted/);
+  } finally {
+    memory.close();
+  }
+});
+
+test("consolidation prompt includes the milestone field and rule", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedCheckpoint(memory, "cp-prompt");
+    const runner = capturingRunner('{"summary":"s","milestone":false,"items":[]}');
+    await consolidateCheckpoint(memory, runner, "cp-prompt", memoryConfig);
+    const prompt = runner.prompts[0] ?? "";
+    assert.match(prompt, /"milestone": <true \| false>/);
+    assert.match(prompt, /distinct, nameable objective/);
   } finally {
     memory.close();
   }

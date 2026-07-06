@@ -45,6 +45,10 @@ export interface MemoryConfig {
   consolidationTokenCapChars: number;
   consolidationTimeoutMs: number;
   queueDrainLimit: number;
+  /** Cap on how many active memory_items are re-sent in every consolidation prompt. */
+  consolidationExistingItemsLimit: number;
+  /** Per-summary character cap applied inside epoch/project rollup prompts. */
+  rollupSummaryCharCap: number;
   budget: MemoryBudgetConfig;
   scoring: MemoryScoringConfig;
   embeddings: MemoryEmbeddingsConfig;
@@ -84,6 +88,8 @@ export const DEFAULT_CONFIG: GatewayConfig = {
     consolidationTokenCapChars: 16_000,
     consolidationTimeoutMs: 30_000,
     queueDrainLimit: 3,
+    consolidationExistingItemsLimit: 80,
+    rollupSummaryCharCap: 1_200,
     budget: {
       totalChars: 12_000,
       verbatimChars: 6_000,

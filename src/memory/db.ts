@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { CURRENT_SCHEMA_VERSION, SCHEMA_CORE, SCHEMA_FTS } from "./schema.js";
+import { CURRENT_SCHEMA_VERSION, SCHEMA_CORE, SCHEMA_FTS, SCHEMA_V2, SCHEMA_V3 } from "./schema.js";
 
 export interface SqliteModule {
   DatabaseSync: new (path: string) => DatabaseSync;
@@ -51,6 +51,12 @@ const MIGRATIONS: Array<(db: DatabaseSync, fts: boolean) => void> = [
     db.exec(SCHEMA_CORE);
     if (fts) db.exec(SCHEMA_FTS);
   },
+  (db) => {
+    db.exec(SCHEMA_V2);
+  },
+  (db) => {
+    db.exec(SCHEMA_V3);
+  },
 ];
 
 function probeFts(db: DatabaseSync): boolean {
@@ -79,6 +85,7 @@ function readSchemaVersion(db: DatabaseSync): number {
 // canonical checkpoint files via reindex, so this is safe by design.
 export function resetMemoryDb(memory: MemoryDb): void {
   const drops = [
+    "DROP TABLE IF EXISTS llm_calls",
     "DROP TABLE IF EXISTS consolidation_queue",
     "DROP TABLE IF EXISTS messages_fts",
     "DROP TABLE IF EXISTS memory_items_fts",

@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 // Core relational tables. Raw checkpoint files on disk stay canonical; every
 // row here is derivable by re-running `cag memory reindex`.
@@ -129,4 +129,38 @@ CREATE TRIGGER IF NOT EXISTS summaries_au AFTER UPDATE OF text ON summaries BEGI
   INSERT INTO summaries_fts(summaries_fts, rowid, text) VALUES ('delete', old.id, old.text);
   INSERT INTO summaries_fts(rowid, text) VALUES (new.id, new.text);
 END;
+`;
+
+// v2: token/cost ledger. Every orchestrator-mediated LLM call is recorded so
+// spend can be attributed by purpose/provider/day. prompt_chars/output_chars
+// are always exact; token columns are NULL when the provider reported no
+// usage, in which case `estimated = 1` marks chars/4 estimates downstream.
+export const SCHEMA_V2 = `
+CREATE TABLE IF NOT EXISTS llm_calls (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  purpose            TEXT NOT NULL,
+  provider           TEXT NOT NULL,
+  checkpoint_id      TEXT REFERENCES checkpoints(id),
+  session_id         TEXT,
+  prompt_chars       INTEGER NOT NULL,
+  output_chars       INTEGER NOT NULL,
+  input_tokens       INTEGER,
+  output_tokens      INTEGER,
+  cache_read_tokens  INTEGER,
+  cache_write_tokens INTEGER,
+  cost_usd           REAL,
+  estimated          INTEGER NOT NULL DEFAULT 0,
+  duration_ms        INTEGER NOT NULL,
+  ok                 INTEGER NOT NULL,
+  created_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_purpose_date ON llm_calls(purpose, created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_provider_date ON llm_calls(provider, created_at);
+`;
+
+// v3: lets consolidation flag a checkpoint's summary as a milestone — a
+// distinct, nameable completed objective — so rollups can weight it instead
+// of treating every checkpoint as equally routine.
+export const SCHEMA_V3 = `
+ALTER TABLE summaries ADD COLUMN milestone INTEGER NOT NULL DEFAULT 0;
 `;

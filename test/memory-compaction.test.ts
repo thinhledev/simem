@@ -4,7 +4,7 @@ import { DEFAULT_CONFIG, type MemoryConfig } from "../src/config.js";
 import { runCompaction } from "../src/memory/compaction.js";
 import type { ConsolidationRunner } from "../src/memory/consolidate.js";
 import { loadSqlite, openMemoryDb, type MemoryDb } from "../src/memory/db.js";
-import type { GatewayRunResult } from "../src/types.js";
+import type { GatewayRunResult, RunRequest } from "../src/types.js";
 
 const sqlite = await loadSqlite();
 const withSqlite = { skip: sqlite ? false : "node:sqlite unavailable on this Node runtime" };
@@ -32,11 +32,29 @@ function runnerEcho(text: string): ConsolidationRunner & { calls: number } {
   return fake;
 }
 
+function capturingRunnerEcho(text: string): ConsolidationRunner & { prompts: string[] } {
+  const fake = {
+    prompts: [] as string[],
+    async run(request: RunRequest): Promise<GatewayRunResult> {
+      fake.prompts.push(request.prompt);
+      return {
+        runId: "r",
+        ok: true,
+        attempts: [],
+        result: { provider: "claude", ok: true, output: text, events: [], durationMs: 1, exitCode: 0 },
+      };
+    },
+  };
+  return fake;
+}
+
 function seedCheckpointWithSummary(
   memory: MemoryDb,
   id: string,
   createdAt: string,
   importantText?: string,
+  summaryText?: string,
+  milestone = false,
 ): void {
   memory.db
     .prepare(
@@ -46,9 +64,9 @@ function seedCheckpointWithSummary(
     .run(id, createdAt);
   memory.db
     .prepare(
-      "INSERT INTO summaries (level, text, covers_from, covers_to, checkpoint_count, created_at) VALUES (1, ?, ?, ?, 1, ?)",
+      "INSERT INTO summaries (level, text, covers_from, covers_to, checkpoint_count, created_at, milestone) VALUES (1, ?, ?, ?, 1, ?, ?)",
     )
-    .run(`summary for ${id}`, id, id, createdAt);
+    .run(summaryText ?? `summary for ${id}`, id, id, createdAt, milestone ? 1 : 0);
   if (importantText) {
     memory.db
       .prepare(
@@ -123,6 +141,76 @@ test("epoch digests roll up into a project digest once enough epochs accumulate"
       n: number;
     };
     assert.equal(l2Active.n, 0, "both epoch digests should be folded into the project digest");
+  } finally {
+    memory.close();
+  }
+});
+
+test("caps each summary's text in the rollup prompt to rollupSummaryCharCap", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    const longSummary = "detail ".repeat(500); // ~3500 chars, well over a 100-char test cap
+    for (let i = 1; i <= 5; i += 1) {
+      seedCheckpointWithSummary(memory, `cp-${i}`, `2026-07-0${i}T00:00:00Z`, undefined, longSummary);
+    }
+    const tightConfig: MemoryConfig = { ...smallConfig, rollupSummaryCharCap: 100 };
+    const runner = capturingRunnerEcho("digest");
+    await runCompaction(memory, runner, tightConfig);
+
+    const prompt = runner.prompts[0] ?? "";
+    const blocks = prompt.split(/--- \d+ /).slice(1);
+    assert.equal(blocks.length, 3, "epochSize=3 summaries should appear in the prompt");
+    for (const block of blocks) {
+      const text = block.split(" ---\n")[1]?.trim() ?? "";
+      assert.ok(text.length <= 101, `summary block too long: ${text.length}`);
+    }
+  } finally {
+    memory.close();
+  }
+});
+
+test("the rollup instruction prefix is byte-identical across epoch and project rollups", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    for (let i = 1; i <= 8; i += 1) {
+      seedCheckpointWithSummary(memory, `cp-${i}`, `2026-07-${String(i).padStart(2, "0")}T00:00:00Z`);
+    }
+    const runner = capturingRunnerEcho("digest");
+    await runCompaction(memory, runner, smallConfig);
+
+    assert.ok(runner.prompts.length >= 3, "expect 2 epoch rollups + 1 project rollup");
+    const stableLine = "You are compacting the long-term memory of a coding project. Merge the following summaries into ONE digest.";
+    for (const prompt of runner.prompts) {
+      assert.ok(prompt.startsWith(stableLine), "every rollup prompt must share the same stable opening");
+    }
+    // The variable clause (count/label/word cap) differs between epoch and project rollups.
+    assert.match(runner.prompts[0] ?? "", /Merging \d+ chronological checkpoint summaries/);
+    assert.match(runner.prompts.at(-1) ?? "", /Merging \d+ epoch digests/);
+  } finally {
+    memory.close();
+  }
+});
+
+test("annotates milestone summaries with [MILESTONE] in the rollup prompt", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    // verbatimCheckpoints=2 keeps the newest 2 out of compaction; need 5
+    // checkpoints so exactly epochSize=3 are eligible and a rollup fires.
+    seedCheckpointWithSummary(memory, "cp-1", "2026-07-01T00:00:00Z", undefined, "Shipped the new auth flow.", true);
+    seedCheckpointWithSummary(memory, "cp-2", "2026-07-02T00:00:00Z", undefined, "Routine progress on tests.");
+    seedCheckpointWithSummary(memory, "cp-3", "2026-07-03T00:00:00Z", undefined, "More routine progress.");
+    seedCheckpointWithSummary(memory, "cp-4", "2026-07-04T00:00:00Z", undefined, "Verbatim window filler A.");
+    seedCheckpointWithSummary(memory, "cp-5", "2026-07-05T00:00:00Z", undefined, "Verbatim window filler B.");
+    const runner = capturingRunnerEcho("digest");
+    await runCompaction(memory, runner, smallConfig);
+
+    const prompt = runner.prompts[0] ?? "";
+    assert.match(prompt, /\[MILESTONE\] Shipped the new auth flow\./);
+    assert.doesNotMatch(prompt, /\[MILESTONE\] Routine progress/);
+    assert.match(prompt, /weight them more heavily/);
   } finally {
     memory.close();
   }

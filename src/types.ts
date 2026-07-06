@@ -82,6 +82,17 @@ export interface NormalizedEvent {
   raw?: unknown;
 }
 
+// Token/cost usage as reported by the provider CLI's own stream output.
+// Every field is optional: an absent field means the provider did not report
+// it (common for Cursor), and callers fall back to character-based estimates.
+export interface ProviderUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  costUsd?: number;
+}
+
 export interface ProviderRunResult {
   provider: ProviderId;
   ok: boolean;
@@ -92,6 +103,7 @@ export interface ProviderRunResult {
   sessionId?: string;
   failure?: FailureKind;
   error?: string;
+  usage?: ProviderUsage;
 }
 
 export interface GatewayAttempt {

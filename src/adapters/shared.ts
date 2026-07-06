@@ -1,5 +1,5 @@
 import type { CommandRunner } from "../process.js";
-import type { CredentialStatus, ProviderHealth, ProviderId } from "../types.js";
+import type { CredentialStatus, ProviderHealth, ProviderId, ProviderUsage } from "../types.js";
 
 export async function probeVersion(
   runner: CommandRunner,
@@ -50,4 +50,43 @@ export function findToolName(raw: Record<string, unknown>): string | undefined {
   const toolCall = raw.tool_call;
   if (!toolCall || typeof toolCall !== "object") return undefined;
   return Object.keys(toolCall).at(0);
+}
+
+function firstNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+// Extracts token usage from a provider event, tolerating each CLI's field
+// spellings. Claude's `result` event carries usage.input_tokens/output_tokens/
+// cache_read_input_tokens/cache_creation_input_tokens plus a top-level
+// total_cost_usd (verified against a live stream-json capture); Codex's
+// `turn.completed` carries usage.input_tokens and friends; Cursor often
+// reports nothing — an absent field simply stays undefined, and a fully
+// empty extraction returns undefined rather than {}.
+export function extractUsage(raw: Record<string, unknown>): ProviderUsage | undefined {
+  const usageRecord =
+    raw.usage && typeof raw.usage === "object" && !Array.isArray(raw.usage)
+      ? (raw.usage as Record<string, unknown>)
+      : undefined;
+  const inputTokens = usageRecord ? firstNumber(usageRecord, ["input_tokens", "prompt_tokens"]) : undefined;
+  const outputTokens = usageRecord ? firstNumber(usageRecord, ["output_tokens", "completion_tokens"]) : undefined;
+  const cacheReadTokens = usageRecord
+    ? firstNumber(usageRecord, ["cache_read_input_tokens", "cached_input_tokens", "cache_read_tokens"])
+    : undefined;
+  const cacheCreationTokens = usageRecord
+    ? firstNumber(usageRecord, ["cache_creation_input_tokens", "cache_write_tokens"])
+    : undefined;
+  const costUsd = firstNumber(raw, ["total_cost_usd", "cost_usd"]);
+  const usage: ProviderUsage = {
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+    ...(costUsd !== undefined ? { costUsd } : {}),
+  };
+  return Object.keys(usage).length > 0 ? usage : undefined;
 }

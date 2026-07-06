@@ -2,6 +2,7 @@ import type { MemoryConfig } from "../config.js";
 import type { GatewayRunResult, RunRequest } from "../types.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
+import { recordGatewayAttempts } from "./ledger.js";
 import {
   MEMORY_CATEGORIES,
   MEMORY_KINDS,
@@ -24,25 +25,41 @@ interface ActiveItemRow {
   importance: number;
 }
 
-function activeItems(memory: MemoryDb): ActiveItemRow[] {
-  return memory.db
+interface ActiveItems {
+  items: ActiveItemRow[];
+  totalCount: number;
+}
+
+// Ordered importance-first: when the cap truncates, the highest-value
+// standing facts stay in the prompt and only the least important ones are
+// dropped (and pointed at via memory_search). This ordering has no bearing
+// on provider-side prompt caching — each consolidation call is a fresh
+// one-shot CLI invocation, so there is no cross-call prefix to preserve.
+function activeItems(memory: MemoryDb, limit: number): ActiveItems {
+  const items = memory.db
     .prepare(
-      "SELECT id, kind, category, text, importance FROM memory_items WHERE status = 'active' ORDER BY importance DESC, id",
+      "SELECT id, kind, category, text, importance FROM memory_items WHERE status = 'active' ORDER BY importance DESC, id LIMIT ?",
     )
-    .all() as unknown as ActiveItemRow[];
+    .all(limit) as unknown as ActiveItemRow[];
+  const totalCount = (
+    memory.db.prepare("SELECT COUNT(*) AS n FROM memory_items WHERE status = 'active'").get() as { n: number }
+  ).n;
+  return { items, totalCount };
 }
 
 export function buildConsolidationPrompt(input: {
   checkpointId: string;
   createdAt: string;
   existingItems: ActiveItemRow[];
+  totalExistingItems?: number;
   messages: Array<{ role: string; text: string }>;
   capChars: number;
 }): string {
+  const omitted = (input.totalExistingItems ?? input.existingItems.length) - input.existingItems.length;
   const existing = input.existingItems.length
     ? input.existingItems
         .map((item) => `${item.id}. [${item.kind}${item.category ? `/${item.category}` : ""}, importance ${item.importance}] ${item.text}`)
-        .join("\n")
+        .join("\n") + (omitted > 0 ? `\n(+${omitted} older lower-importance items omitted; use memory_search to find them)` : "")
     : "(none)";
   // Keep the newest messages; they matter most for extracting new facts.
   const parts: string[] = [];
@@ -60,6 +77,7 @@ Respond with ONLY a JSON object (no prose, no markdown fences) of this exact sha
 
 {
   "summary": "<80-160 word summary of what happened in this checkpoint>",
+  "milestone": <true | false>,
   "items": [
     {
       "kind": "semantic" | "episodic" | "procedural",
@@ -78,6 +96,7 @@ Rules:
 - importance 1-3: routine detail — omit such items entirely.
 - Set "supersedes" when a new item corrects or replaces an existing one; never duplicate.
 - If nothing new and important happened, return "items": [].
+- Set "milestone": true only if this checkpoint completed a distinct, nameable objective (e.g. "shipped X", "fixed Y bug") — not routine or partial progress. Otherwise false.
 
 EXISTING ITEMS (active):
 ${existing}
@@ -125,7 +144,8 @@ export function parseConsolidationOutput(raw: string, existingIds: Set<number>):
       const items = record.items
         .map((item) => asConsolidationItem(item, existingIds))
         .filter((item): item is ConsolidationItem => Boolean(item));
-      return { summary: record.summary.trim(), items };
+      const milestone = record.milestone === true;
+      return { summary: record.summary.trim(), items, milestone };
     } catch {
       // Try the next extraction strategy.
     }
@@ -156,9 +176,9 @@ function writeConsolidation(
     .run(checkpointId, checkpointId);
   memory.db
     .prepare(
-      "INSERT INTO summaries (level, text, covers_from, covers_to, checkpoint_count, created_at) VALUES (1, ?, ?, ?, 1, ?)",
+      "INSERT INTO summaries (level, text, covers_from, covers_to, checkpoint_count, created_at, milestone) VALUES (1, ?, ?, ?, 1, ?, ?)",
     )
-    .run(output.summary, checkpointId, checkpointId, createdAt);
+    .run(output.summary, checkpointId, checkpointId, createdAt, output.milestone ? 1 : 0);
   const insertItem = memory.db.prepare(
     `INSERT INTO memory_items (kind, category, text, importance, status, source_checkpoint_id, created_at, last_reinforced_at)
      VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
@@ -203,12 +223,13 @@ export async function consolidateCheckpoint(
   const messages = memory.db
     .prepare("SELECT role, text FROM messages WHERE checkpoint_id = ? ORDER BY seq")
     .all(checkpointId) as Array<{ role: string; text: string }>;
-  const existing = activeItems(memory);
-  const existingIds = new Set(existing.map((item) => item.id));
+  const existing = activeItems(memory, config.consolidationExistingItemsLimit);
+  const existingIds = new Set(existing.items.map((item) => item.id));
   const prompt = buildConsolidationPrompt({
     checkpointId,
     createdAt: checkpoint.created_at,
-    existingItems: existing,
+    existingItems: existing.items,
+    totalExistingItems: existing.totalCount,
     messages,
     capChars: config.consolidationTokenCapChars,
   });
@@ -226,6 +247,7 @@ export async function consolidateCheckpoint(
     queueCheckpoint(memory, checkpointId, detail);
     return { status: "queued", checkpointId, itemsWritten: 0, detail };
   }
+  recordGatewayAttempts(memory, "consolidate", checkpointId, prompt.length, result);
   if (!result.ok || !result.result) {
     const detail =
       result.attempts.length === 0

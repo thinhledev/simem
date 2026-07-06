@@ -81,6 +81,8 @@ export interface ConsolidationItem {
 export interface ConsolidationOutput {
   summary: string;
   items: ConsolidationItem[];
+  /** True when the model judges this checkpoint completed a distinct, nameable objective. */
+  milestone: boolean;
 }
 
 export type ConsolidationStatus = "done" | "queued" | "skipped" | "disabled";

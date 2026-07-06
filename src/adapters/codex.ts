@@ -7,10 +7,11 @@ import type {
   ProviderCapabilities,
   ProviderHealth,
   ProviderRunResult,
+  ProviderUsage,
   RunRequest,
 } from "../types.js";
 import { BaseAdapter } from "./adapter.js";
-import { makeHealth, probeVersion } from "./shared.js";
+import { extractUsage, makeHealth, probeVersion } from "./shared.js";
 
 export class CodexAdapter extends BaseAdapter {
   readonly id = "codex" as const;
@@ -84,6 +85,7 @@ export class CodexAdapter extends BaseAdapter {
     else args.push(request.prompt);
 
     let sessionId: string | undefined;
+    let usage: ProviderUsage | undefined;
     const messages: string[] = [];
     const env = { ...process.env };
     if (!env.CODEX_API_KEY && env.OPENAI_API_KEY) env.CODEX_API_KEY = env.OPENAI_API_KEY;
@@ -98,6 +100,10 @@ export class CodexAdapter extends BaseAdapter {
         if (type === "thread.started" && typeof raw.thread_id === "string") {
           sessionId = raw.thread_id;
           emit({ type: "session.started", sessionId, raw });
+          return;
+        }
+        if (type === "turn.completed") {
+          usage = extractUsage(raw) ?? usage;
           return;
         }
         const item = raw.item && typeof raw.item === "object" ? (raw.item as Record<string, unknown>) : undefined;
@@ -137,6 +143,7 @@ export class CodexAdapter extends BaseAdapter {
         durationMs: result.durationMs,
         exitCode: result.exitCode,
         ...(sessionId ? { sessionId } : {}),
+        ...(usage ? { usage } : {}),
       };
     }
 
@@ -153,6 +160,7 @@ export class CodexAdapter extends BaseAdapter {
       failure,
       error,
       ...(sessionId ? { sessionId } : {}),
+      ...(usage ? { usage } : {}),
     };
   }
 }

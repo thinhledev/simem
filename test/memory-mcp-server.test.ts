@@ -73,8 +73,60 @@ test("tools/call memory_save writes a row, then memory_search finds it", withSql
         params: { name: "memory_search", arguments: { query: "signing key maintenance window" } },
       }),
     );
-    const hits = JSON.parse((search?.result as { content: Array<{ text: string }> }).content[0]?.text ?? "[]");
-    assert.ok(hits.some((hit: { text: string }) => hit.text.includes("signing key")));
+    const payload = JSON.parse((search?.result as { content: Array<{ text: string }> }).content[0]?.text ?? "{}");
+    assert.ok(Array.isArray(payload.hits));
+    assert.equal(typeof payload.hint, "string");
+    assert.ok(payload.hits.some((hit: { preview: string }) => hit.preview.includes("signing key")));
+    assert.equal(payload.hits[0]?.text, undefined, "preview mode must not include raw text");
+  });
+});
+
+test("tools/call memory_search returns full RetrievalHit[] unchanged when full: true is set", withSqlite, async () => {
+  await withMemory(async (memory, cwd) => {
+    memory.db
+      .prepare(
+        "INSERT INTO memory_items (kind, text, importance, status, created_at, last_reinforced_at) " +
+          "VALUES ('semantic', ?, 8, 'active', '2026-07-03T00:00:00Z', '2026-07-03T00:00:00Z')",
+      )
+      .run("Full text mode should return this verbatim without truncation.");
+    const response = await handleRequest(
+      memory,
+      cwd,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 10,
+        method: "tools/call",
+        params: { name: "memory_search", arguments: { query: "full text mode", full: true } },
+      }),
+    );
+    const hits = JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]?.text ?? "[]");
+    assert.ok(Array.isArray(hits));
+    assert.equal(hits[0]?.text, "Full text mode should return this verbatim without truncation.");
+  });
+});
+
+test("tools/call memory_search caps the envelope size and marks it truncated when many previews still add up", withSqlite, async () => {
+  await withMemory(async (memory, cwd) => {
+    const insert = memory.db.prepare(
+      "INSERT INTO memory_items (kind, text, importance, status, created_at, last_reinforced_at) " +
+        "VALUES ('semantic', ?, 5, 'active', '2026-07-03T00:00:00Z', '2026-07-03T00:00:00Z')",
+    );
+    for (let i = 0; i < 50; i += 1) {
+      insert.run(`Envelope size guard candidate number ${i} discussing the migration rollout plan in detail.`);
+    }
+    const response = await handleRequest(
+      memory,
+      cwd,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 11,
+        method: "tools/call",
+        params: { name: "memory_search", arguments: { query: "migration rollout plan", limit: 50 } },
+      }),
+    );
+    const payload = JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]?.text ?? "{}");
+    assert.equal(payload.truncated, true);
+    assert.ok(JSON.stringify(payload.hits).length <= 8_000);
   });
 });
 

@@ -32,18 +32,19 @@ function seedItem(
   memory: MemoryDb,
   text: string,
   importance: number,
-  options: { kind?: string; status?: string; reinforcedAt?: string } = {},
+  options: { kind?: string; status?: string; reinforcedAt?: string; category?: string; createdAt?: string } = {},
 ): number {
   const result = memory.db
     .prepare(
-      "INSERT INTO memory_items (kind, text, importance, status, created_at, last_reinforced_at) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO memory_items (kind, category, text, importance, status, created_at, last_reinforced_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .run(
       options.kind ?? "semantic",
+      options.category ?? null,
       text,
       importance,
       options.status ?? "active",
-      "2026-07-01T00:00:00Z",
+      options.createdAt ?? "2026-07-01T00:00:00Z",
       options.reinforcedAt ?? "2026-07-01T00:00:00Z",
     );
   return Number(result.lastInsertRowid);
@@ -96,6 +97,51 @@ test("superseded and archived items are excluded; kind filter narrows results", 
     const episodic = await search(memory, "caching", { kind: "episodic", now: "2026-07-02T00:00:00Z" });
     assert.equal(episodic.length, 1);
     assert.match(episodic[0]?.text ?? "", /incident/);
+  } finally {
+    memory.close();
+  }
+});
+
+test("category and minImportance filters are pushed into SQL, not applied client-side", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedItem(memory, "we decided to freeze the api surface for the migration", 9, { category: "decision" });
+    seedItem(memory, "prefer tabs for the migration config files", 3, { category: "preference" });
+    seedItem(memory, "the migration touched twelve files in total", 5, { category: "fact" });
+
+    const byCategory = await search(memory, "migration", { category: "decision", now: "2026-07-02T00:00:00Z" });
+    assert.equal(byCategory.length, 1);
+    assert.match(byCategory[0]?.text ?? "", /freeze the api surface/);
+
+    const byImportance = await search(memory, "migration", { minImportance: 5, now: "2026-07-02T00:00:00Z" });
+    assert.ok(byImportance.every((hit) => (hit.importance ?? 0) >= 5));
+    assert.equal(byImportance.some((hit) => hit.text.includes("prefer tabs")), false);
+  } finally {
+    memory.close();
+  }
+});
+
+test("since/until restrict results to a created_at date range", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedItem(memory, "early rollout decision about the payments migration", 8, { createdAt: "2026-01-01T00:00:00Z" });
+    seedItem(memory, "later rollout decision about the payments migration", 8, { createdAt: "2026-06-01T00:00:00Z" });
+
+    const recentOnly = await search(memory, "payments migration", {
+      since: "2026-03-01T00:00:00Z",
+      now: "2026-07-02T00:00:00Z",
+    });
+    assert.equal(recentOnly.length, 1);
+    assert.match(recentOnly[0]?.text ?? "", /later rollout/);
+
+    const oldOnly = await search(memory, "payments migration", {
+      until: "2026-03-01T00:00:00Z",
+      now: "2026-07-02T00:00:00Z",
+    });
+    assert.equal(oldOnly.length, 1);
+    assert.match(oldOnly[0]?.text ?? "", /early rollout/);
   } finally {
     memory.close();
   }

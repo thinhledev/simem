@@ -118,3 +118,51 @@ test("HANDOFF.md gains an additive Project memory section only when memory is en
   const withoutMemory = await readFile(disabled.handoffPath, "utf8");
   assert.doesNotMatch(withoutMemory, /## Project memory/);
 });
+
+test("recent conversation context is capped only when memory is enabled; fully uncapped (Phase 1) when disabled", withSqlite, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "cag-checkpoint-verbatim-"));
+  const sessionPath = join(workspace, "session.jsonl");
+  const hugeMessage = "x".repeat(20_000);
+  await writeFile(
+    sessionPath,
+    [
+      { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Start the huge task" }] } },
+      { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: hugeMessage }] } },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join("\n"),
+  );
+  const session: SessionInfo = {
+    provider: "codex",
+    id: "codex-huge",
+    path: sessionPath,
+    cwd: workspace,
+    modifiedAt: new Date().toISOString(),
+  };
+
+  // "Latest agent outcome" always shows the last assistant message in full
+  // regardless of memory config (only "Recent conversation context" is
+  // budgeted), so isolate that section before checking for the huge message.
+  function recentContextSection(handoff: string): string {
+    return handoff.split("## Recent conversation context")[1] ?? "";
+  }
+
+  const disabled = await createCheckpoint(new GitRunner(), session, {
+    mode: "export",
+    memoryConfig: { ...DEFAULT_CONFIG.memory, enabled: false },
+  });
+  const withoutMemory = await readFile(disabled.handoffPath, "utf8");
+  assert.ok(
+    recentContextSection(withoutMemory).includes(hugeMessage),
+    "disabled: recent context must stay fully uncapped (Phase 1)",
+  );
+
+  const enabled = await createCheckpoint(new GitRunner(), session, {
+    mode: "export",
+    memoryConfig: { ...DEFAULT_CONFIG.memory, enabled: true },
+  });
+  const withMemory = await readFile(enabled.handoffPath, "utf8");
+  const enabledRecentContext = recentContextSection(withMemory);
+  assert.equal(enabledRecentContext.includes(hugeMessage), false, "enabled: recent context must be capped by verbatimChars");
+  assert.match(enabledRecentContext, /…/);
+});

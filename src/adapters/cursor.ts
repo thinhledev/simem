@@ -7,10 +7,11 @@ import type {
   ProviderCapabilities,
   ProviderHealth,
   ProviderRunResult,
+  ProviderUsage,
   RunRequest,
 } from "../types.js";
 import { BaseAdapter } from "./adapter.js";
-import { findToolName, getTextContent, makeHealth, probeVersion } from "./shared.js";
+import { extractUsage, findToolName, getTextContent, makeHealth, probeVersion } from "./shared.js";
 
 export class CursorAdapter extends BaseAdapter {
   readonly id = "cursor" as const;
@@ -63,6 +64,7 @@ export class CursorAdapter extends BaseAdapter {
 
     let sessionId: string | undefined;
     let finalOutput = "";
+    let usage: ProviderUsage | undefined;
     const deltas: string[] = [];
     const result = await this.runner.run(
       { command: this.command, args, cwd: request.cwd, env: process.env, timeoutMs: request.timeoutMs },
@@ -89,8 +91,9 @@ export class CursorAdapter extends BaseAdapter {
             ...(sessionId ? { sessionId } : {}),
             raw,
           });
-        } else if (type === "result" && typeof raw.result === "string") {
-          finalOutput = raw.result;
+        } else if (type === "result") {
+          if (typeof raw.result === "string") finalOutput = raw.result;
+          usage = extractUsage(raw) ?? usage;
         }
       },
     );
@@ -106,6 +109,7 @@ export class CursorAdapter extends BaseAdapter {
         durationMs: result.durationMs,
         exitCode: result.exitCode,
         ...(sessionId ? { sessionId } : {}),
+        ...(usage ? { usage } : {}),
       };
     }
     const failure = classifyFailure(result);
@@ -121,6 +125,7 @@ export class CursorAdapter extends BaseAdapter {
       failure,
       error,
       ...(sessionId ? { sessionId } : {}),
+      ...(usage ? { usage } : {}),
     };
   }
 }

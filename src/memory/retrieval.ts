@@ -1,6 +1,6 @@
 import type { MemoryDb } from "./db.js";
 import { cosineSimilarity, fromBlob, type EmbeddingClient } from "./embeddings.js";
-import type { MemoryKind, RetrievalHit } from "./types.js";
+import type { MemoryCategory, MemoryKind, RetrievalHit } from "./types.js";
 
 export interface ScoringWeights {
   recencyWeight: number;
@@ -24,6 +24,28 @@ export interface SearchOptions {
   now?: string;
   /** When set, memory_items/summaries are re-ranked by fusing keyword and vector search (RRF). */
   embeddings?: EmbeddingClient;
+  /** memory_items.category filter — pushed into SQL, not applied client-side. */
+  category?: MemoryCategory;
+  /** memory_items.importance >= this value — pushed into SQL. */
+  minImportance?: number;
+  /** ISO timestamp lower bound (inclusive), compared as strings against each row's own date column. */
+  since?: string;
+  /** ISO timestamp upper bound (inclusive). */
+  until?: string;
+}
+
+function dateRangeClause(column: string, since: string | undefined, until: string | undefined): { sql: string; params: string[] } {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (since) {
+    clauses.push(`${column} >= ?`);
+    params.push(since);
+  }
+  if (until) {
+    clauses.push(`${column} <= ?`);
+    params.push(until);
+  }
+  return { sql: clauses.map((clause) => `AND ${clause}`).join(" "), params };
 }
 
 // Reciprocal rank fusion: score(d) = sum(1 / (k + rank_i(d))) across every
@@ -79,7 +101,8 @@ interface RawHit {
   importance?: number;
 }
 
-function queryMessages(memory: MemoryDb, raw: string, limit: number): RawHit[] {
+function queryMessages(memory: MemoryDb, raw: string, limit: number, options: SearchOptions): RawHit[] {
+  const dateRange = dateRangeClause("c.created_at", options.since, options.until);
   let rows: Array<{ id: number; text: string; checkpoint_id: string; created_at: string }>;
   if (memory.fts) {
     rows = memory.db
@@ -88,19 +111,19 @@ function queryMessages(memory: MemoryDb, raw: string, limit: number): RawHit[] {
          FROM messages_fts f
          JOIN messages m ON m.id = f.rowid
          JOIN checkpoints c ON c.id = m.checkpoint_id
-         WHERE messages_fts MATCH ?
+         WHERE messages_fts MATCH ? ${dateRange.sql}
          ORDER BY bm25(messages_fts) LIMIT ?`,
       )
-      .all(ftsQuery(raw), limit) as typeof rows;
+      .all(ftsQuery(raw), ...dateRange.params, limit) as typeof rows;
   } else {
     const { where, params } = likeClauses(raw, "m.text");
     rows = memory.db
       .prepare(
         `SELECT m.id, m.text, m.checkpoint_id, c.created_at
          FROM messages m JOIN checkpoints c ON c.id = m.checkpoint_id
-         WHERE ${where} ORDER BY c.created_at DESC LIMIT ?`,
+         WHERE ${where} ${dateRange.sql} ORDER BY c.created_at DESC LIMIT ?`,
       )
-      .all(...params, limit) as typeof rows;
+      .all(...params, ...dateRange.params, limit) as typeof rows;
   }
   return rows.map((row) => ({
     source: "message" as const,
@@ -111,8 +134,23 @@ function queryMessages(memory: MemoryDb, raw: string, limit: number): RawHit[] {
   }));
 }
 
-function queryMemoryItems(memory: MemoryDb, raw: string, limit: number, kind?: MemoryKind): RawHit[] {
-  const kindFilter = kind ? "AND i.kind = ?" : "";
+function queryMemoryItems(memory: MemoryDb, raw: string, limit: number, options: SearchOptions): RawHit[] {
+  const extra: string[] = [];
+  const extraParams: Array<string | number> = [];
+  if (options.kind) {
+    extra.push("AND i.kind = ?");
+    extraParams.push(options.kind);
+  }
+  if (options.category) {
+    extra.push("AND i.category = ?");
+    extraParams.push(options.category);
+  }
+  if (options.minImportance !== undefined) {
+    extra.push("AND i.importance >= ?");
+    extraParams.push(options.minImportance);
+  }
+  const dateRange = dateRangeClause("i.created_at", options.since, options.until);
+  const extraFilter = `${extra.join(" ")} ${dateRange.sql}`;
   let rows: Array<{
     id: number;
     text: string;
@@ -126,20 +164,20 @@ function queryMemoryItems(memory: MemoryDb, raw: string, limit: number, kind?: M
         `SELECT i.id, i.text, i.source_checkpoint_id, i.last_reinforced_at, i.importance
          FROM memory_items_fts f
          JOIN memory_items i ON i.id = f.rowid
-         WHERE memory_items_fts MATCH ? AND i.status = 'active' ${kindFilter}
+         WHERE memory_items_fts MATCH ? AND i.status = 'active' ${extraFilter}
          ORDER BY bm25(memory_items_fts) LIMIT ?`,
       )
-      .all(...(kind ? [ftsQuery(raw), kind, limit] : [ftsQuery(raw), limit])) as typeof rows;
+      .all(ftsQuery(raw), ...extraParams, ...dateRange.params, limit) as typeof rows;
   } else {
     const { where, params } = likeClauses(raw, "i.text");
     rows = memory.db
       .prepare(
         `SELECT i.id, i.text, i.source_checkpoint_id, i.last_reinforced_at, i.importance
          FROM memory_items i
-         WHERE ${where} AND i.status = 'active' ${kindFilter}
+         WHERE ${where} AND i.status = 'active' ${extraFilter}
          ORDER BY i.importance DESC LIMIT ?`,
       )
-      .all(...(kind ? [...params, kind, limit] : [...params, limit])) as typeof rows;
+      .all(...params, ...extraParams, ...dateRange.params, limit) as typeof rows;
   }
   return rows.map((row) => ({
     source: "memory_item" as const,
@@ -151,8 +189,9 @@ function queryMemoryItems(memory: MemoryDb, raw: string, limit: number, kind?: M
   }));
 }
 
-function querySummaries(memory: MemoryDb, raw: string, limit: number, includeSuperseded: boolean): RawHit[] {
-  const supersededFilter = includeSuperseded ? "" : "AND s.superseded_by IS NULL";
+function querySummaries(memory: MemoryDb, raw: string, limit: number, options: SearchOptions): RawHit[] {
+  const supersededFilter = options.includeSuperseded ? "" : "AND s.superseded_by IS NULL";
+  const dateRange = dateRangeClause("s.created_at", options.since, options.until);
   let rows: Array<{ id: number; text: string; covers_to: string; created_at: string }>;
   if (memory.fts) {
     rows = memory.db
@@ -160,19 +199,19 @@ function querySummaries(memory: MemoryDb, raw: string, limit: number, includeSup
         `SELECT s.id, s.text, s.covers_to, s.created_at
          FROM summaries_fts f
          JOIN summaries s ON s.id = f.rowid
-         WHERE summaries_fts MATCH ? ${supersededFilter}
+         WHERE summaries_fts MATCH ? ${supersededFilter} ${dateRange.sql}
          ORDER BY bm25(summaries_fts) LIMIT ?`,
       )
-      .all(ftsQuery(raw), limit) as typeof rows;
+      .all(ftsQuery(raw), ...dateRange.params, limit) as typeof rows;
   } else {
     const { where, params } = likeClauses(raw, "s.text");
     rows = memory.db
       .prepare(
         `SELECT s.id, s.text, s.covers_to, s.created_at
-         FROM summaries s WHERE ${where} ${supersededFilter}
+         FROM summaries s WHERE ${where} ${supersededFilter} ${dateRange.sql}
          ORDER BY s.created_at DESC LIMIT ?`,
       )
-      .all(...params, limit) as typeof rows;
+      .all(...params, ...dateRange.params, limit) as typeof rows;
   }
   return rows.map((row) => ({
     source: "summary" as const,
@@ -192,15 +231,29 @@ interface EmbeddedRow {
 // thousands of rows). Only rows embedded with the currently configured
 // model are considered; stale-model vectors are silently excluded rather
 // than compared across incompatible embedding spaces.
-function vectorRankItems(memory: MemoryDb, model: string, limit: number, kind?: MemoryKind): EmbeddedRow[] {
-  const kindFilter = kind ? "AND kind = ?" : "";
+function vectorRankItems(memory: MemoryDb, model: string, limit: number, options: SearchOptions): EmbeddedRow[] {
+  const extra: string[] = [];
+  const extraParams: Array<string | number> = [];
+  if (options.kind) {
+    extra.push("AND kind = ?");
+    extraParams.push(options.kind);
+  }
+  if (options.category) {
+    extra.push("AND category = ?");
+    extraParams.push(options.category);
+  }
+  if (options.minImportance !== undefined) {
+    extra.push("AND importance >= ?");
+    extraParams.push(options.minImportance);
+  }
+  const dateRange = dateRangeClause("created_at", options.since, options.until);
   const rows = memory.db
     .prepare(
       `SELECT id, text, source_checkpoint_id, last_reinforced_at, importance, embedding
        FROM memory_items
-       WHERE status = 'active' AND embedding IS NOT NULL AND embedding_model = ? ${kindFilter}`,
+       WHERE status = 'active' AND embedding IS NOT NULL AND embedding_model = ? ${extra.join(" ")} ${dateRange.sql}`,
     )
-    .all(...(kind ? [model, kind] : [model])) as Array<{
+    .all(model, ...extraParams, ...dateRange.params) as Array<{
     id: number;
     text: string;
     source_checkpoint_id: string | null;
@@ -221,14 +274,15 @@ function vectorRankItems(memory: MemoryDb, model: string, limit: number, kind?: 
   })).slice(0, limit);
 }
 
-function vectorRankSummaries(memory: MemoryDb, model: string, limit: number, includeSuperseded: boolean): EmbeddedRow[] {
-  const supersededFilter = includeSuperseded ? "" : "AND superseded_by IS NULL";
+function vectorRankSummaries(memory: MemoryDb, model: string, limit: number, options: SearchOptions): EmbeddedRow[] {
+  const supersededFilter = options.includeSuperseded ? "" : "AND superseded_by IS NULL";
+  const dateRange = dateRangeClause("created_at", options.since, options.until);
   const rows = memory.db
     .prepare(
       `SELECT id, text, covers_to, created_at, embedding FROM summaries
-       WHERE embedding IS NOT NULL AND embedding_model = ? ${supersededFilter}`,
+       WHERE embedding IS NOT NULL AND embedding_model = ? ${supersededFilter} ${dateRange.sql}`,
     )
-    .all(model) as Array<{ id: number; text: string; covers_to: string; created_at: string; embedding: Buffer }>;
+    .all(model, ...dateRange.params) as Array<{ id: number; text: string; covers_to: string; created_at: string; embedding: Buffer }>;
   return rows.map((row) => ({
     raw: { source: "summary" as const, id: row.id, text: row.text, checkpointId: row.covers_to, timestamp: row.created_at },
     embedding: fromBlob(row.embedding),
@@ -280,9 +334,9 @@ export async function search(memory: MemoryDb, query: string, options: SearchOpt
   const limit = options.limit ?? 10;
   const perSource = Math.max(limit, 10);
 
-  const itemsFts = queryMemoryItems(memory, raw, perSource, options.kind);
-  const summariesFts = options.kind ? [] : querySummaries(memory, raw, perSource, options.includeSuperseded ?? false);
-  const messagesFts = options.kind ? [] : queryMessages(memory, raw, perSource);
+  const itemsFts = queryMemoryItems(memory, raw, perSource, options);
+  const summariesFts = options.kind ? [] : querySummaries(memory, raw, perSource, options);
+  const messagesFts = options.kind ? [] : queryMessages(memory, raw, perSource, options);
 
   let items = itemsFts;
   let summaries = summariesFts;
@@ -290,11 +344,11 @@ export async function search(memory: MemoryDb, query: string, options: SearchOpt
     try {
       const [queryVector] = await options.embeddings.embed([raw]);
       if (queryVector) {
-        const itemRows = vectorRankItems(memory, options.embeddings.model, perSource * 4, options.kind);
+        const itemRows = vectorRankItems(memory, options.embeddings.model, perSource * 4, options);
         const itemsVector = rankByCosine(itemRows, queryVector, perSource);
         items = reciprocalRankFusion([itemsFts, itemsVector], hitKey);
         if (!options.kind) {
-          const summaryRows = vectorRankSummaries(memory, options.embeddings.model, perSource * 4, options.includeSuperseded ?? false);
+          const summaryRows = vectorRankSummaries(memory, options.embeddings.model, perSource * 4, options);
           const summariesVector = rankByCosine(summaryRows, queryVector, perSource);
           summaries = reciprocalRankFusion([summariesFts, summariesVector], hitKey);
         }

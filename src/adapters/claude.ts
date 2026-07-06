@@ -7,10 +7,11 @@ import type {
   ProviderCapabilities,
   ProviderHealth,
   ProviderRunResult,
+  ProviderUsage,
   RunRequest,
 } from "../types.js";
 import { BaseAdapter } from "./adapter.js";
-import { getTextContent, makeHealth, probeVersion } from "./shared.js";
+import { extractUsage, getTextContent, makeHealth, probeVersion } from "./shared.js";
 
 export class ClaudeAdapter extends BaseAdapter {
   readonly id = "claude" as const;
@@ -79,6 +80,7 @@ export class ClaudeAdapter extends BaseAdapter {
 
     let sessionId: string | undefined;
     let finalOutput = "";
+    let usage: ProviderUsage | undefined;
     const deltas: string[] = [];
     const result = await this.runner.run(
       { command: this.command, args, cwd: request.cwd, env: process.env, timeoutMs: request.timeoutMs },
@@ -97,8 +99,9 @@ export class ClaudeAdapter extends BaseAdapter {
             deltas.push(text);
             emit({ type: "assistant.delta", text, ...(sessionId ? { sessionId } : {}), raw });
           }
-        } else if (type === "result" && typeof raw.result === "string") {
-          finalOutput = raw.result;
+        } else if (type === "result") {
+          if (typeof raw.result === "string") finalOutput = raw.result;
+          usage = extractUsage(raw) ?? usage;
         }
       },
     );
@@ -114,6 +117,7 @@ export class ClaudeAdapter extends BaseAdapter {
         durationMs: result.durationMs,
         exitCode: result.exitCode,
         ...(sessionId ? { sessionId } : {}),
+        ...(usage ? { usage } : {}),
       };
     }
     const failure = classifyFailure(result);
@@ -129,6 +133,7 @@ export class ClaudeAdapter extends BaseAdapter {
       failure,
       error,
       ...(sessionId ? { sessionId } : {}),
+      ...(usage ? { usage } : {}),
     };
   }
 }

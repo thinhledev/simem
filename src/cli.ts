@@ -16,6 +16,8 @@ import {
 } from "./handoff/switcher.js";
 import { handleMemoryCommand } from "./memory/cli-commands.js";
 import { consolidateBestEffort } from "./memory/consolidate.js";
+import { openMemoryDb } from "./memory/db.js";
+import { recordGatewayAttempts } from "./memory/ledger.js";
 import { runMcpServer } from "./memory/mcp-server.js";
 import { GatewayOrchestrator } from "./orchestrator.js";
 import { NodeCommandRunner } from "./process.js";
@@ -48,6 +50,12 @@ interface CliOptions {
   includeSuperseded: boolean;
   limit?: number;
   kind?: string;
+  groupBy?: string;
+  category?: string;
+  minImportance?: number;
+  since?: string;
+  until?: string;
+  full: boolean;
 }
 
 const HELP = `coding-agents-orchestrator (cag)
@@ -66,9 +74,12 @@ Agent routing:
   cag run [options] <prompt>
 
 Persistent memory:
-  cag memory search <query> [--kind semantic|episodic|procedural] [--limit N] [--include-superseded]
+  cag memory search <query> [--kind K] [--category C] [--min-importance N] [--since T] [--until T]
+                     [--limit N] [--include-superseded] [--full]
+                     Returns compact previews by default (both --json and human output); --full for complete text
   cag memory show <checkpoint-id|item-id>
   cag memory stats
+  cag memory spend [--group-by purpose|provider|day]
   cag memory compact
   cag memory reindex [--rebuild] [--embed]
   cag mcp [--cwd PATH]            Serve memory tools over MCP stdio (requires Node >= 22.5)
@@ -84,10 +95,16 @@ Handoff options:
 
 Memory options:
   --kind semantic|episodic|procedural  Filter memory search/list results
+  --category decision|constraint|preference|fact|todo  Filter memory search to one category
+  --min-importance N               Only match memory items with importance >= N
+  --since TIMESTAMP                Only match records at or after this ISO timestamp
+  --until TIMESTAMP                Only match records at or before this ISO timestamp
   --limit N                       Cap the number of search results (default: 10)
+  --full                           Return complete text instead of previews (memory search)
   --rebuild                       Drop and recreate the memory index before reindexing
   --embed                         Also (re)compute embeddings via a local Ollama, if configured
   --include-superseded             Also match summaries rolled up by compaction
+  --group-by purpose|provider|day  Group "cag memory spend" output (default: purpose)
 
 Common options:
   --cwd PATH                      Project workspace (default: current directory)
@@ -139,6 +156,7 @@ export function parseArgs(argv: string[]): CliOptions {
     rebuild: false,
     embed: false,
     includeSuperseded: false,
+    full: false,
   };
   const positional: string[] = [];
   for (let index = 0; index < args.length; ) {
@@ -164,12 +182,29 @@ export function parseArgs(argv: string[]): CliOptions {
     } else if (arg === "--include-superseded") {
       options.includeSuperseded = true;
       args.splice(index, 1);
+    } else if (arg === "--full") {
+      options.full = true;
+      args.splice(index, 1);
     } else if (arg === "--limit") {
       const limit = Number(takeValue(args, index, arg));
       if (!Number.isInteger(limit) || limit <= 0) throw new Error("--limit must be a positive integer");
       options.limit = limit;
+    } else if (arg === "--min-importance") {
+      const minImportance = Number(takeValue(args, index, arg));
+      if (!Number.isInteger(minImportance) || minImportance < 1 || minImportance > 10) {
+        throw new Error("--min-importance must be an integer from 1 to 10");
+      }
+      options.minImportance = minImportance;
+    } else if (arg === "--since") {
+      options.since = takeValue(args, index, arg);
+    } else if (arg === "--until") {
+      options.until = takeValue(args, index, arg);
     } else if (arg === "--kind") {
       options.kind = takeValue(args, index, arg);
+    } else if (arg === "--category") {
+      options.category = takeValue(args, index, arg);
+    } else if (arg === "--group-by") {
+      options.groupBy = takeValue(args, index, arg);
     } else if (arg === "--config") {
       options.configPath = takeValue(args, index, arg);
     } else if (arg === "--cwd") {
@@ -269,6 +304,7 @@ function compactGatewayResult(result: Awaited<ReturnType<GatewayOrchestrator["ru
       durationMs: attempt.result.durationMs,
       sessionId: attempt.result.sessionId,
       error: attempt.result.error,
+      usage: attempt.result.usage,
     })),
     provider: result.result?.provider,
     sessionId: result.result?.sessionId,
@@ -311,6 +347,30 @@ async function maybeConsolidate(
     }
   } catch {
     // Memory is additive; switch/export must never fail because of it.
+  }
+}
+
+// Best-effort: records every attempt from a `cag run` invocation in the token
+// ledger (purpose "run"), so `cag memory spend` reflects real usage cost,
+// not just internal consolidation/rollup calls. Never affects the command's
+// own success/failure or output.
+async function recordRunLedger(
+  config: GatewayConfig,
+  cwd: string,
+  promptChars: number,
+  result: Awaited<ReturnType<GatewayOrchestrator["run"]>>,
+): Promise<void> {
+  if (!config.memory.enabled) return;
+  try {
+    const memory = await openMemoryDb(cwd, { quiet: true });
+    if (!memory) return;
+    try {
+      recordGatewayAttempts(memory, "run", undefined, promptChars, result);
+    } finally {
+      memory.close();
+    }
+  } catch {
+    // Ledger is additive; `cag run` must never fail because of it.
   }
 }
 
@@ -414,8 +474,14 @@ async function main(): Promise<void> {
       rebuild: options.rebuild,
       embed: options.embed,
       includeSuperseded: options.includeSuperseded,
+      full: options.full,
       ...(options.limit !== undefined ? { limit: options.limit } : {}),
       ...(options.kind !== undefined ? { kind: options.kind } : {}),
+      ...(options.category !== undefined ? { category: options.category } : {}),
+      ...(options.minImportance !== undefined ? { minImportance: options.minImportance } : {}),
+      ...(options.since !== undefined ? { since: options.since } : {}),
+      ...(options.until !== undefined ? { until: options.until } : {}),
+      ...(options.groupBy !== undefined ? { groupBy: options.groupBy } : {}),
       orchestrator: new GatewayOrchestrator(memoryConfig, createAdapters(memoryConfig, runner)),
       memoryConfig: memoryConfig.memory,
     });
@@ -446,6 +512,7 @@ async function main(): Promise<void> {
       ...(options.json ? { onEvent: (event: unknown) => process.stdout.write(`${JSON.stringify(event)}\n`) } : {}),
     },
   );
+  await recordRunLedger(config, options.cwd, options.prompt.length, result);
 
   if (options.json) process.stdout.write(`${JSON.stringify(compactGatewayResult(result))}\n`);
   else if (result.ok && result.result) {

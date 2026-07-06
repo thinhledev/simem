@@ -1,6 +1,8 @@
 import type { MemoryConfig } from "../config.js";
 import type { ConsolidationRunner } from "./consolidate.js";
 import type { MemoryDb } from "./db.js";
+import { recordGatewayAttempts } from "./ledger.js";
+import { capText } from "./text-cap.js";
 
 export interface CompactionResult {
   epochDigests: number;
@@ -14,16 +16,45 @@ interface SummaryRow {
   covers_from: string;
   covers_to: string;
   checkpoint_count: number;
+  milestone: number;
 }
+
+// Byte-identical across every rollup call — the only part of this prompt
+// that could ever benefit from a provider-side prefix cache. In practice it
+// doesn't today: each rollup is a fresh one-shot CLI invocation with no
+// session reuse (see the Phase 3 session-reuse analysis), so this buys
+// determinism/diff-friendliness, not a measured cost reduction.
+const STABLE_ROLLUP_INSTRUCTION =
+  "You are compacting the long-term memory of a coding project. Merge the following summaries into ONE digest. " +
+  "Preserve concrete decisions, constraints, key outcomes, and unresolved threads; drop routine detail and " +
+  "pleasantries. Write plain prose, chronological, self-contained. Respond with only the digest text.";
 
 // memory_items are deliberately untouched by this whole module: only episodic
 // *summaries* roll up. Durable facts never expire — that is the contract.
-function rollupPrompt(kind: "epoch" | "project", summaries: SummaryRow[], constraints: string[]): string {
+function rollupPrompt(
+  kind: "epoch" | "project",
+  summaries: SummaryRow[],
+  constraints: string[],
+  summaryCharCap: number,
+): string {
   const wordCap = kind === "epoch" ? 250 : 300;
   const label = kind === "epoch" ? "chronological checkpoint summaries" : "epoch digests";
-  return `You are compacting the long-term memory of a coding project. Merge the following ${summaries.length} ${label} into ONE digest of at most ${wordCap} words. Preserve concrete decisions, constraints, key outcomes, and unresolved threads; drop routine detail and pleasantries. Write plain prose, chronological, self-contained. Respond with only the digest text.
-${constraints.length ? `\nNever drop these standing constraints (restate briefly if relevant):\n${constraints.map((text) => `- ${text}`).join("\n")}\n` : ""}
-${summaries.map((summary, index) => `--- ${index + 1} (${summary.covers_from} … ${summary.covers_to}) ---\n${summary.text}`).join("\n\n")}`;
+  const hasMilestones = summaries.some((summary) => summary.milestone);
+  const variableClause = `(Merging ${summaries.length} ${label}; target length: at most ${wordCap} words.)`;
+  const milestoneClause = hasMilestones
+    ? "\nEntries marked [MILESTONE] completed a distinct, nameable objective — weight them more heavily than routine entries and keep their outcome legible in the digest.\n"
+    : "";
+  const body = summaries
+    .map((summary, index) => {
+      const { text } = capText(summary.text, summaryCharCap);
+      const prefix = summary.milestone ? "[MILESTONE] " : "";
+      return `--- ${index + 1} (${summary.covers_from} … ${summary.covers_to}) ---\n${prefix}${text}`;
+    })
+    .join("\n\n");
+  return `${STABLE_ROLLUP_INSTRUCTION}
+${variableClause}
+${constraints.length ? `\nNever drop these standing constraints (restate briefly if relevant):\n${constraints.map((text) => `- ${text}`).join("\n")}\n` : ""}${milestoneClause}
+${body}`;
 }
 
 function verbatimWindowIds(memory: MemoryDb, count: number): Set<string> {
@@ -36,7 +67,7 @@ function verbatimWindowIds(memory: MemoryDb, count: number): Set<string> {
 function activeLevelSummaries(memory: MemoryDb, level: number): SummaryRow[] {
   return memory.db
     .prepare(
-      `SELECT s.id, s.text, s.covers_from, s.covers_to, s.checkpoint_count
+      `SELECT s.id, s.text, s.covers_from, s.covers_to, s.checkpoint_count, s.milestone
        FROM summaries s
        LEFT JOIN checkpoints c ON c.id = s.covers_from
        WHERE s.level = ? AND s.superseded_by IS NULL
@@ -71,13 +102,14 @@ async function rollup(
   const last = batch.at(-1);
   if (!first || !last) return false;
   const constraints = kind === "epoch" ? highImportanceConstraints(memory, batch.map((row) => row.covers_from)) : [];
-  const prompt = rollupPrompt(kind, batch, constraints);
+  const prompt = rollupPrompt(kind, batch, constraints, config.rollupSummaryCharCap);
   const result = await orchestrator.run({
     prompt,
     cwd: process.cwd(),
     accessMode: "read-only",
     timeoutMs: config.consolidationTimeoutMs,
   });
+  recordGatewayAttempts(memory, kind === "epoch" ? "rollup-epoch" : "rollup-project", undefined, prompt.length, result);
   const text = result.ok ? result.result?.output.trim() : undefined;
   if (!text) return false;
   const checkpointCount = batch.reduce((sum, row) => sum + row.checkpoint_count, 0);

@@ -38,6 +38,22 @@ test("Codex adapter normalizes JSONL and preserves its thread id", async () => {
   assert.deepEqual(runner.calls[0]?.args?.slice(0, 3), ["exec", "--json", "--color"]);
 });
 
+test("Codex adapter extracts usage from turn.completed, and reports none when absent", async () => {
+  const withUsage = new FakeRunner([
+    JSON.stringify({ type: "thread.started", thread_id: "s" }),
+    JSON.stringify({
+      type: "turn.completed",
+      usage: { input_tokens: 120, output_tokens: 40, cached_input_tokens: 30 },
+    }),
+  ]);
+  const withUsageResult = await new CodexAdapter(withUsage, { command: "codex" }).run(REQUEST);
+  assert.deepEqual(withUsageResult.usage, { inputTokens: 120, outputTokens: 40, cacheReadTokens: 30 });
+
+  const withoutUsage = new FakeRunner([JSON.stringify({ type: "thread.started", thread_id: "s" })]);
+  const withoutUsageResult = await new CodexAdapter(withoutUsage, { command: "codex" }).run(REQUEST);
+  assert.equal(withoutUsageResult.usage, undefined);
+});
+
 test("Claude adapter uses plan mode for read-only work", async () => {
   const runner = new FakeRunner([
     JSON.stringify({ type: "system", subtype: "init", session_id: "claude-session" }),
@@ -50,6 +66,30 @@ test("Claude adapter uses plan mode for read-only work", async () => {
   assert.ok(runner.calls[0]?.args?.includes("plan"));
 });
 
+test("Claude adapter extracts usage and cost from the result event, and reports none when absent", async () => {
+  const withUsage = new FakeRunner([
+    JSON.stringify({
+      type: "result",
+      session_id: "s",
+      result: "done",
+      total_cost_usd: 0.0123,
+      usage: { input_tokens: 500, output_tokens: 80, cache_read_input_tokens: 10, cache_creation_input_tokens: 5 },
+    }),
+  ]);
+  const withUsageResult = await new ClaudeAdapter(withUsage, { command: "claude" }).run(REQUEST);
+  assert.deepEqual(withUsageResult.usage, {
+    inputTokens: 500,
+    outputTokens: 80,
+    cacheReadTokens: 10,
+    cacheCreationTokens: 5,
+    costUsd: 0.0123,
+  });
+
+  const withoutUsage = new FakeRunner([JSON.stringify({ type: "result", session_id: "s", result: "done" })]);
+  const withoutUsageResult = await new ClaudeAdapter(withoutUsage, { command: "claude" }).run(REQUEST);
+  assert.equal(withoutUsageResult.usage, undefined);
+});
+
 test("Cursor adapter only adds force in workspace-write mode", async () => {
   const runner = new FakeRunner([
     JSON.stringify({ type: "system", subtype: "init", session_id: "cursor-session" }),
@@ -60,6 +100,12 @@ test("Cursor adapter only adds force in workspace-write mode", async () => {
   await adapter.run({ ...REQUEST, accessMode: "workspace-write" });
   assert.equal(runner.calls[0]?.args?.includes("--force"), false);
   assert.equal(runner.calls[1]?.args?.includes("--force"), true);
+});
+
+test("Cursor adapter reports no usage when the CLI doesn't report any (common case)", async () => {
+  const runner = new FakeRunner([JSON.stringify({ type: "result", session_id: "s", result: "done" })]);
+  const result = await new CursorAdapter(runner, { command: "cursor-agent" }).run(REQUEST);
+  assert.equal(result.usage, undefined);
 });
 
 class VersionProbeRunner implements CommandRunner {

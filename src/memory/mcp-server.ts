@@ -3,8 +3,13 @@ import { readGatewayState } from "../handoff/checkpoints.js";
 import { showRecord } from "./cli-commands.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
+import { toPreview } from "./preview.js";
 import { search } from "./retrieval.js";
-import { MEMORY_CATEGORIES, MEMORY_KINDS } from "./types.js";
+import { MEMORY_CATEGORIES, MEMORY_KINDS, type MemoryCategory } from "./types.js";
+
+// Envelope-level cap on serialized preview payload size — belt-and-suspenders
+// alongside per-hit preview truncation, in case a high `limit` still adds up.
+const MAX_PREVIEW_RESPONSE_CHARS = 8_000;
 
 export const SERVER_INFO = { name: "cag-memory", version: "0.1.0" };
 export const PROTOCOL_VERSION = "2024-11-05";
@@ -40,13 +45,20 @@ function toolResult(payload: unknown): { content: Array<{ type: "text"; text: st
 const TOOLS = [
   {
     name: "memory_search",
-    description: "Search this project's persistent memory (durable decisions, past checkpoint summaries, and transcripts).",
+    description:
+      "Search this project's persistent memory (durable decisions, past checkpoint summaries, and transcripts). " +
+      "Returns compact previews by default — pass full: true for complete text, or drill into one hit with memory_get.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string" },
         kind: { type: "string", enum: MEMORY_KINDS },
         limit: { type: "integer", minimum: 1, maximum: 50 },
+        category: { type: "string", enum: MEMORY_CATEGORIES },
+        minImportance: { type: "integer", minimum: 1, maximum: 10 },
+        since: { type: "string", description: "ISO timestamp lower bound" },
+        until: { type: "string", description: "ISO timestamp upper bound" },
+        full: { type: "boolean", description: "Return complete hit text instead of previews (default: false)" },
       },
       required: ["query"],
     },
@@ -83,12 +95,31 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
     const kind = MEMORY_KINDS.includes(args.kind as (typeof MEMORY_KINDS)[number])
       ? (args.kind as (typeof MEMORY_KINDS)[number])
       : undefined;
+    const category = MEMORY_CATEGORIES.includes(args.category as MemoryCategory)
+      ? (args.category as MemoryCategory)
+      : undefined;
     const limit = typeof args.limit === "number" ? args.limit : undefined;
+    const minImportance = typeof args.minImportance === "number" ? args.minImportance : undefined;
+    const since = typeof args.since === "string" ? args.since : undefined;
+    const until = typeof args.until === "string" ? args.until : undefined;
+    const full = args.full === true;
     const hits = await search(memory, query, {
       ...(kind ? { kind } : {}),
+      ...(category ? { category } : {}),
       ...(limit ? { limit } : {}),
+      ...(minImportance !== undefined ? { minImportance } : {}),
+      ...(since ? { since } : {}),
+      ...(until ? { until } : {}),
     });
-    return toolResult(hits);
+    if (full) return toolResult(hits);
+    const previews = hits.map((hit) => toPreview(hit));
+    let payload = previews;
+    let truncated = previews.some((preview) => preview.truncated);
+    while (payload.length > 0 && JSON.stringify(payload).length > MAX_PREVIEW_RESPONSE_CHARS) {
+      payload = payload.slice(0, -1);
+      truncated = true;
+    }
+    return toolResult({ hits: payload, truncated, hint: "Use memory_get with a hit's id for full text." });
   }
   if (name === "memory_get") {
     const selector = typeof args.selector === "string" ? args.selector : "";

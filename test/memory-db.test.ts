@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { loadSqlite, memoryDbPath, openMemoryDb } from "../src/memory/db.js";
+import { loadSqlite, memoryDbPath, openMemoryDb, resetMemoryDb } from "../src/memory/db.js";
 import { CURRENT_SCHEMA_VERSION } from "../src/memory/schema.js";
 
 const sqlite = await loadSqlite();
@@ -24,9 +24,106 @@ test("creates the schema and reports FTS5 support", withSqlite, async () => {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all() as Array<{ name: string }>;
     const names = tables.map((table) => table.name);
-    for (const expected of ["meta", "checkpoints", "messages", "memory_items", "summaries", "consolidation_queue"]) {
+    for (const expected of ["meta", "checkpoints", "messages", "memory_items", "summaries", "consolidation_queue", "llm_calls"]) {
       assert.ok(names.includes(expected), `missing table ${expected}`);
     }
+  } finally {
+    memory.close();
+  }
+});
+
+test("upgrades an existing v1 database (no llm_calls table) to v2 transparently", withSqlite, async () => {
+  const root = await mkdtemp(join(tmpdir(), "cag-memory-db-v1-"));
+  // Simulate a database left behind by the pre-ledger schema: apply only the
+  // v1 DDL and stamp schema_version=1, bypassing the migration runner.
+  const v1 = await openMemoryDb(root, { path: join(root, "memory.db") });
+  assert.ok(v1);
+  v1.db.exec("DROP TABLE IF EXISTS llm_calls");
+  // Also strip the v3 `milestone` column so replaying v2's and v3's
+  // migrations against this rewound database doesn't re-add it.
+  v1.db.exec("ALTER TABLE summaries RENAME TO summaries_old");
+  v1.db.exec(`
+    CREATE TABLE summaries (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      level            INTEGER NOT NULL,
+      text             TEXT NOT NULL,
+      covers_from      TEXT NOT NULL,
+      covers_to        TEXT NOT NULL,
+      checkpoint_count INTEGER NOT NULL,
+      created_at       TEXT NOT NULL,
+      superseded_by    INTEGER REFERENCES summaries(id),
+      embedding        BLOB,
+      embedding_model  TEXT
+    )
+  `);
+  v1.db.exec("DROP TABLE summaries_old");
+  v1.db.prepare("UPDATE meta SET value = '1' WHERE key = 'schema_version'").run();
+  v1.close();
+
+  const upgraded = await openMemoryDb(root, { path: join(root, "memory.db") });
+  assert.ok(upgraded);
+  try {
+    assert.equal(upgraded.schemaVersion, 3);
+    const tables = upgraded.db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='llm_calls'")
+      .all();
+    assert.equal(tables.length, 1);
+    const columns = upgraded.db.prepare("PRAGMA table_info(summaries)").all() as Array<{ name: string }>;
+    assert.ok(columns.some((column) => column.name === "milestone"));
+  } finally {
+    upgraded.close();
+  }
+});
+
+test("upgrades an existing v2 database (no summaries.milestone column) to v3 transparently", withSqlite, async () => {
+  const root = await mkdtemp(join(tmpdir(), "cag-memory-db-v2-"));
+  const v2 = await openMemoryDb(root, { path: join(root, "memory.db") });
+  assert.ok(v2);
+  // Simulate a pre-milestone database: recreate `summaries` without the
+  // `milestone` column and stamp schema_version=2, bypassing the migration runner.
+  v2.db.exec("ALTER TABLE summaries RENAME TO summaries_old");
+  v2.db.exec(`
+    CREATE TABLE summaries (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      level            INTEGER NOT NULL,
+      text             TEXT NOT NULL,
+      covers_from      TEXT NOT NULL,
+      covers_to        TEXT NOT NULL,
+      checkpoint_count INTEGER NOT NULL,
+      created_at       TEXT NOT NULL,
+      superseded_by    INTEGER REFERENCES summaries(id),
+      embedding        BLOB,
+      embedding_model  TEXT
+    )
+  `);
+  v2.db.exec("DROP TABLE summaries_old");
+  v2.db.prepare("UPDATE meta SET value = '2' WHERE key = 'schema_version'").run();
+  v2.close();
+
+  const upgraded = await openMemoryDb(root, { path: join(root, "memory.db") });
+  assert.ok(upgraded);
+  try {
+    assert.equal(upgraded.schemaVersion, 3);
+    const columns = upgraded.db.prepare("PRAGMA table_info(summaries)").all() as Array<{ name: string }>;
+    assert.ok(columns.some((column) => column.name === "milestone"));
+  } finally {
+    upgraded.close();
+  }
+});
+
+test("resetMemoryDb drops and recreates llm_calls too", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    memory.db
+      .prepare(
+        "INSERT INTO llm_calls (purpose, provider, prompt_chars, output_chars, estimated, duration_ms, ok, created_at) " +
+          "VALUES ('run', 'claude', 10, 10, 0, 1, 1, '2026-07-03T00:00:00Z')",
+      )
+      .run();
+    resetMemoryDb(memory);
+    const count = memory.db.prepare("SELECT COUNT(*) AS n FROM llm_calls").get() as { n: number };
+    assert.equal(count.n, 0);
   } finally {
     memory.close();
   }

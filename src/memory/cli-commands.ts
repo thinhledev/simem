@@ -4,9 +4,11 @@ import { drainConsolidationQueue, type ConsolidationRunner } from "./consolidate
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
 import { detectOllama } from "./embeddings.js";
+import { spendSummary, spendTotals } from "./ledger.js";
+import { toPreview } from "./preview.js";
 import { embedMissing, reindexMemory } from "./reindex.js";
 import { search } from "./retrieval.js";
-import { MEMORY_KINDS, type MemoryKind, type MemoryStats } from "./types.js";
+import { MEMORY_CATEGORIES, MEMORY_KINDS, type MemoryCategory, type MemoryKind, type MemoryStats } from "./types.js";
 
 async function embeddingClient(memoryConfig: MemoryConfig | undefined) {
   if (!memoryConfig?.embeddings.enabled) return undefined;
@@ -22,6 +24,12 @@ export interface MemoryCommandOptions {
   includeSuperseded: boolean;
   limit?: number;
   kind?: string;
+  groupBy?: string;
+  category?: string;
+  minImportance?: number;
+  since?: string;
+  until?: string;
+  full: boolean;
   orchestrator?: ConsolidationRunner;
   memoryConfig?: MemoryConfig;
 }
@@ -95,26 +103,52 @@ export async function handleMemoryCommand(
       }
       kind = options.kind as MemoryKind;
     }
+    let category: MemoryCategory | undefined;
+    if (options.category !== undefined) {
+      if (!MEMORY_CATEGORIES.includes(options.category as MemoryCategory)) {
+        throw new Error(`--category must be one of: ${MEMORY_CATEGORIES.join(", ")}`);
+      }
+      category = options.category as MemoryCategory;
+    }
     const memory = await requireMemory(options);
     try {
       const embeddings = await embeddingClient(options.memoryConfig);
       const hits = await search(memory, query, {
         ...(options.limit !== undefined ? { limit: options.limit } : {}),
         ...(kind !== undefined ? { kind } : {}),
+        ...(category !== undefined ? { category } : {}),
+        ...(options.minImportance !== undefined ? { minImportance: options.minImportance } : {}),
+        ...(options.since !== undefined ? { since: options.since } : {}),
+        ...(options.until !== undefined ? { until: options.until } : {}),
         ...(embeddings ? { embeddings } : {}),
         includeSuperseded: options.includeSuperseded,
       });
-      if (options.json) {
-        process.stdout.write(`${JSON.stringify(hits)}\n`);
-      } else if (hits.length === 0) {
-        process.stdout.write("No matches.\n");
+      // Previews by default (matches the MCP memory_search default): agents
+      // shelling out to --json pay the same reduced token cost unless they
+      // opt into --full for complete text.
+      if (options.full) {
+        if (options.json) process.stdout.write(`${JSON.stringify(hits)}\n`);
+        else if (hits.length === 0) process.stdout.write("No matches.\n");
+        else {
+          for (const hit of hits) {
+            const origin = hit.checkpointId ? ` (${hit.checkpointId})` : "";
+            process.stdout.write(
+              `[${hit.score.toFixed(3)}] ${hit.source}#${hit.id}${origin}\n  ${hit.text.replaceAll("\n", "\n  ")}\n`,
+            );
+          }
+        }
       } else {
-        for (const hit of hits) {
-          const preview = hit.text.length > 160 ? `${hit.text.slice(0, 157)}...` : hit.text;
-          const origin = hit.checkpointId ? ` (${hit.checkpointId})` : "";
-          process.stdout.write(
-            `[${hit.score.toFixed(3)}] ${hit.source}#${hit.id}${origin}\n  ${preview.replaceAll("\n", "\n  ")}\n`,
-          );
+        const previews = hits.map((hit) => toPreview(hit));
+        if (options.json) process.stdout.write(`${JSON.stringify(previews)}\n`);
+        else if (previews.length === 0) process.stdout.write("No matches.\n");
+        else {
+          for (const preview of previews) {
+            const origin = preview.checkpointId ? ` (${preview.checkpointId})` : "";
+            process.stdout.write(
+              `[${preview.score.toFixed(3)}] ${preview.source}#${preview.id}${origin}\n  ${preview.preview}\n`,
+            );
+          }
+          process.stdout.write("Pass --full for complete text, or `cag memory show <id>` to drill into one.\n");
         }
       }
     } finally {
@@ -153,7 +187,8 @@ export async function handleMemoryCommand(
     const memory = await requireMemory(options);
     try {
       const stats = collectStats(memory);
-      if (options.json) process.stdout.write(`${JSON.stringify(stats)}\n`);
+      const spend = spendTotals(memory);
+      if (options.json) process.stdout.write(`${JSON.stringify({ ...stats, spend })}\n`);
       else {
         process.stdout.write(`Memory database: ${stats.dbPath}\n`);
         process.stdout.write(`Schema v${stats.schemaVersion}, FTS5 ${stats.fts ? "enabled" : "unavailable"}\n`);
@@ -161,6 +196,38 @@ export async function handleMemoryCommand(
         process.stdout.write(`Memory items: ${JSON.stringify(stats.memoryItems)}\n`);
         process.stdout.write(`Summaries: ${JSON.stringify(stats.summariesByLevel)}\n`);
         process.stdout.write(`Consolidation queue: ${stats.queueDepth}\n`);
+        process.stdout.write(
+          `LLM calls: ${spend.calls} (${spend.estimatedCalls} estimated), ` +
+            `${spend.inputTokens}+${spend.outputTokens} tokens, $${spend.costUsd.toFixed(4)}. Run \`cag memory spend\` for a breakdown.\n`,
+        );
+      }
+    } finally {
+      memory.close();
+    }
+    return;
+  }
+  if (sub === "spend") {
+    const groupBy = options.groupBy ?? "purpose";
+    if (groupBy !== "purpose" && groupBy !== "provider" && groupBy !== "day") {
+      throw new Error("--group-by must be one of: purpose, provider, day");
+    }
+    const memory = await requireMemory(options);
+    try {
+      const rows = spendSummary(memory, groupBy);
+      const totals = spendTotals(memory);
+      if (options.json) process.stdout.write(`${JSON.stringify({ groupBy, rows, totals })}\n`);
+      else if (rows.length === 0) {
+        process.stdout.write("No LLM calls recorded yet.\n");
+      } else {
+        for (const row of rows) {
+          process.stdout.write(
+            `${row.group}: ${row.calls} call(s), ${row.inputTokens}+${row.outputTokens} tokens, ` +
+              `$${row.costUsd.toFixed(4)}${row.estimatedCalls ? ` (${row.estimatedCalls} estimated)` : ""}\n`,
+          );
+        }
+        process.stdout.write(
+          `Total: ${totals.calls} call(s), ${totals.inputTokens}+${totals.outputTokens} tokens, $${totals.costUsd.toFixed(4)}\n`,
+        );
       }
     } finally {
       memory.close();
@@ -208,6 +275,6 @@ export async function handleMemoryCommand(
     return;
   }
   throw new Error(
-    `Unknown memory subcommand: ${sub ?? "(none)"}. Use: search, show, stats, compact, reindex`,
+    `Unknown memory subcommand: ${sub ?? "(none)"}. Use: search, show, stats, spend, compact, reindex`,
   );
 }
