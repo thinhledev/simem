@@ -223,6 +223,12 @@ test("caps EXISTING ITEMS to consolidationExistingItemsLimit and notes how many 
     const itemLines = prompt.split("\n").filter((line) => /^\d+\. \[semantic/.test(line));
     assert.equal(itemLines.length, 50);
     assert.match(prompt, /\(\+70 older lower-importance items omitted; use memory_search to find them\)/);
+
+    const savings = memory.db
+      .prepare("SELECT chars_full, chars_sent FROM savings_events WHERE mechanism = 'consolidation-cap'")
+      .get() as { chars_full: number; chars_sent: number } | undefined;
+    assert.ok(savings, "the existing-items cap should record a consolidation-cap savings event");
+    assert.ok(savings.chars_full > savings.chars_sent);
   } finally {
     memory.close();
   }

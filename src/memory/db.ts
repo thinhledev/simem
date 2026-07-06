@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { CURRENT_SCHEMA_VERSION, SCHEMA_CORE, SCHEMA_FTS, SCHEMA_V2, SCHEMA_V3 } from "./schema.js";
+import { CURRENT_SCHEMA_VERSION, SCHEMA_CORE, SCHEMA_FTS, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4 } from "./schema.js";
 
 export interface SqliteModule {
   DatabaseSync: new (path: string) => DatabaseSync;
@@ -30,10 +30,31 @@ export const SQLITE_REQUIREMENT_MESSAGE =
 
 let cachedSqlite: SqliteModule | null | undefined;
 
+const SQLITE_EXPERIMENTAL_WARNING_SNIPPET = "SQLite is an experimental feature";
+
+// node:sqlite unconditionally emits a process-wide ExperimentalWarning the
+// first time it's imported, with no stable alternative to switch to — every
+// `cag` invocation would otherwise print it on every run. Suppress only this
+// exact warning (never warnings in general) by intercepting process.emitWarning
+// for the duration of the import.
+async function importSqliteQuietly(): Promise<unknown> {
+  const originalEmitWarning = process.emitWarning;
+  process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
+    const message = typeof warning === "string" ? warning : warning.message;
+    if (message.includes(SQLITE_EXPERIMENTAL_WARNING_SNIPPET)) return;
+    return (originalEmitWarning as (...args: unknown[]) => void)(warning, ...rest);
+  }) as typeof process.emitWarning;
+  try {
+    return await import("node:sqlite");
+  } finally {
+    process.emitWarning = originalEmitWarning;
+  }
+}
+
 export async function loadSqlite(): Promise<SqliteModule | undefined> {
   if (cachedSqlite !== undefined) return cachedSqlite ?? undefined;
   try {
-    cachedSqlite = (await import("node:sqlite")) as unknown as SqliteModule;
+    cachedSqlite = (await importSqliteQuietly()) as unknown as SqliteModule;
   } catch {
     cachedSqlite = null;
   }
@@ -56,6 +77,9 @@ const MIGRATIONS: Array<(db: DatabaseSync, fts: boolean) => void> = [
   },
   (db) => {
     db.exec(SCHEMA_V3);
+  },
+  (db) => {
+    db.exec(SCHEMA_V4);
   },
 ];
 
@@ -85,6 +109,7 @@ function readSchemaVersion(db: DatabaseSync): number {
 // canonical checkpoint files via reindex, so this is safe by design.
 export function resetMemoryDb(memory: MemoryDb): void {
   const drops = [
+    "DROP TABLE IF EXISTS savings_events",
     "DROP TABLE IF EXISTS llm_calls",
     "DROP TABLE IF EXISTS consolidation_queue",
     "DROP TABLE IF EXISTS messages_fts",

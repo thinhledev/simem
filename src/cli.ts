@@ -96,6 +96,8 @@ Persistent memory:
   cag memory show <checkpoint-id|item-id>
   cag memory stats
   cag memory spend [--group-by purpose|provider|day]
+  cag memory savings [--json]     Exact, measured token/char savings from cag's own compression
+                                   (compaction, preview disclosure, prompt caps) — not a "vs no cag" estimate
   cag memory compact
   cag memory reindex [--rebuild] [--embed]
   cag mcp [--cwd PATH]            Serve memory tools over MCP stdio (requires Node >= 22.5)

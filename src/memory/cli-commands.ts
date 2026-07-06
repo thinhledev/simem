@@ -8,6 +8,7 @@ import { spendSummary, spendTotals } from "./ledger.js";
 import { toPreview } from "./preview.js";
 import { embedMissing, reindexMemory } from "./reindex.js";
 import { search } from "./retrieval.js";
+import { recordSavings, savingsSummary, savingsTotals } from "./savings.js";
 import { MEMORY_CATEGORIES, MEMORY_KINDS, type MemoryCategory, type MemoryKind, type MemoryStats } from "./types.js";
 
 async function embeddingClient(memoryConfig: MemoryConfig | undefined) {
@@ -139,6 +140,11 @@ export async function handleMemoryCommand(
         }
       } else {
         const previews = hits.map((hit) => toPreview(hit));
+        recordSavings(memory, {
+          mechanism: "disclosure",
+          charsFull: hits.reduce((sum, hit) => sum + hit.text.length, 0),
+          charsSent: previews.reduce((sum, preview) => sum + preview.preview.length, 0),
+        });
         if (options.json) process.stdout.write(`${JSON.stringify(previews)}\n`);
         else if (previews.length === 0) process.stdout.write("No matches.\n");
         else {
@@ -188,7 +194,8 @@ export async function handleMemoryCommand(
     try {
       const stats = collectStats(memory);
       const spend = spendTotals(memory);
-      if (options.json) process.stdout.write(`${JSON.stringify({ ...stats, spend })}\n`);
+      const savings = savingsTotals(memory);
+      if (options.json) process.stdout.write(`${JSON.stringify({ ...stats, spend, savings })}\n`);
       else {
         process.stdout.write(`Memory database: ${stats.dbPath}\n`);
         process.stdout.write(`Schema v${stats.schemaVersion}, FTS5 ${stats.fts ? "enabled" : "unavailable"}\n`);
@@ -199,6 +206,10 @@ export async function handleMemoryCommand(
         process.stdout.write(
           `LLM calls: ${spend.calls} (${spend.estimatedCalls} estimated), ` +
             `${spend.inputTokens}+${spend.outputTokens} tokens, $${spend.costUsd.toFixed(4)}. Run \`cag memory spend\` for a breakdown.\n`,
+        );
+        process.stdout.write(
+          `Measured savings: ~${savings.estimatedTokensSaved} tokens across ${savings.events} event(s). ` +
+            `Run \`cag memory savings\` for a breakdown.\n`,
         );
       }
     } finally {
@@ -227,6 +238,33 @@ export async function handleMemoryCommand(
         }
         process.stdout.write(
           `Total: ${totals.calls} call(s), ${totals.inputTokens}+${totals.outputTokens} tokens, $${totals.costUsd.toFixed(4)}\n`,
+        );
+      }
+    } finally {
+      memory.close();
+    }
+    return;
+  }
+  if (sub === "savings") {
+    const memory = await requireMemory(options);
+    try {
+      const rows = savingsSummary(memory);
+      const totals = savingsTotals(memory);
+      if (options.json) process.stdout.write(`${JSON.stringify({ rows, totals })}\n`);
+      else if (rows.length === 0) {
+        process.stdout.write(
+          "No measured savings yet. Savings are recorded from whenever this feature shipped, not retroactively.\n",
+        );
+      } else {
+        for (const row of rows) {
+          process.stdout.write(
+            `${row.mechanism}: ${row.events} event(s), ~${row.estimatedTokensSaved} tokens (${row.charsSaved} chars)\n`,
+          );
+        }
+        process.stdout.write(
+          `Total: ~${totals.estimatedTokensSaved} tokens (${totals.charsSaved} chars) across ${totals.events} event(s).\n` +
+            "This counts only exact, measured deltas cag can prove from its own compression (compaction, " +
+            "preview disclosure, prompt caps) — it does not estimate what re-exploring the repo without cag would cost.\n",
         );
       }
     } finally {
@@ -293,6 +331,6 @@ export async function handleMemoryCommand(
     return;
   }
   throw new Error(
-    `Unknown memory subcommand: ${sub ?? "(none)"}. Use: search, show, stats, spend, compact, reindex`,
+    `Unknown memory subcommand: ${sub ?? "(none)"}. Use: search, show, stats, spend, savings, compact, reindex`,
   );
 }

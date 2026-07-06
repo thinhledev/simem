@@ -239,6 +239,15 @@ All of the above is tunable under `memory` in `gateway.config.json` (see `gatewa
 
   `cag memory stats` folds in a one-line spend summary too. This ledger is the actual "new technique" for Phase 3: rather than betting on blanket compression tools (a real-world replay of rtk/headroom/caveman-style tools over a 614M-token corpus found only ~3.7% net savings against 60–95% marketing claims, and LLM-rewriting compressors sometimes made prompts *larger*), `cag` measures where its own spend goes so every other optimization here can be judged by data instead of assumption.
 
+- **Measured savings.** `cag memory savings` reports exact, mechanism-attributed savings from cag's own compression — recursive compaction (superseded summaries vs. their merged digest), progressive disclosure (full hit text vs. the preview actually sent), and the consolidation/rollup prompt caps — every row a real `chars_full − chars_sent` delta measured at the moment it happened, not a model or a guess.
+
+  ```bash
+  cag memory savings             # totals + breakdown by mechanism
+  cag memory savings --json
+  ```
+
+  Deliberately **not included**: a "vs. not using cag at all" headline number. That would require knowing what a from-scratch agent spends re-exploring the repo without persistent memory — cag has no visibility into that counterfactual, and estimating it risks exactly the overselling the 614M-token study above caught other tools doing. Savings are also forward-looking only, recorded from whenever this feature shipped (schema v4) — not backfilled for history that predates it.
+
 - **Progressive disclosure.** `cag memory search` (both the CLI and the MCP tool) returns short previews with IDs by default instead of full text bodies — the single most token-heavy path before this. Pass `--full` (CLI) or `full: true` (MCP) to get complete text; drill into a specific hit with `cag memory show <id>` / the MCP `memory_get` tool. `--category`, `--min-importance`, `--since`, and `--until` push filters into SQL instead of filtering client-side after fetching everything.
 - **Bounded, cache-stable prompts.** Consolidation caps `EXISTING ITEMS` to `consolidationExistingItemsLimit` (importance-first, so the highest-value standing facts never fall off) and notes how many lower-importance items were omitted, pointing back at `memory_search`. Rollup prompts cap each input summary to `rollupSummaryCharCap` and open with a byte-identical instruction prefix across every rollup call, for determinism and diffability — not a measured caching win, since each rollup/consolidation call is an independent one-shot CLI invocation, not a growing multi-turn session.
 - **Milestone-aware compaction.** When consolidation judges a checkpoint completed a distinct, nameable objective (not routine progress), it flags that checkpoint's summary as a milestone. Milestone summaries are annotated `[MILESTONE]` in rollup prompts with an instruction to weight them more heavily, so a shipped feature is less likely to get diluted into a same-size sentence alongside routine checkpoints during epoch/project digestion.

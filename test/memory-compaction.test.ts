@@ -100,6 +100,12 @@ test("rolls up L1 summaries into one L2 epoch digest once the threshold is excee
     assert.equal(l1Total.n, 5, "superseded L1 rows must be kept, not deleted");
     const l2 = memory.db.prepare("SELECT COUNT(*) AS n FROM summaries WHERE level = 2").get() as { n: number };
     assert.equal(l2.n, 1);
+
+    const savings = memory.db
+      .prepare("SELECT mechanism, chars_full, chars_sent FROM savings_events WHERE mechanism = 'compaction'")
+      .get() as { mechanism: string; chars_full: number; chars_sent: number } | undefined;
+    assert.ok(savings, "compaction should record a savings event");
+    assert.ok(savings.chars_full > savings.chars_sent, "raw summary text should exceed the digest length");
   } finally {
     memory.close();
   }
@@ -165,6 +171,12 @@ test("caps each summary's text in the rollup prompt to rollupSummaryCharCap", wi
       const text = block.split(" ---\n")[1]?.trim() ?? "";
       assert.ok(text.length <= 101, `summary block too long: ${text.length}`);
     }
+
+    const savings = memory.db
+      .prepare("SELECT chars_full, chars_sent FROM savings_events WHERE mechanism = 'rollup-cap'")
+      .get() as { chars_full: number; chars_sent: number } | undefined;
+    assert.ok(savings, "the per-summary cap should record a rollup-cap savings event");
+    assert.ok(savings.chars_full > savings.chars_sent);
   } finally {
     memory.close();
   }

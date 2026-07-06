@@ -24,7 +24,7 @@ test("creates the schema and reports FTS5 support", withSqlite, async () => {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all() as Array<{ name: string }>;
     const names = tables.map((table) => table.name);
-    for (const expected of ["meta", "checkpoints", "messages", "memory_items", "summaries", "consolidation_queue", "llm_calls"]) {
+    for (const expected of ["meta", "checkpoints", "messages", "memory_items", "summaries", "consolidation_queue", "llm_calls", "savings_events"]) {
       assert.ok(names.includes(expected), `missing table ${expected}`);
     }
   } finally {
@@ -63,11 +63,11 @@ test("upgrades an existing v1 database (no llm_calls table) to v2 transparently"
   const upgraded = await openMemoryDb(root, { path: join(root, "memory.db") });
   assert.ok(upgraded);
   try {
-    assert.equal(upgraded.schemaVersion, 3);
+    assert.equal(upgraded.schemaVersion, 4);
     const tables = upgraded.db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='llm_calls'")
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('llm_calls', 'savings_events')")
       .all();
-    assert.equal(tables.length, 1);
+    assert.equal(tables.length, 2);
     const columns = upgraded.db.prepare("PRAGMA table_info(summaries)").all() as Array<{ name: string }>;
     assert.ok(columns.some((column) => column.name === "milestone"));
   } finally {
@@ -75,7 +75,7 @@ test("upgrades an existing v1 database (no llm_calls table) to v2 transparently"
   }
 });
 
-test("upgrades an existing v2 database (no summaries.milestone column) to v3 transparently", withSqlite, async () => {
+test("upgrades an existing v2 database (no summaries.milestone column) to v3+ transparently", withSqlite, async () => {
   const root = await mkdtemp(join(tmpdir(), "cag-memory-db-v2-"));
   const v2 = await openMemoryDb(root, { path: join(root, "memory.db") });
   assert.ok(v2);
@@ -103,15 +103,40 @@ test("upgrades an existing v2 database (no summaries.milestone column) to v3 tra
   const upgraded = await openMemoryDb(root, { path: join(root, "memory.db") });
   assert.ok(upgraded);
   try {
-    assert.equal(upgraded.schemaVersion, 3);
+    assert.equal(upgraded.schemaVersion, 4);
     const columns = upgraded.db.prepare("PRAGMA table_info(summaries)").all() as Array<{ name: string }>;
     assert.ok(columns.some((column) => column.name === "milestone"));
+    const tables = upgraded.db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_events'")
+      .all();
+    assert.equal(tables.length, 1);
   } finally {
     upgraded.close();
   }
 });
 
-test("resetMemoryDb drops and recreates llm_calls too", withSqlite, async () => {
+test("upgrades an existing v3 database (no savings_events table) to v4 transparently", withSqlite, async () => {
+  const root = await mkdtemp(join(tmpdir(), "cag-memory-db-v3-"));
+  const v3 = await openMemoryDb(root, { path: join(root, "memory.db") });
+  assert.ok(v3);
+  v3.db.exec("DROP TABLE IF EXISTS savings_events");
+  v3.db.prepare("UPDATE meta SET value = '3' WHERE key = 'schema_version'").run();
+  v3.close();
+
+  const upgraded = await openMemoryDb(root, { path: join(root, "memory.db") });
+  assert.ok(upgraded);
+  try {
+    assert.equal(upgraded.schemaVersion, 4);
+    const tables = upgraded.db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_events'")
+      .all();
+    assert.equal(tables.length, 1);
+  } finally {
+    upgraded.close();
+  }
+});
+
+test("resetMemoryDb drops and recreates llm_calls and savings_events too", withSqlite, async () => {
   const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
   assert.ok(memory);
   try {
@@ -121,9 +146,14 @@ test("resetMemoryDb drops and recreates llm_calls too", withSqlite, async () => 
           "VALUES ('run', 'claude', 10, 10, 0, 1, 1, '2026-07-03T00:00:00Z')",
       )
       .run();
+    memory.db
+      .prepare("INSERT INTO savings_events (mechanism, chars_full, chars_sent, created_at) VALUES ('compaction', 100, 10, '2026-07-03T00:00:00Z')")
+      .run();
     resetMemoryDb(memory);
-    const count = memory.db.prepare("SELECT COUNT(*) AS n FROM llm_calls").get() as { n: number };
-    assert.equal(count.n, 0);
+    const llmCount = memory.db.prepare("SELECT COUNT(*) AS n FROM llm_calls").get() as { n: number };
+    assert.equal(llmCount.n, 0);
+    const savingsCount = memory.db.prepare("SELECT COUNT(*) AS n FROM savings_events").get() as { n: number };
+    assert.equal(savingsCount.n, 0);
   } finally {
     memory.close();
   }

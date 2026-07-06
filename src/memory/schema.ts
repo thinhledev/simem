@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 // Core relational tables. Raw checkpoint files on disk stay canonical; every
 // row here is derivable by re-running `cag memory reindex`.
@@ -163,4 +163,22 @@ CREATE INDEX IF NOT EXISTS idx_llm_calls_provider_date ON llm_calls(provider, cr
 // of treating every checkpoint as equally routine.
 export const SCHEMA_V3 = `
 ALTER TABLE summaries ADD COLUMN milestone INTEGER NOT NULL DEFAULT 0;
+`;
+
+// v4: records exact, mechanism-attributed token/char savings from cag's own
+// compression — recursive compaction, preview-vs-full disclosure, and the
+// consolidation/rollup prompt caps. Deliberately does NOT attempt a "vs not
+// using cag at all" figure: that requires knowing what a from-scratch agent
+// would have spent re-exploring the repo, which cag cannot observe. Every row
+// here is a real chars_full - chars_sent delta measured at the moment the
+// saving happened, forward-looking only from whenever this shipped.
+export const SCHEMA_V4 = `
+CREATE TABLE IF NOT EXISTS savings_events (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  mechanism  TEXT NOT NULL,
+  chars_full INTEGER NOT NULL,
+  chars_sent INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_savings_events_mechanism ON savings_events(mechanism, created_at);
 `;

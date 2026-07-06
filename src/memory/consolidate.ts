@@ -3,6 +3,7 @@ import type { GatewayRunResult, RunRequest } from "../types.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
 import { recordGatewayAttempts } from "./ledger.js";
+import { recordSavings } from "./savings.js";
 import {
   MEMORY_CATEGORIES,
   MEMORY_KINDS,
@@ -28,6 +29,8 @@ interface ActiveItemRow {
 interface ActiveItems {
   items: ActiveItemRow[];
   totalCount: number;
+  /** Total character length of every active item's text, included or not — the "full" side of the consolidation-cap saving. */
+  totalChars: number;
 }
 
 // Ordered importance-first: when the cap truncates, the highest-value
@@ -41,10 +44,10 @@ function activeItems(memory: MemoryDb, limit: number): ActiveItems {
       "SELECT id, kind, category, text, importance FROM memory_items WHERE status = 'active' ORDER BY importance DESC, id LIMIT ?",
     )
     .all(limit) as unknown as ActiveItemRow[];
-  const totalCount = (
-    memory.db.prepare("SELECT COUNT(*) AS n FROM memory_items WHERE status = 'active'").get() as { n: number }
-  ).n;
-  return { items, totalCount };
+  const totals = memory.db
+    .prepare("SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(text)), 0) AS chars FROM memory_items WHERE status = 'active'")
+    .get() as { n: number; chars: number };
+  return { items, totalCount: totals.n, totalChars: totals.chars };
 }
 
 export function buildConsolidationPrompt(input: {
@@ -232,6 +235,13 @@ export async function consolidateCheckpoint(
     totalExistingItems: existing.totalCount,
     messages,
     capChars: config.consolidationTokenCapChars,
+  });
+  // What the existing-items cap kept out of this prompt: all active items'
+  // text vs just the ones actually included.
+  recordSavings(memory, {
+    mechanism: "consolidation-cap",
+    charsFull: existing.totalChars,
+    charsSent: existing.items.reduce((sum, item) => sum + item.text.length, 0),
   });
 
   let result: GatewayRunResult;

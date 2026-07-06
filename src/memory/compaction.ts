@@ -2,6 +2,7 @@ import type { MemoryConfig } from "../config.js";
 import type { ConsolidationRunner } from "./consolidate.js";
 import type { MemoryDb } from "./db.js";
 import { recordGatewayAttempts } from "./ledger.js";
+import { recordSavings } from "./savings.js";
 import { capText } from "./text-cap.js";
 
 export interface CompactionResult {
@@ -29,6 +30,14 @@ const STABLE_ROLLUP_INSTRUCTION =
   "Preserve concrete decisions, constraints, key outcomes, and unresolved threads; drop routine detail and " +
   "pleasantries. Write plain prose, chronological, self-contained. Respond with only the digest text.";
 
+interface RollupPromptResult {
+  prompt: string;
+  /** Raw, uncapped length of every input summary's text (rollup-cap "full" side). */
+  charsFull: number;
+  /** Length of the (possibly capText-truncated) text actually placed in the prompt. */
+  charsCapped: number;
+}
+
 // memory_items are deliberately untouched by this whole module: only episodic
 // *summaries* roll up. Durable facts never expire — that is the contract.
 function rollupPrompt(
@@ -36,7 +45,7 @@ function rollupPrompt(
   summaries: SummaryRow[],
   constraints: string[],
   summaryCharCap: number,
-): string {
+): RollupPromptResult {
   const wordCap = kind === "epoch" ? 250 : 300;
   const label = kind === "epoch" ? "chronological checkpoint summaries" : "epoch digests";
   const hasMilestones = summaries.some((summary) => summary.milestone);
@@ -44,17 +53,22 @@ function rollupPrompt(
   const milestoneClause = hasMilestones
     ? "\nEntries marked [MILESTONE] completed a distinct, nameable objective — weight them more heavily than routine entries and keep their outcome legible in the digest.\n"
     : "";
+  let charsFull = 0;
+  let charsCapped = 0;
   const body = summaries
     .map((summary, index) => {
       const { text } = capText(summary.text, summaryCharCap);
+      charsFull += summary.text.length;
+      charsCapped += text.length;
       const prefix = summary.milestone ? "[MILESTONE] " : "";
       return `--- ${index + 1} (${summary.covers_from} … ${summary.covers_to}) ---\n${prefix}${text}`;
     })
     .join("\n\n");
-  return `${STABLE_ROLLUP_INSTRUCTION}
+  const prompt = `${STABLE_ROLLUP_INSTRUCTION}
 ${variableClause}
 ${constraints.length ? `\nNever drop these standing constraints (restate briefly if relevant):\n${constraints.map((text) => `- ${text}`).join("\n")}\n` : ""}${milestoneClause}
 ${body}`;
+  return { prompt, charsFull, charsCapped };
 }
 
 function verbatimWindowIds(memory: MemoryDb, count: number): Set<string> {
@@ -102,7 +116,7 @@ async function rollup(
   const last = batch.at(-1);
   if (!first || !last) return false;
   const constraints = kind === "epoch" ? highImportanceConstraints(memory, batch.map((row) => row.covers_from)) : [];
-  const prompt = rollupPrompt(kind, batch, constraints, config.rollupSummaryCharCap);
+  const { prompt, charsFull, charsCapped } = rollupPrompt(kind, batch, constraints, config.rollupSummaryCharCap);
   const result = await orchestrator.run({
     prompt,
     cwd: process.cwd(),
@@ -110,6 +124,8 @@ async function rollup(
     timeoutMs: config.consolidationTimeoutMs,
   });
   recordGatewayAttempts(memory, kind === "epoch" ? "rollup-epoch" : "rollup-project", undefined, prompt.length, result);
+  // What the per-summary character cap kept out of the LLM prompt this call.
+  recordSavings(memory, { mechanism: "rollup-cap", charsFull, charsSent: charsCapped });
   const text = result.ok ? result.result?.output.trim() : undefined;
   if (!text) return false;
   const checkpointCount = batch.reduce((sum, row) => sum + row.checkpoint_count, 0);
@@ -121,6 +137,14 @@ async function rollup(
   const digestId = Number(inserted.lastInsertRowid);
   const mark = memory.db.prepare("UPDATE summaries SET superseded_by = ? WHERE id = ?");
   for (const row of batch) mark.run(digestId, row.id);
+  // What no longer needs to be individually kept now that these summaries
+  // are folded into one digest — the raw, uncapped text lengths, since
+  // without compaction each would remain an active summary forever.
+  recordSavings(memory, {
+    mechanism: "compaction",
+    charsFull: batch.reduce((sum, row) => sum + row.text.length, 0),
+    charsSent: text.length,
+  });
   return true;
 }
 

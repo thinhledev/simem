@@ -161,6 +161,32 @@ test("tools/call memory_search caps the envelope size and marks it truncated whe
   });
 });
 
+test("tools/call memory_search records a disclosure savings event when previews truncate long text", withSqlite, async () => {
+  await withMemory(async (memory, cwd) => {
+    memory.db
+      .prepare(
+        "INSERT INTO memory_items (kind, text, importance, status, created_at, last_reinforced_at) " +
+          "VALUES ('semantic', ?, 9, 'active', '2026-07-03T00:00:00Z', '2026-07-03T00:00:00Z')",
+      )
+      .run(`The rollout plan is very long. ${"detail ".repeat(100)}`);
+    await handleRequest(
+      memory,
+      cwd,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 12,
+        method: "tools/call",
+        params: { name: "memory_search", arguments: { query: "rollout plan" } },
+      }),
+    );
+    const savings = memory.db
+      .prepare("SELECT chars_full, chars_sent FROM savings_events WHERE mechanism = 'disclosure'")
+      .get() as { chars_full: number; chars_sent: number } | undefined;
+    assert.ok(savings, "a preview shorter than the full hit text should record a disclosure savings event");
+    assert.ok(savings.chars_full > savings.chars_sent);
+  });
+});
+
 test("tools/call memory_get returns a checkpoint by id and a memory item by numeric id", withSqlite, async () => {
   await withMemory(async (memory, cwd) => {
     memory.db

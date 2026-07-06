@@ -8,6 +8,7 @@ import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
 import { toPreview } from "./preview.js";
 import { search } from "./retrieval.js";
+import { recordSavings } from "./savings.js";
 import { MEMORY_CATEGORIES, MEMORY_KINDS, type MemoryCategory } from "./types.js";
 
 // Envelope-level cap on serialized preview payload size — belt-and-suspenders
@@ -135,6 +136,11 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
       payload = payload.slice(0, -1);
       truncated = true;
     }
+    recordSavings(memory, {
+      mechanism: "disclosure",
+      charsFull: hits.reduce((sum, hit) => sum + hit.text.length, 0),
+      charsSent: payload.reduce((sum, preview) => sum + preview.preview.length, 0),
+    });
     return toolResult({ hits: payload, truncated, hint: "Use memory_get with a hit's id for full text." });
   }
   if (name === "memory_get") {
