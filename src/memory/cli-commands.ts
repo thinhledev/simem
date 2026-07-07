@@ -154,7 +154,7 @@ export async function handleMemoryCommand(
               `[${preview.score.toFixed(3)}] ${preview.source}#${preview.id}${origin}\n  ${preview.preview}\n`,
             );
           }
-          process.stdout.write("Pass --full for complete text, or `cag memory show <id>` to drill into one.\n");
+          process.stdout.write("Pass --full for complete text, or `mixai memory show <id>` to drill into one.\n");
         }
       }
     } finally {
@@ -205,11 +205,11 @@ export async function handleMemoryCommand(
         process.stdout.write(`Consolidation queue: ${stats.queueDepth}\n`);
         process.stdout.write(
           `LLM calls: ${spend.calls} (${spend.estimatedCalls} estimated), ` +
-            `${spend.inputTokens}+${spend.outputTokens} tokens, $${spend.costUsd.toFixed(4)}. Run \`cag memory spend\` for a breakdown.\n`,
+            `${spend.inputTokens}+${spend.outputTokens} tokens, $${spend.costUsd.toFixed(4)}. Run \`mixai memory spend\` for a breakdown.\n`,
         );
         process.stdout.write(
           `Measured savings: ~${savings.estimatedTokensSaved} tokens across ${savings.events} event(s). ` +
-            `Run \`cag memory savings\` for a breakdown.\n`,
+            `Run \`mixai memory savings\` for a breakdown.\n`,
         );
       }
     } finally {
@@ -263,8 +263,8 @@ export async function handleMemoryCommand(
         }
         process.stdout.write(
           `Total: ~${totals.estimatedTokensSaved} tokens (${totals.charsSaved} chars) across ${totals.events} event(s).\n` +
-            "This counts only exact, measured deltas cag can prove from its own compression (compaction, " +
-            "preview disclosure, prompt caps) — it does not estimate what re-exploring the repo without cag would cost.\n",
+            "This counts only exact, measured deltas mixai can prove from its own compression (compaction, " +
+            "preview disclosure, prompt caps) — it does not estimate what re-exploring the repo without mixai would cost.\n",
         );
       }
     } finally {
@@ -287,7 +287,7 @@ export async function handleMemoryCommand(
   }
   if (sub === "compact") {
     if (!options.orchestrator || !options.memoryConfig) {
-      throw new Error("memory compact needs the routing configuration; run it via the cag CLI");
+      throw new Error("memory compact needs the routing configuration; run it via the mixai CLI");
     }
     const memory = await requireMemory(options);
     try {
@@ -319,7 +319,7 @@ export async function handleMemoryCommand(
     const checkpointId = options.args[0];
     if (!checkpointId) throw new Error("memory consolidate-checkpoint requires a checkpoint id");
     if (!options.orchestrator || !options.memoryConfig) {
-      throw new Error("memory consolidate-checkpoint needs the routing configuration; run it via the cag CLI");
+      throw new Error("memory consolidate-checkpoint needs the routing configuration; run it via the mixai CLI");
     }
     const result = await consolidateBestEffort(options.cwd, options.orchestrator, checkpointId, options.memoryConfig);
     if (options.json) process.stdout.write(`${JSON.stringify(result)}\n`);

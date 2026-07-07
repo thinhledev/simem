@@ -1,9 +1,9 @@
 import type { MemoryDb } from "./db.js";
 
-// Every mechanism cag actually compresses, each measured at the moment the
+// Every mechanism mixai actually compresses, each measured at the moment the
 // saving happens — never inferred or modeled. There is deliberately no
-// "vs not using cag" mechanism: that would require knowing what a
-// from-scratch agent spends re-exploring the repo, which cag cannot observe.
+// "vs not using mixai" mechanism: that would require knowing what a
+// from-scratch agent spends re-exploring the repo, which mixai cannot observe.
 export type SavingsMechanism =
   | "compaction" // superseded per-checkpoint/epoch summaries vs their merged digest
   | "disclosure" // full hit text vs the preview actually returned by memory_search
@@ -12,7 +12,7 @@ export type SavingsMechanism =
 
 export interface SavingsEntry {
   mechanism: SavingsMechanism;
-  /** What would have been sent/kept without cag's compression. */
+  /** What would have been sent/kept without mixai's compression. */
   charsFull: number;
   /** What was actually sent/kept. */
   charsSent: number;

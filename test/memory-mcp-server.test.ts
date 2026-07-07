@@ -12,7 +12,7 @@ const sqlite = await loadSqlite();
 const withSqlite = { skip: sqlite ? false : "node:sqlite unavailable on this Node runtime" };
 
 async function withMemory(run: (memory: MemoryDb, cwd: string) => Promise<void>): Promise<void> {
-  const cwd = await mkdtemp(join(tmpdir(), "cag-mcp-"));
+  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-"));
   const memory = await openMemoryDb(cwd);
   if (!memory) throw new Error("expected node:sqlite to be available for this test");
   try {
@@ -54,7 +54,7 @@ test("tools/list advertises memory tools, context_brief, and the handoff tools",
 });
 
 test("tools/call context_brief returns a brief and works even without a memory database", withSqlite, async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "cag-mcp-brief-"));
+  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-brief-"));
   const fakeRunner = {
     async run() {
       return { exitCode: 0, stdout: "main\n", stderr: "", durationMs: 1, timedOut: false };
@@ -97,7 +97,7 @@ function fakeReadiness(readyProviders: Set<string>, readySurface: "desktop" | "i
 }
 
 test("tools/call list_handoff_targets excludes the calling agent and reports readiness for the rest", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "cag-mcp-targets-"));
+  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-targets-"));
   const deps = {
     runner: { async run() { return { exitCode: 0, stdout: "", stderr: "", durationMs: 1, timedOut: false }; } },
     memoryConfig: DEFAULT_CONFIG.memory,
@@ -124,7 +124,7 @@ test("tools/call list_handoff_targets excludes the calling agent and reports rea
 });
 
 test("tools/call list_handoff_targets lists all four providers when selfProvider is unknown", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "cag-mcp-targets-noself-"));
+  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-targets-noself-"));
   const deps = {
     runner: { async run() { return { exitCode: 0, stdout: "", stderr: "", durationMs: 1, timedOut: false }; } },
     memoryConfig: DEFAULT_CONFIG.memory,
@@ -143,7 +143,7 @@ test("tools/call list_handoff_targets lists all four providers when selfProvider
 });
 
 test("tools/call switch_to_provider rejects targeting the calling agent itself", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "cag-mcp-switch-self-"));
+  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-switch-self-"));
   const deps = {
     runner: { async run() { return { exitCode: 0, stdout: "", stderr: "", durationMs: 1, timedOut: false }; } },
     memoryConfig: DEFAULT_CONFIG.memory,
@@ -189,7 +189,7 @@ test("tools/call switch_to_provider returns not_ready without launching anything
 });
 
 test("tools/call switch_to_provider checkpoints and returns a manual command on interactive surface (no unsafe auto-spawn)", withSqlite, async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "cag-mcp-switch-interactive-"));
+  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-switch-interactive-"));
   await mkdir(join(cwd, "src"), { recursive: true });
   const sessionPath = join(cwd, "session.jsonl");
   await writeFile(
@@ -266,7 +266,7 @@ test("tools/call switch_to_provider checkpoints and returns a manual command on 
 });
 
 test("tools/call switch_to_provider launches on desktop surface via the injected launcher", withSqlite, async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "cag-mcp-switch-desktop-"));
+  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-switch-desktop-"));
   const claudeProjects = join(cwd, ".claude-home", "projects", "p");
   await mkdir(claudeProjects, { recursive: true });
   await writeFile(
@@ -476,8 +476,8 @@ test("malformed JSON and unknown methods produce JSON-RPC error codes without th
 });
 
 test("runMcpServer streams newline-delimited JSON-RPC responses over stdio", withSqlite, async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "cag-mcp-stdio-"));
-  await mkdir(join(cwd, ".cag"), { recursive: true });
+  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-stdio-"));
+  await mkdir(join(cwd, ".mixai"), { recursive: true });
   const input = new PassThrough();
   const output = new PassThrough();
   const chunks: string[] = [];

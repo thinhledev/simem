@@ -93,8 +93,8 @@ export async function readHookInput(stdin: NodeJS.ReadableStream & { isTTY?: boo
 const REVIVAL_SOURCES = new Set(["compact", "resume", "clear"]);
 
 // Emits the revival brief for context-loss session starts. For Claude Code,
-// plain resume is suppressed: cag's CLAUDE.local.md block already @imports
-// .cag/current/HANDOFF.md on every session start, so injecting the brief
+// plain resume is suppressed: mixai's CLAUDE.local.md block already @imports
+// .mixai/current/HANDOFF.md on every session start, so injecting the brief
 // there too would double-feed the same context. "compact"/"clear" still get
 // the brief — its live git state and memory section aren't in the import.
 export async function handleSessionStart(
@@ -134,7 +134,7 @@ async function sessionFromTranscriptPath(
 
 export type ConsolidationSpawner = (cwd: string, checkpointId: string, configPath?: string) => void;
 
-// Fire-and-forget: a completely normal `cag memory consolidate-checkpoint`
+// Fire-and-forget: a completely normal `mixai memory consolidate-checkpoint`
 // invocation, detached and unref'd so the hook (and the host agent's
 // compaction) never waits on the LLM call. The child self-bounds via
 // consolidationTimeoutMs inside consolidateBestEffort.
@@ -185,7 +185,7 @@ export async function handlePreCompact(
 }
 
 // Cumulative measured savings so far (compaction, disclosure, prompt caps) —
-// the same numbers `cag memory savings` reports, computed fresh each call so
+// the same numbers `mixai memory savings` reports, computed fresh each call so
 // it's never stale. Empty when disabled, nothing has been measured yet, or
 // the runtime lacks node:sqlite — never noise, matching every other hook.
 export async function taskCompletionSavingsLine(cwd: string, config: GatewayConfig): Promise<string> {
@@ -197,8 +197,8 @@ export async function taskCompletionSavingsLine(cwd: string, config: GatewayConf
       const totals = savingsTotals(memory);
       if (totals.events === 0) return "";
       return (
-        `[cag] measured savings so far: ~${totals.estimatedTokensSaved} tokens ` +
-        `(${totals.charsSaved} chars) across ${totals.events} event(s). Run \`cag memory savings\` for a breakdown.`
+        `[mixai] measured savings so far: ~${totals.estimatedTokensSaved} tokens ` +
+        `(${totals.charsSaved} chars) across ${totals.events} event(s). Run \`mixai memory savings\` for a breakdown.`
       );
     } finally {
       memory.close();
@@ -210,7 +210,7 @@ export async function taskCompletionSavingsLine(cwd: string, config: GatewayConf
 
 // Claude Code / Codex "Stop" (task-completion) hook: reports cumulative
 // measured savings so it's visible without the user remembering to run
-// `cag memory savings`. Side-effect-free — pure read of already-recorded data.
+// `mixai memory savings`. Side-effect-free — pure read of already-recorded data.
 export async function handleStop(cwd: string, config: GatewayConfig): Promise<string> {
   const line = await taskCompletionSavingsLine(cwd, config);
   return line ? `${line}\n` : "";
@@ -239,7 +239,7 @@ export async function handleUserPromptSubmit(
         const preview = toPreview(hit);
         return `- [${preview.source} ${preview.id}] ${preview.preview}`;
       });
-      const header = "Relevant project memory (drill in with `cag memory show <id>` or the MCP memory_get tool):";
+      const header = "Relevant project memory (drill in with `mixai memory show <id>` or the MCP memory_get tool):";
       // capText can emit maxChars + 1 (ellipsis appended after the slice) and
       // we add a trailing newline, so leave 2 chars of headroom to keep the
       // whole injection within the configured cap.

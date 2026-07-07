@@ -1,14 +1,14 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-const START = "<!-- cag:handoff:start -->";
-const END = "<!-- cag:handoff:end -->";
+const START = "<!-- mixai:handoff:start -->";
+const END = "<!-- mixai:handoff:end -->";
 const BLOCK = `${START}
-## CAG cross-agent handoff
+## Mixai cross-agent handoff
 
 The imported checkpoint below is continuity context from another coding agent. When the user asks to continue, inspect the live repository state and resume the latest unfinished objective without asking them to repeat completed work.
 
-@.cag/current/HANDOFF.md
+@.mixai/current/HANDOFF.md
 ${END}`;
 
 async function readOptional(path: string): Promise<string> {
@@ -55,18 +55,18 @@ export async function ensureClaudeHandoffMemory(cwd: string): Promise<ClaudeMemo
   const memoryChanged = memory !== original;
   if (memoryChanged) await writeFile(memoryPath, memory, "utf8");
 
-  const gitignoreChanged = await ensureLines(gitignorePath, [".cag/", "CLAUDE.local.md"]);
+  const gitignoreChanged = await ensureLines(gitignorePath, [".mixai/", "CLAUDE.local.md"]);
   const worktreeOriginal = await readOptional(worktreeIncludePath);
   const worktreeMigrated = worktreeOriginal
     .split(/\r?\n/)
-    .filter((line) => line.trim() !== ".cag/CURRENT.md")
+    .filter((line) => line.trim() !== ".mixai/CURRENT.md")
     .join("\n")
     .replace(/^\n+|\n+$/g, "");
   const worktreeMigrationChanged = worktreeMigrated !== worktreeOriginal.trim();
   if (worktreeMigrationChanged) {
     await writeFile(worktreeIncludePath, worktreeMigrated ? `${worktreeMigrated}\n` : "", "utf8");
   }
-  const worktreeChanged = await ensureLines(worktreeIncludePath, [".cag/current/", "CLAUDE.local.md"]);
+  const worktreeChanged = await ensureLines(worktreeIncludePath, [".mixai/current/", "CLAUDE.local.md"]);
   return {
     memoryPath,
     gitignorePath,

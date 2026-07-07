@@ -37,7 +37,7 @@ export interface MemoryEmbeddingsConfig {
   model: string;
 }
 
-// Behavior of `cag hook` when a host agent's lifecycle hooks call in.
+// Behavior of `mixai hook` when a host agent's lifecycle hooks call in.
 // Everything here is about what gets INJECTED into the agent's context, so it
 // lives under `memory` rather than as a new top-level section.
 export interface MemoryHooksConfig {
@@ -49,7 +49,7 @@ export interface MemoryHooksConfig {
   sessionStartBrief: boolean;
   /** Character cap for the session-start revival brief. */
   briefMaxChars: number;
-  /** Report cumulative measured savings on `cag hook stop` and after `cag run` completes. */
+  /** Report cumulative measured savings on `mixai hook stop` and after `mixai run` completes. */
   taskCompletionSavings: boolean;
 }
 
@@ -91,10 +91,10 @@ export const DEFAULT_CONFIG: GatewayConfig = {
     codex: { enabled: true, command: "codex" },
     claude: { enabled: true, command: "claude" },
     cursor: { enabled: true },
-    // Enabled by default so `cag status` reports readiness (installed + runnable
-    // `agy` CLI). `cag run --provider antigravity` still fails cleanly: it has
+    // Enabled by default so `mixai status` reports readiness (installed + runnable
+    // `agy` CLI). `mixai run --provider antigravity` still fails cleanly: it has
     // no non-interactive execution surface and isn't in the default routing
-    // order, so it's never auto-selected. Use `cag switch --surface interactive`.
+    // order, so it's never auto-selected. Use `mixai switch --surface interactive`.
     antigravity: { enabled: true, command: "agy" },
   },
   memory: {

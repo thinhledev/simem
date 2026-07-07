@@ -4,6 +4,6 @@ coverage/
 gateway.config.json
 *.log
 .DS_Store
-.cag/
+.mixai/
 
 CLAUDE.local.md

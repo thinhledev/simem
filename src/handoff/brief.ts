@@ -32,7 +32,7 @@ export interface Brief {
 
 async function latestManifest(cwd: string): Promise<CheckpointManifest | undefined> {
   try {
-    const raw = await readFile(join(cwd, ".cag", "current", "manifest.json"), "utf8");
+    const raw = await readFile(join(cwd, ".mixai", "current", "manifest.json"), "utf8");
     const manifest = JSON.parse(raw) as CheckpointManifest;
     return manifest.version === 1 ? manifest : undefined;
   } catch {
@@ -56,7 +56,7 @@ async function latestSummary(
     return { objective: manifest.summary.latestObjective, outcome: manifest.summary.latestOutcome };
   }
   try {
-    const handoff = await readFile(join(cwd, ".cag", "current", "HANDOFF.md"), "utf8");
+    const handoff = await readFile(join(cwd, ".mixai", "current", "HANDOFF.md"), "utf8");
     const objective = handoffSection(handoff, "Latest user objective");
     const outcome = handoffSection(handoff, "Latest agent outcome");
     return {
@@ -102,7 +102,7 @@ export async function buildBrief(runner: CommandRunner, options: BriefOptions): 
   const outcomeBlock = summary.outcome ? capText(summary.outcome, SUMMARY_SECTION_CAP) : undefined;
 
   const parts: string[] = [
-    `## Context brief (cag local memory)`,
+    `## Context brief (mixai local memory)`,
     manifest
       ? `Checkpoint: ${manifest.id} (${manifest.createdAt}, from ${manifest.source.provider})\nWorkspace: ${cwd}`
       : `Checkpoint: none yet\nWorkspace: ${cwd}`,

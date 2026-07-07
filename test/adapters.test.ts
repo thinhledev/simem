@@ -146,5 +146,5 @@ test("Antigravity adapter's run() always fails cleanly instead of throwing", asy
   const result = await adapter.run(REQUEST);
   assert.equal(result.ok, false);
   assert.equal(result.failure, "unavailable");
-  assert.match(result.error ?? "", /cag switch antigravity --surface interactive/);
+  assert.match(result.error ?? "", /mixai switch antigravity --surface interactive/);
 });

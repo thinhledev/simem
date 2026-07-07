@@ -76,45 +76,45 @@ interface CliOptions {
   remove: boolean;
 }
 
-const HELP = `coding-agents-orchestrator (cag)
+const HELP = `mixai — coding-agent relay and persistent memory
 
 Cross-agent handoff:
-  cag sessions [codex|claude] [--cwd PATH]
-  cag export [--from codex|claude] [--session ID]
-  cag switch <target> [--from PROVIDER] [--session SOURCE_ID] [--to-session TARGET_ID]
-  cag fork <target> [--from PROVIDER] [--session SOURCE_ID] [--to-session TARGET_ID]
+  mixai sessions [codex|claude] [--cwd PATH]
+  mixai export [--from codex|claude] [--session ID]
+  mixai switch <target> [--from PROVIDER] [--session SOURCE_ID] [--to-session TARGET_ID]
+  mixai fork <target> [--from PROVIDER] [--session SOURCE_ID] [--to-session TARGET_ID]
                                    <target>: codex, claude, cursor, or antigravity
                                    (antigravity: --surface desktop cannot select a project folder;
                                     --surface interactive uses the agy CLI and supports --continue)
 
 Agent routing:
-  cag status [--json] [--config PATH]
-  cag run [options] <prompt>
+  mixai status [--json] [--config PATH]
+  mixai run [options] <prompt>
 
 Persistent memory:
-  cag memory search <query> [--kind K] [--category C] [--min-importance N] [--since T] [--until T]
+  mixai memory search <query> [--kind K] [--category C] [--min-importance N] [--since T] [--until T]
                      [--limit N] [--include-superseded] [--full]
                      Returns compact previews by default (both --json and human output); --full for complete text
-  cag memory show <checkpoint-id|item-id>
-  cag memory stats
-  cag memory spend [--group-by purpose|provider|day]
-  cag memory savings [--json]     Exact, measured token/char savings from cag's own compression
-                                   (compaction, preview disclosure, prompt caps) — not a "vs no cag" estimate
-  cag memory compact
-  cag memory reindex [--rebuild] [--embed]
-  cag mcp [--cwd PATH] [--provider P]   Serve memory + handoff tools over MCP stdio (requires Node >= 22.5)
+  mixai memory show <checkpoint-id|item-id>
+  mixai memory stats
+  mixai memory spend [--group-by purpose|provider|day]
+  mixai memory savings [--json]     Exact, measured token/char savings from mixai's own compression
+                                   (compaction, preview disclosure, prompt caps) — not a "vs no mixai" estimate
+  mixai memory compact
+  mixai memory reindex [--rebuild] [--embed]
+  mixai mcp [--cwd PATH] [--provider P]   Serve memory + handoff tools over MCP stdio (requires Node >= 22.5)
                                  --provider identifies the calling agent so list_handoff_targets/
-                                 switch_to_provider can exclude it (set automatically by "cag integrate")
+                                 switch_to_provider can exclude it (set automatically by "mixai integrate")
 
 Context revival:
-  cag brief [--objective TEXT] [--max-chars N] [--json]
+  mixai brief [--objective TEXT] [--max-chars N] [--json]
                                   Print a deterministic revival brief (latest objective/outcome,
                                   live git state, budgeted project memory) — zero LLM calls
-  cag hook <session-start|pre-compact|user-prompt-submit|stop> --provider P [--cwd PATH]
+  mixai hook <session-start|pre-compact|user-prompt-submit|stop> --provider P [--cwd PATH]
                                   Host-agent lifecycle hook entry (reads the hook JSON from stdin;
-                                  wired automatically by "cag integrate"; always exits 0)
-  cag integrate [--provider P] [--check] [--remove] [--cwd PATH]
-                                  Wire a coding agent to call cag automatically: lifecycle hooks,
+                                  wired automatically by "mixai integrate"; always exits 0)
+  mixai integrate [--provider P] [--check] [--remove] [--cwd PATH]
+                                  Wire a coding agent to call mixai automatically: lifecycle hooks,
                                   MCP registration, and instruction blocks (default: all four);
                                   --check reports drift without writing, --remove undoes it
 
@@ -138,7 +138,7 @@ Memory options:
   --rebuild                       Drop and recreate the memory index before reindexing
   --embed                         Also (re)compute embeddings via a local Ollama, if configured
   --include-superseded             Also match summaries rolled up by compaction
-  --group-by purpose|provider|day  Group "cag memory spend" output (default: purpose)
+  --group-by purpose|provider|day  Group "mixai memory spend" output (default: purpose)
 
 Common options:
   --cwd PATH                      Project workspace (default: current directory)
@@ -307,7 +307,7 @@ type StatusItem = ProviderHealth & { desktopInstalled: boolean; desktopVersion?:
 
 // "Ready" reflects whether the provider's desktop app is installed, not
 // whether its standalone CLI is separately authenticated (or an API key is
-// set) — since every provider here is primarily driven through `cag switch`
+// set) — since every provider here is primarily driven through `mixai switch`
 // launching the desktop app. "version" is the desktop app's own bundle
 // version, not the CLI's; "detail" reports all three readiness dimensions
 // (desktop app / CLI / credentials) so a "ready: yes" row that still can't
@@ -393,17 +393,17 @@ async function maybeConsolidate(
     const orchestrator = new GatewayOrchestrator(config, createAdapters(config, runner));
     const result = await consolidateBestEffort(workspace, orchestrator, checkpointId, config.memory);
     if (result.status === "done") {
-      process.stderr.write(`[cag] memory: consolidated ${result.itemsWritten} item(s)\n`);
+      process.stderr.write(`[mixai] memory: consolidated ${result.itemsWritten} item(s)\n`);
     } else if (result.status === "queued") {
-      process.stderr.write(`[cag] memory: consolidation queued (${result.detail ?? "provider unavailable"})\n`);
+      process.stderr.write(`[mixai] memory: consolidation queued (${result.detail ?? "provider unavailable"})\n`);
     }
   } catch {
     // Memory is additive; switch/export must never fail because of it.
   }
 }
 
-// Best-effort: records every attempt from a `cag run` invocation in the token
-// ledger (purpose "run"), so `cag memory spend` reflects real usage cost,
+// Best-effort: records every attempt from a `mixai run` invocation in the token
+// ledger (purpose "run"), so `mixai memory spend` reflects real usage cost,
 // not just internal consolidation/rollup calls. Never affects the command's
 // own success/failure or output.
 async function recordRunLedger(
@@ -422,11 +422,11 @@ async function recordRunLedger(
       memory.close();
     }
   } catch {
-    // Ledger is additive; `cag run` must never fail because of it.
+    // Ledger is additive; `mixai run` must never fail because of it.
   }
 }
 
-// Wires host agents to call cag automatically: lifecycle hooks + MCP server
+// Wires host agents to call mixai automatically: lifecycle hooks + MCP server
 // registration + standing instruction blocks, all idempotent file writes.
 // --check reports drift without writing (exit 1 on drift, for CI);
 // --remove strips exactly what integrate added and nothing else.
@@ -464,16 +464,16 @@ async function handleIntegrate(options: CliOptions): Promise<void> {
 
 // Entry point for host-agent lifecycle hooks (Claude Code / Codex / Cursor).
 // Contract: ALWAYS exit 0 and never throw — a failing hook can abort the
-// host agent's turn or compaction, which is the single worst outcome cag
+// host agent's turn or compaction, which is the single worst outcome mixai
 // could cause. Errors go to stderr only.
 async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promise<void> {
   try {
     const event = options.positional[0];
     if (!event || !HOOK_EVENTS.includes(event as HookEvent)) {
-      throw new Error(`cag hook requires an event: ${HOOK_EVENTS.join(", ")}`);
+      throw new Error(`mixai hook requires an event: ${HOOK_EVENTS.join(", ")}`);
     }
     const provider = options.provider;
-    if (!provider) throw new Error("cag hook requires --provider so ledger rows carry a real provider");
+    if (!provider) throw new Error("mixai hook requires --provider so ledger rows carry a real provider");
     const config = await loadConfig(options.configPath);
     const input = await readHookInput(process.stdin);
     // The hook payload's cwd (where the host agent runs) beats our own
@@ -489,7 +489,7 @@ async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promi
       process.stdout.write(await handleUserPromptSubmit(input, cwd, provider, config));
     }
   } catch (error) {
-    process.stderr.write(`[cag] hook: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`[mixai] hook: ${error instanceof Error ? error.message : String(error)}\n`);
   }
 }
 
@@ -578,9 +578,9 @@ async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Pro
   if (options.launch) {
     const readiness = await checkLaunchReadiness(runner, options.target, plan.surface);
     if (!readiness.ready) {
-      process.stderr.write(`[cag] ${readiness.message ?? `${options.target} is not ready`}\n`);
-      if (readiness.loginCommand) process.stderr.write(`[cag] Run: ${readiness.loginCommand}\n`);
-      process.stderr.write(`[cag] Your checkpoint is safe. After authentication, rerun the same switch command.\n`);
+      process.stderr.write(`[mixai] ${readiness.message ?? `${options.target} is not ready`}\n`);
+      if (readiness.loginCommand) process.stderr.write(`[mixai] Run: ${readiness.loginCommand}\n`);
+      process.stderr.write(`[mixai] Your checkpoint is safe. After authentication, rerun the same switch command.\n`);
       process.exitCode = 2;
       return;
     }
@@ -641,7 +641,7 @@ async function main(): Promise<void> {
     else displayStatus(status);
     return;
   }
-  if (!options.prompt) throw new Error("A prompt is required. Run `cag --help` for usage.");
+  if (!options.prompt) throw new Error("A prompt is required. Run `mixai --help` for usage.");
 
   const result = await orchestrator.run(
     {
@@ -663,15 +663,15 @@ async function main(): Promise<void> {
   else if (result.ok && result.result) {
     process.stdout.write(`${result.result.output}\n`);
     const credential = result.attempts.at(-1)?.credential;
-    process.stderr.write(`\n[cag] ${result.result.provider} · ${credential?.tier ?? "unknown"} · session ${result.result.sessionId ?? "n/a"}\n`);
+    process.stderr.write(`\n[mixai] ${result.result.provider} · ${credential?.tier ?? "unknown"} · session ${result.result.sessionId ?? "n/a"}\n`);
     const savingsLine = await taskCompletionSavingsLine(options.cwd, config);
     if (savingsLine) process.stderr.write(`${savingsLine}\n`);
   } else if (result.attempts.length === 0) {
-    process.stderr.write("[cag] No configured provider is both installed and authenticated. Run `cag status`.\n");
+    process.stderr.write("[mixai] No configured provider is both installed and authenticated. Run `mixai status`.\n");
     process.exitCode = 2;
   } else {
     for (const attempt of result.attempts) {
-      process.stderr.write(`[cag] ${attempt.provider}: ${attempt.result.failure ?? "failed"}: ${attempt.result.error ?? "unknown error"}\n`);
+      process.stderr.write(`[mixai] ${attempt.provider}: ${attempt.result.failure ?? "failed"}: ${attempt.result.error ?? "unknown error"}\n`);
     }
     process.exitCode = 1;
   }
@@ -689,7 +689,7 @@ function isMainModule(): boolean {
 if (isMainModule()) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`[cag] ${message}\n`);
+    process.stderr.write(`[mixai] ${message}\n`);
     process.exitCode = 1;
   });
 }

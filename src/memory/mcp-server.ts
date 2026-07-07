@@ -19,7 +19,7 @@ import { MEMORY_CATEGORIES, MEMORY_KINDS, type MemoryCategory } from "./types.js
 // alongside per-hit preview truncation, in case a high `limit` still adds up.
 const MAX_PREVIEW_RESPONSE_CHARS = 8_000;
 
-export const SERVER_INFO = { name: "cag-memory", version: "0.1.0" };
+export const SERVER_INFO = { name: "mixai-memory", version: "0.1.0" };
 export const PROTOCOL_VERSION = "2024-11-05";
 
 interface JsonRpcRequest {
@@ -211,8 +211,8 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
 
 // Dependencies for tools that reach outside the memory database (git state,
 // config-driven budgets, cross-agent handoff). Defaults are real
-// implementations; tests inject fakes. `selfProvider` is set from `cag mcp
-// --provider X` at registration time (see cag integrate) so handoff tools
+// implementations; tests inject fakes. `selfProvider` is set from `mixai mcp
+// --provider X` at registration time (see mixai integrate) so handoff tools
 // know which agent they're serving and can exclude it from targets.
 export interface McpDeps {
   runner: CommandRunner;

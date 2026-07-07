@@ -78,7 +78,7 @@ export async function reindexMemory(
 ): Promise<ReindexResult> {
   if (options.rebuild) resetMemoryDb(memory);
   const result: ReindexResult = { checkpoints: 0, messages: 0, skipped: [] };
-  const checkpointsRoot = join(resolve(cwd), ".cag", "checkpoints");
+  const checkpointsRoot = join(resolve(cwd), ".mixai", "checkpoints");
   let entries;
   try {
     entries = await readdir(checkpointsRoot, { withFileTypes: true });

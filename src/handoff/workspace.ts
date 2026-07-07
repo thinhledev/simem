@@ -7,7 +7,7 @@ async function git(runner: CommandRunner, cwd: string, args: string[]): Promise<
 }
 
 // Branch/HEAD/status only — no diffs, no log. For latency-sensitive paths
-// (hooks, `cag brief`) where a full `git diff --binary` on a large working
+// (hooks, `mixai brief`) where a full `git diff --binary` on a large working
 // tree would blow the time budget and the output is unused anyway.
 export async function captureWorkspaceSummary(
   runner: CommandRunner,

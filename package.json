@@ -1,10 +1,10 @@
 {
-  "name": "coding-agents-orchestrator",
+  "name": "mixai",
   "version": "0.1.0",
   "description": "Local-first gateway for Codex, Claude Code, and Cursor CLI",
   "type": "module",
   "bin": {
-    "cag": "./dist/cli.js"
+    "mixai": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

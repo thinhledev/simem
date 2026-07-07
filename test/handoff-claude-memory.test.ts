@@ -6,7 +6,7 @@ import test from "node:test";
 import { ensureClaudeHandoffMemory } from "../src/handoff/claude-memory.js";
 
 test("installs an idempotent private Claude handoff import with worktree support", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "cag-claude-memory-"));
+  const workspace = await mkdtemp(join(tmpdir(), "mixai-claude-memory-"));
   await writeFile(join(workspace, "CLAUDE.local.md"), "# My local instructions\n\nKeep this.\n");
   await writeFile(join(workspace, ".gitignore"), ".env\n");
   await writeFile(join(workspace, ".worktreeinclude"), ".env\n");
@@ -20,10 +20,10 @@ test("installs an idempotent private Claude handoff import with worktree support
   assert.equal(first.changed, true);
   assert.equal(second.changed, false);
   assert.match(memory, /Keep this\./);
-  assert.equal(memory.match(/cag:handoff:start/g)?.length, 1);
-  assert.match(memory, /@\.cag\/current\/HANDOFF\.md/);
-  assert.match(gitignore, /^\.cag\/$/m);
+  assert.equal(memory.match(/mixai:handoff:start/g)?.length, 1);
+  assert.match(memory, /@\.mixai\/current\/HANDOFF\.md/);
+  assert.match(gitignore, /^\.mixai\/$/m);
   assert.match(gitignore, /^CLAUDE\.local\.md$/m);
-  assert.match(worktree, /^\.cag\/current\/$/m);
+  assert.match(worktree, /^\.mixai\/current\/$/m);
   assert.match(worktree, /^CLAUDE\.local\.md$/m);
 });

@@ -4,7 +4,7 @@ import type { MemoryDb } from "./db.js";
 // "inject" rows are not LLM calls at all: they record hook-driven context
 // injections (chars written into a host agent's prompt), so their token
 // columns are chars/4 estimates and cost is never reported. They exist so
-// `cag memory spend --group-by purpose` shows injection frequency + volume.
+// `mixai memory spend --group-by purpose` shows injection frequency + volume.
 export type LedgerPurpose = "consolidate" | "rollup-epoch" | "rollup-project" | "run" | "inject";
 
 export interface LedgerEntry {

@@ -34,7 +34,7 @@ const SQLITE_EXPERIMENTAL_WARNING_SNIPPET = "SQLite is an experimental feature";
 
 // node:sqlite unconditionally emits a process-wide ExperimentalWarning the
 // first time it's imported, with no stable alternative to switch to — every
-// `cag` invocation would otherwise print it on every run. Suppress only this
+// `mixai` invocation would otherwise print it on every run. Suppress only this
 // exact warning (never warnings in general) by intercepting process.emitWarning
 // for the duration of the import.
 async function importSqliteQuietly(): Promise<unknown> {
@@ -62,7 +62,7 @@ export async function loadSqlite(): Promise<SqliteModule | undefined> {
 }
 
 export function memoryDbPath(cwd: string): string {
-  return join(resolve(cwd), ".cag", "memory.db");
+  return join(resolve(cwd), ".mixai", "memory.db");
 }
 
 // Ordered migrations; index N upgrades schema_version N to N+1. Version 0 is
@@ -143,7 +143,7 @@ export async function openMemoryDb(
 ): Promise<MemoryDb | undefined> {
   const sqlite = options.sqlite === undefined ? await loadSqlite() : options.sqlite ?? undefined;
   if (!sqlite) {
-    if (!options.quiet) process.stderr.write(`[cag] ${SQLITE_REQUIREMENT_MESSAGE}\n`);
+    if (!options.quiet) process.stderr.write(`[mixai] ${SQLITE_REQUIREMENT_MESSAGE}\n`);
     return undefined;
   }
   const path = options.path ?? memoryDbPath(cwd);
@@ -168,7 +168,7 @@ export async function openMemoryDb(
   } catch (error) {
     if (!options.quiet) {
       const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`[cag] Could not open memory database at ${path}: ${message}\n`);
+      process.stderr.write(`[mixai] Could not open memory database at ${path}: ${message}\n`);
     }
     return undefined;
   }

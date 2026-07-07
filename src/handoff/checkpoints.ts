@@ -21,11 +21,11 @@ import { captureWorkspace } from "./workspace.js";
 const EMPTY_STATE: GatewayState = { version: 1, checkpoints: {}, sessions: {} };
 
 // Bounds manifest.summary so one tool-output-heavy final message can't bloat
-// every manifest.json; `cag brief` re-caps to its own budget on read anyway.
+// every manifest.json; `mixai brief` re-caps to its own budget on read anyway.
 const MANIFEST_SUMMARY_CAP = 2_000;
 
 function gatewayDirectory(cwd: string): string {
-  return join(resolve(cwd), ".cag");
+  return join(resolve(cwd), ".mixai");
 }
 
 export async function readGatewayState(cwd: string): Promise<GatewayState> {

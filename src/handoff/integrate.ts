@@ -4,12 +4,12 @@ import { dirname, join, resolve } from "node:path";
 import type { ProviderId } from "../types.js";
 import { ensureClaudeHandoffMemory } from "./claude-memory.js";
 
-// Distinct from claude-memory.ts's cag:handoff markers so the two features
+// Distinct from claude-memory.ts's mixai:handoff markers so the two features
 // can update their own blocks in the same file without clobbering each other.
-const MD_START = "<!-- cag:integrate:start -->";
-const MD_END = "<!-- cag:integrate:end -->";
-const TOML_START = "# cag:integrate:start";
-const TOML_END = "# cag:integrate:end";
+const MD_START = "<!-- mixai:integrate:start -->";
+const MD_END = "<!-- mixai:integrate:end -->";
+const TOML_START = "# mixai:integrate:start";
+const TOML_END = "# mixai:integrate:end";
 
 export type IntegrationAction = "created" | "updated" | "unchanged" | "removed" | "failed";
 
@@ -32,11 +32,11 @@ export interface IntegrateOptions {
 }
 
 const INSTRUCTION_BODY =
-  "This project has persistent local memory managed by `cag`. Before re-exploring the repository from " +
-  "scratch, check it first: use the `memory_search` MCP tool or `cag memory search \"<topic>\"` for past " +
+  "This project has persistent local memory managed by `mixai`. Before re-exploring the repository from " +
+  "scratch, check it first: use the `memory_search` MCP tool or `mixai memory search \"<topic>\"` for past " +
   "decisions, constraints, and outcomes (results are compact previews — drill in with `memory_get` or " +
-  "`cag memory show <id>`). Record new durable decisions the moment they are made with the `memory_save` " +
-  "MCP tool. If your context feels thin after a compaction or reset, run `cag brief` (or the " +
+  "`mixai memory show <id>`). Record new durable decisions the moment they are made with the `memory_save` " +
+  "MCP tool. If your context feels thin after a compaction or reset, run `mixai brief` (or the " +
   "`context_brief` MCP tool) to reload the latest objective, live workspace state, and the most relevant " +
   "project memory without re-reading the repository. If you or the user hit a usage or rate limit, or the " +
   "user asks to switch coding agents, call `list_handoff_targets` to see which other agents (Codex, Claude " +
@@ -45,7 +45,7 @@ const INSTRUCTION_BODY =
   "continuation prompt.";
 
 function instructionBlock(extra?: string): string {
-  return `${MD_START}\n## CAG project memory\n\n${INSTRUCTION_BODY}${extra ? `\n\n${extra}` : ""}\n${MD_END}`;
+  return `${MD_START}\n## Mixai project memory\n\n${INSTRUCTION_BODY}${extra ? `\n\n${extra}` : ""}\n${MD_END}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -66,7 +66,7 @@ function parseJsonObject(raw: string, path: string): Record<string, unknown> {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error(`${path} exists but is not valid JSON; fix or remove it, then rerun cag integrate`);
+    throw new Error(`${path} exists but is not valid JSON; fix or remove it, then rerun mixai integrate`);
   }
   if (!isRecord(parsed)) throw new Error(`${path} must contain a JSON object`);
   return parsed;
@@ -87,7 +87,7 @@ function upsertBlock(original: string | undefined, block: string): string {
   return `${prefix}${prefix ? "\n" : ""}${block}\n`;
 }
 
-// Strip cag's marker-delimited block; undefined means "delete the file"
+// Strip mixai's marker-delimited block; undefined means "delete the file"
 // (nothing but our block remained).
 function stripBlock(original: string | undefined, tomlMarkers = false): string | undefined {
   if (original === undefined) return undefined;
@@ -114,7 +114,7 @@ const HOOK_EVENT_ARGS: Record<(typeof HOOK_EVENT_NAMES)[number], string> = {
 };
 
 function hookCommand(event: (typeof HOOK_EVENT_NAMES)[number], provider: ProviderId): string {
-  return `cag hook ${HOOK_EVENT_ARGS[event]} --provider ${provider}`;
+  return `mixai hook ${HOOK_EVENT_ARGS[event]} --provider ${provider}`;
 }
 
 function groupHasCommand(group: unknown, command: string): boolean {
@@ -165,8 +165,8 @@ function withCagMcpServer(
 ): Record<string, unknown> {
   const clone = structuredClone(config);
   const servers = isRecord(clone.mcpServers) ? clone.mcpServers : {};
-  if (remove) delete servers["cag-memory"];
-  else servers["cag-memory"] = { command: "cag", args: ["mcp", "--cwd", cwd, "--provider", provider] };
+  if (remove) delete servers["mixai-memory"];
+  else servers["mixai-memory"] = { command: "mixai", args: ["mcp", "--cwd", cwd, "--provider", provider] };
   if (Object.keys(servers).length > 0) clone.mcpServers = servers;
   else delete clone.mcpServers;
   return clone;
@@ -252,9 +252,9 @@ async function integrateClaude(cwd: string, options: IntegrateOptions): Promise<
   }
   if (!remove) {
     const memoryContent = await readOptional(memoryPath);
-    if (options.dryRun && !(memoryContent ?? "").includes("cag:handoff:start")) {
+    if (options.dryRun && !(memoryContent ?? "").includes("mixai:handoff:start")) {
       plan.notes.push(
-        "CLAUDE.local.md lacks the cag:handoff import block; run `cag integrate --provider claude` (without --check) to install both together",
+        "CLAUDE.local.md lacks the mixai:handoff import block; run `mixai integrate --provider claude` (without --check) to install both together",
       );
     }
   }
@@ -267,7 +267,7 @@ async function integrateCodex(cwd: string, options: IntegrateOptions): Promise<I
   const hooksPath = join(cwd, ".codex", "hooks.json");
   await applyFile(plan, hooksPath, jsonTransform(hooksPath, (existing) => withCagHookEntries(existing, "codex", remove)), options);
   const configPath = join(cwd, ".codex", "config.toml");
-  const tomlBlock = `${TOML_START}\n[mcp_servers.cag-memory]\ncommand = "cag"\nargs = ["mcp", "--cwd", "${cwd}", "--provider", "codex"]\n${TOML_END}`;
+  const tomlBlock = `${TOML_START}\n[mcp_servers.mixai-memory]\ncommand = "mixai"\nargs = ["mcp", "--cwd", "${cwd}", "--provider", "codex"]\n${TOML_END}`;
   await applyFile(
     plan,
     configPath,
@@ -302,9 +302,9 @@ async function integrateCursor(cwd: string, options: IntegrateOptions): Promise<
       const clone = structuredClone(existing);
       const hooks = isRecord(clone.hooks) ? clone.hooks : {};
       const entries: Array<[string, string]> = [
-        ["sessionStart", "cag hook session-start --provider cursor"],
-        ["beforeSubmitPrompt", "cag hook user-prompt-submit --provider cursor"],
-        ["stop", "cag hook stop --provider cursor"],
+        ["sessionStart", "mixai hook session-start --provider cursor"],
+        ["beforeSubmitPrompt", "mixai hook user-prompt-submit --provider cursor"],
+        ["stop", "mixai hook stop --provider cursor"],
       ];
       for (const [event, command] of entries) {
         const groups = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
@@ -328,8 +328,8 @@ async function integrateCursor(cwd: string, options: IntegrateOptions): Promise<
     options,
     CURSOR_HOOKS_NOTE,
   );
-  const rulesPath = join(cwd, ".cursor", "rules", "cag-memory.mdc");
-  const rulesContent = `---\ndescription: CAG persistent project memory\nalwaysApply: true\n---\n\n${instructionBlock()}\n`;
+  const rulesPath = join(cwd, ".cursor", "rules", "mixai-memory.mdc");
+  const rulesContent = `---\ndescription: Mixai persistent project memory\nalwaysApply: true\n---\n\n${instructionBlock()}\n`;
   await applyFile(plan, rulesPath, (original) => (remove ? undefined : original === rulesContent ? original : rulesContent), options);
   if (!remove) plan.notes.push(CURSOR_HOOKS_NOTE);
   return plan;
@@ -346,13 +346,13 @@ async function integrateAntigravity(cwd: string, options: IntegrateOptions): Pro
   // there are no lifecycle hooks and no confirmed MCP registration.
   const geminiPath = join(geminiConfigDir(), "GEMINI.md");
   const block = instructionBlock(
-    "Automatic lifecycle hooks are not available for this agent — run `cag brief` yourself when resuming " +
-      "work or after losing context, and `cag memory search` before re-exploring a repository.",
+    "Automatic lifecycle hooks are not available for this agent — run `mixai brief` yourself when resuming " +
+      "work or after losing context, and `mixai memory search` before re-exploring a repository.",
   );
   await applyFile(plan, geminiPath, (original) => (remove ? stripBlock(original) : upsertBlock(original, block)), options);
   if (!remove) {
     plan.notes.push("Antigravity (agy) has no lifecycle hooks; instructions are global (~/.gemini/GEMINI.md), not per-project");
-    plan.notes.push("MCP registration for agy is unverified — memory tools remain reachable via the `cag memory` CLI");
+    plan.notes.push("MCP registration for agy is unverified — memory tools remain reachable via the `mixai memory` CLI");
   }
   return plan;
 }
