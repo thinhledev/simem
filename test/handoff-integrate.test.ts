@@ -26,7 +26,7 @@ test("claude integrate writes hooks, .mcp.json, and instruction block; second ru
   }
   assert.equal(settings.hooks.Stop[0].hooks[0].command, "cag hook stop --provider claude");
   const mcp = JSON.parse(await readFile(join(cwd, ".mcp.json"), "utf8"));
-  assert.deepEqual(mcp.mcpServers["cag-memory"], { command: "cag", args: ["mcp", "--cwd", cwd] });
+  assert.deepEqual(mcp.mcpServers["cag-memory"], { command: "cag", args: ["mcp", "--cwd", cwd, "--provider", "claude"] });
   const local = await readFile(join(cwd, "CLAUDE.local.md"), "utf8");
   assert.match(local, /cag:integrate:start/);
   assert.match(local, /memory_search/);

@@ -102,7 +102,9 @@ Persistent memory:
                                    (compaction, preview disclosure, prompt caps) — not a "vs no cag" estimate
   cag memory compact
   cag memory reindex [--rebuild] [--embed]
-  cag mcp [--cwd PATH]            Serve memory tools over MCP stdio (requires Node >= 22.5)
+  cag mcp [--cwd PATH] [--provider P]   Serve memory + handoff tools over MCP stdio (requires Node >= 22.5)
+                                 --provider identifies the calling agent so list_handoff_targets/
+                                 switch_to_provider can exclude it (set automatically by "cag integrate")
 
 Context revival:
   cag brief [--objective TEXT] [--max-chars N] [--json]
@@ -623,7 +625,12 @@ async function main(): Promise<void> {
   }
   if (options.command === "mcp") {
     const mcpConfig = await loadConfig(options.configPath);
-    return await runMcpServer(options.cwd, undefined, { runner, memoryConfig: mcpConfig.memory });
+    return await runMcpServer(options.cwd, undefined, {
+      runner,
+      memoryConfig: mcpConfig.memory,
+      ...(options.provider ? { selfProvider: options.provider } : {}),
+      ...(options.configPath ? { configPath: options.configPath } : {}),
+    });
   }
 
   const config = await loadConfig(options.configPath);

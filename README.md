@@ -302,6 +302,20 @@ Phase 4 also taught `cag` to find Cursor sessions (`~/.cursor/projects/<slugifie
 
 In a scratch repo: `cag integrate --provider claude`, open Claude Code, work a bit, trigger `/compact`, then confirm (a) a fresh checkpoint appeared in `.cag/checkpoints/`, (b) the post-compaction context shows the injected brief, (c) `ps` briefly shows a background `cag memory consolidate-checkpoint` process, and (d) `cag memory spend` gained `inject`/`consolidate` rows. The same pass on Cursor doubles as verification of its unverified hooks schema.
 
+### Cross-agent handoff via MCP: "switch me to another agent"
+
+Two MCP tools let an agent recognize it should hand off — e.g. a usage/rate-limit error, or the user asking to switch — and act on it, without you leaving the chat:
+
+- **`list_handoff_targets`** (read-only) — reports which of the other three agents are installed and ready right now. "Ready" means installed + authenticated, not remaining usage/quota: no agent's CLI exposes a quota-remaining query, so cag genuinely cannot tell you whether Codex/Cursor/Antigravity themselves have headroom, only whether they'd launch successfully if asked to.
+- **`switch_to_provider`** (side-effecting) — checkpoints the current session (objective, outcome, live git state) and launches the target with a continuation prompt, exactly like `cag switch <target>`. On macOS it opens the target's desktop app directly; the model's tool-call is the whole interaction, and your host app's own permission-approval dialog ("Allow"/"Deny") is the one confirming click — cag adds no separate prompt of its own.
+
+**Two limits worth knowing before you rely on this:**
+
+1. **There's no "usage limit hit" trigger.** Claude Code, Codex, and Cursor don't expose a lifecycle hook for rate-limiting, and when a limit is actually hit the model's own turn is rejected before it can act — there's no completed turn in which to call a tool. What actually works is instruction-level recognition: the shared block `cag integrate` writes into `CLAUDE.local.md`/`AGENTS.md`/Cursor's rules file tells the model to check `list_handoff_targets` when it sees rate-limit/quota language in the conversation (an error message, or the user saying so) — this is a model-level nudge, not an automatic system event.
+2. **Auto-launch only works for desktop surface.** Spawning an *interactive* CLI process (`codex resume ...`, `cursor-agent --resume=...`) from inside `cag mcp` would attach it via `stdio: "inherit"` to the MCP server's own stdio — which is the JSON-RPC pipe to the host agent, not a real terminal. That can't give you a usable session, so on non-macOS (or when a target has no desktop app) `switch_to_provider` stops after the checkpoint and returns a ready-to-run command for you to paste into your own terminal instead of a literal one-click launch.
+
+Since `cag integrate` registers each provider's MCP server with `--provider <self>` (e.g. Claude's `.mcp.json` runs `cag mcp --cwd <path> --provider claude`), the running server knows which agent it's serving — that's how it excludes itself from `list_handoff_targets` and checkpoints the right session as the switch source.
+
 ## Phase boundary
 
 Phase 1 shipped file-backed checkpoints and lineage. Phase 2 shipped the persistent memory system above — SQLite index, FTS5/hybrid retrieval, and bounded recursive summarization — while keeping the Phase 1 handoff file format stable. Phase 3 added the token ledger, previews-by-default search, bounded prompt assembly, and milestone-aware compaction described above, without changing the HANDOFF.md format or the Phase 1/2 command surface (aside from the previews-by-default change to `cag memory search --json` and the MCP `memory_search` tool, both of which keep the old full-text shape behind `--full`/`full: true`). Phase 4 added `cag integrate`/`cag hook`/`cag brief` (agents call `cag` automatically; context survives compaction), Cursor and Antigravity session discovery, and the `context_brief` MCP tool; `package.json` engines dropped to `>=20` to match the graceful-degradation story that was already true in code.

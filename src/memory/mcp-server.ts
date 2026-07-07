@@ -2,7 +2,11 @@ import { createInterface } from "node:readline";
 import { DEFAULT_CONFIG, type MemoryConfig } from "../config.js";
 import { buildBrief } from "../handoff/brief.js";
 import { readGatewayState } from "../handoff/checkpoints.js";
+import { spawnDetachedConsolidation, type ConsolidationSpawner } from "../handoff/hooks.js";
+import { checkLaunchReadiness } from "../handoff/preflight.js";
+import { displayCommand, launchSwitch, prepareSwitch, type SwitchPlan } from "../handoff/switcher.js";
 import { NodeCommandRunner, type CommandRunner } from "../process.js";
+import { PROVIDER_IDS, type ProviderId } from "../types.js";
 import { showRecord } from "./cli-commands.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
@@ -103,6 +107,34 @@ const TOOLS = [
       required: ["text", "kind", "importance"],
     },
   },
+  {
+    name: "list_handoff_targets",
+    description:
+      "Check which other coding agents (Codex, Claude Code, Cursor, Antigravity) are installed and ready to " +
+      "take over this workspace right now — useful when you or the user are rate-limited, out of usage, or " +
+      "the user asks to switch agents. Excludes the agent currently running this tool. 'Ready' means " +
+      "installed and authenticated, not remaining usage/quota — no agent's CLI exposes that.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "switch_to_provider",
+    description:
+      "Hand off the current task to another coding agent: writes a checkpoint of this session's work " +
+      "(objective, outcome, live git state) and, on macOS, opens the target agent's desktop app with a " +
+      "continuation prompt ready. On other platforms (or if the target has no desktop app), returns a " +
+      "ready-to-run terminal command instead, since launching an interactive CLI process from inside this " +
+      "MCP server cannot attach to a real terminal. Only call this after the user has confirmed they want to " +
+      "switch — e.g. after list_handoff_targets showed a ready option and the user agreed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", enum: [...PROVIDER_IDS] },
+        surface: { type: "string", enum: ["desktop", "interactive"], description: "Defaults to desktop on macOS, interactive elsewhere" },
+        fork: { type: "boolean", description: "Keep this session active too, instead of an exclusive switch" },
+      },
+      required: ["target"],
+    },
+  },
 ] as const;
 
 async function callTool(memory: MemoryDb, cwd: string, name: string, args: Record<string, unknown>): Promise<unknown> {
@@ -178,10 +210,22 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
 }
 
 // Dependencies for tools that reach outside the memory database (git state,
-// config-driven budgets). Defaults are real implementations; tests inject fakes.
+// config-driven budgets, cross-agent handoff). Defaults are real
+// implementations; tests inject fakes. `selfProvider` is set from `cag mcp
+// --provider X` at registration time (see cag integrate) so handoff tools
+// know which agent they're serving and can exclude it from targets.
 export interface McpDeps {
   runner: CommandRunner;
   memoryConfig: MemoryConfig;
+  selfProvider?: ProviderId;
+  configPath?: string;
+  spawnConsolidation?: ConsolidationSpawner;
+  launch?: (plan: SwitchPlan) => Promise<number | null>;
+  // checkDesktopApp/checkLaunchReadiness reach the real filesystem (installed
+  // apps under /Applications) regardless of the injected runner — override
+  // this in tests so handoff-tool behavior doesn't depend on what's actually
+  // installed on the machine running the suite.
+  checkReadiness?: typeof checkLaunchReadiness;
 }
 
 function defaultDeps(): McpDeps {
@@ -239,6 +283,108 @@ export async function handleRequest(
           ...(maxChars !== undefined ? { maxChars } : {}),
         });
         return { jsonrpc: "2.0", id, result: toolResult(brief) };
+      } catch (error) {
+        return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (params.name === "list_handoff_targets") {
+      try {
+        const checkReadiness = deps.checkReadiness ?? checkLaunchReadiness;
+        const self = deps.selfProvider;
+        const targets = await Promise.all(
+          PROVIDER_IDS.filter((id) => id !== self).map(async (target) => {
+            const [desktop, interactive] = await Promise.all([
+              checkReadiness(deps.runner, target, "desktop"),
+              checkReadiness(deps.runner, target, "interactive"),
+            ]);
+            const ready = desktop.ready || interactive.ready;
+            const surface = desktop.ready ? "desktop" : interactive.ready ? "interactive" : undefined;
+            const detail = ready ? undefined : (interactive.message ?? desktop.message);
+            return { provider: target, ready, ...(surface ? { surface } : {}), ...(detail ? { detail } : {}) };
+          }),
+        );
+        return { jsonrpc: "2.0", id, result: toolResult({ self: self ?? null, targets }) };
+      } catch (error) {
+        return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (params.name === "switch_to_provider") {
+      try {
+        const target = args.target;
+        if (typeof target !== "string" || !PROVIDER_IDS.includes(target as ProviderId)) {
+          throw new Error(`target must be one of: ${PROVIDER_IDS.join(", ")}`);
+        }
+        if (deps.selfProvider && target === deps.selfProvider) {
+          throw new Error(`target must differ from the calling agent (${deps.selfProvider})`);
+        }
+        const requestedSurface = args.surface;
+        if (requestedSurface !== undefined && requestedSurface !== "desktop" && requestedSurface !== "interactive") {
+          throw new Error('surface must be "desktop" or "interactive"');
+        }
+        const surface = (requestedSurface as "desktop" | "interactive" | undefined)
+          ?? (process.platform === "darwin" ? "desktop" : "interactive");
+        const checkReadiness = deps.checkReadiness ?? checkLaunchReadiness;
+        const readiness = await checkReadiness(deps.runner, target as ProviderId, surface);
+        if (!readiness.ready) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            result: toolResult({
+              ok: false,
+              target,
+              surface,
+              reason: "not_ready",
+              message: readiness.message,
+              ...(readiness.loginCommand ? { loginCommand: readiness.loginCommand } : {}),
+            }),
+          };
+        }
+        const plan = await prepareSwitch(deps.runner, {
+          cwd,
+          target: target as ProviderId,
+          ...(deps.selfProvider ? { source: deps.selfProvider } : {}),
+          fork: args.fork === true,
+          surface,
+          memoryConfig: deps.memoryConfig,
+        });
+        if (deps.memoryConfig.enabled) {
+          const spawnConsolidation = deps.spawnConsolidation ?? spawnDetachedConsolidation;
+          spawnConsolidation(cwd, plan.checkpoint.manifest.id, deps.configPath);
+        }
+        // Desktop surface just opens a GUI app (safe, detached, stdio ignored).
+        // Interactive would spawn a CLI process attached via stdio: "inherit" —
+        // but this MCP server has no real terminal (its stdio is the JSON-RPC
+        // pipe to the host agent), so an interactive launch here can't give
+        // the user a usable session. Return the ready command instead.
+        if (surface === "desktop") {
+          const launch = deps.launch ?? launchSwitch;
+          await launch(plan);
+          return {
+            jsonrpc: "2.0",
+            id,
+            result: toolResult({
+              ok: true,
+              target,
+              surface,
+              launched: true,
+              checkpointId: plan.checkpoint.manifest.id,
+              message: `Opened ${target}. The checkpoint and continuation prompt are ready.`,
+            }),
+          };
+        }
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: toolResult({
+            ok: true,
+            target,
+            surface,
+            launched: false,
+            checkpointId: plan.checkpoint.manifest.id,
+            manualCommand: displayCommand(plan),
+            message: `Checkpoint ready. Run this in your terminal to continue in ${target}: ${displayCommand(plan)}`,
+          }),
+        };
       } catch (error) {
         return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
       }

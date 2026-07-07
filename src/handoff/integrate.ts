@@ -38,7 +38,11 @@ const INSTRUCTION_BODY =
   "`cag memory show <id>`). Record new durable decisions the moment they are made with the `memory_save` " +
   "MCP tool. If your context feels thin after a compaction or reset, run `cag brief` (or the " +
   "`context_brief` MCP tool) to reload the latest objective, live workspace state, and the most relevant " +
-  "project memory without re-reading the repository.";
+  "project memory without re-reading the repository. If you or the user hit a usage or rate limit, or the " +
+  "user asks to switch coding agents, call `list_handoff_targets` to see which other agents (Codex, Claude " +
+  "Code, Cursor, Antigravity) are installed and ready right now, then — only after the user confirms — call " +
+  "`switch_to_provider` to hand off: it checkpoints this session's work and launches the target agent with a " +
+  "continuation prompt.";
 
 function instructionBlock(extra?: string): string {
   return `${MD_START}\n## CAG project memory\n\n${INSTRUCTION_BODY}${extra ? `\n\n${extra}` : ""}\n${MD_END}`;
@@ -150,11 +154,19 @@ function withCagHookEntries(
   return clone;
 }
 
-function withCagMcpServer(config: Record<string, unknown>, cwd: string, remove: boolean): Record<string, unknown> {
+// `--provider` lets the running MCP server know which agent it's serving, so
+// tools like `list_handoff_targets`/`switch_to_provider` can exclude "self"
+// and checkpoint the right session as the switch source.
+function withCagMcpServer(
+  config: Record<string, unknown>,
+  cwd: string,
+  provider: ProviderId,
+  remove: boolean,
+): Record<string, unknown> {
   const clone = structuredClone(config);
   const servers = isRecord(clone.mcpServers) ? clone.mcpServers : {};
   if (remove) delete servers["cag-memory"];
-  else servers["cag-memory"] = { command: "cag", args: ["mcp", "--cwd", cwd] };
+  else servers["cag-memory"] = { command: "cag", args: ["mcp", "--cwd", cwd, "--provider", provider] };
   if (Object.keys(servers).length > 0) clone.mcpServers = servers;
   else delete clone.mcpServers;
   return clone;
@@ -225,7 +237,7 @@ async function integrateClaude(cwd: string, options: IntegrateOptions): Promise<
   const settingsPath = join(cwd, ".claude", "settings.json");
   await applyFile(plan, settingsPath, jsonTransform(settingsPath, (existing) => withCagHookEntries(existing, "claude", remove)), options);
   const mcpPath = join(cwd, ".mcp.json");
-  await applyFile(plan, mcpPath, jsonTransform(mcpPath, (existing) => withCagMcpServer(existing, cwd, remove)), options);
+  await applyFile(plan, mcpPath, jsonTransform(mcpPath, (existing) => withCagMcpServer(existing, cwd, "claude", remove)), options);
   const memoryPath = join(cwd, "CLAUDE.local.md");
   await applyFile(
     plan,
@@ -255,7 +267,7 @@ async function integrateCodex(cwd: string, options: IntegrateOptions): Promise<I
   const hooksPath = join(cwd, ".codex", "hooks.json");
   await applyFile(plan, hooksPath, jsonTransform(hooksPath, (existing) => withCagHookEntries(existing, "codex", remove)), options);
   const configPath = join(cwd, ".codex", "config.toml");
-  const tomlBlock = `${TOML_START}\n[mcp_servers.cag-memory]\ncommand = "cag"\nargs = ["mcp", "--cwd", "${cwd}"]\n${TOML_END}`;
+  const tomlBlock = `${TOML_START}\n[mcp_servers.cag-memory]\ncommand = "cag"\nargs = ["mcp", "--cwd", "${cwd}", "--provider", "codex"]\n${TOML_END}`;
   await applyFile(
     plan,
     configPath,
@@ -279,7 +291,7 @@ async function integrateCursor(cwd: string, options: IntegrateOptions): Promise<
   const plan: IntegrationPlan = { provider: "cursor", files: [], notes: [] };
   const remove = Boolean(options.remove);
   const mcpPath = join(cwd, ".cursor", "mcp.json");
-  await applyFile(plan, mcpPath, jsonTransform(mcpPath, (existing) => withCagMcpServer(existing, cwd, remove)), options);
+  await applyFile(plan, mcpPath, jsonTransform(mcpPath, (existing) => withCagMcpServer(existing, cwd, "cursor", remove)), options);
   // Best-guess registration mirroring Cursor's documented event vocabulary
   // (sessionStart / beforeSubmitPrompt / stop); Cursor has no compaction hook.
   const hooksPath = join(cwd, ".cursor", "hooks.json");
