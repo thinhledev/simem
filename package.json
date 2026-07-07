@@ -3,15 +3,21 @@
   "version": "0.1.0",
   "description": "Local-first gateway for Codex, Claude Code, and Cursor CLI",
   "type": "module",
+  "license": "MIT",
+  "author": "Thinh Le",
   "bin": {
     "mixai": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepublishOnly": "rm -rf dist && npm run build && npm test"
   },
   "engines": {
     "node": ">=20.0.0"
