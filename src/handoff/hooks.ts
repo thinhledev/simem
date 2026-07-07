@@ -8,6 +8,7 @@ import { openMemoryDb } from "../memory/db.js";
 import { recordLlmCall } from "../memory/ledger.js";
 import { toPreview } from "../memory/preview.js";
 import { search } from "../memory/retrieval.js";
+import { savingsTotals } from "../memory/savings.js";
 import { capText } from "../memory/text-cap.js";
 import type { CommandRunner } from "../process.js";
 import type { ProviderId } from "../types.js";
@@ -16,9 +17,9 @@ import { createCheckpoint } from "./checkpoints.js";
 import { resolveSession } from "./sessions.js";
 import type { SessionInfo } from "./types.js";
 
-export type HookEvent = "session-start" | "pre-compact" | "user-prompt-submit";
+export type HookEvent = "session-start" | "pre-compact" | "user-prompt-submit" | "stop";
 
-export const HOOK_EVENTS: HookEvent[] = ["session-start", "pre-compact", "user-prompt-submit"];
+export const HOOK_EVENTS: HookEvent[] = ["session-start", "pre-compact", "user-prompt-submit", "stop"];
 
 // Loose superset of what host agents put on a hook's stdin. Claude Code and
 // Codex share the snake_case field names; anything else (Cursor's schema is
@@ -181,6 +182,38 @@ export async function handlePreCompact(
   }
   const checkpoint = await createCheckpoint(runner, session, { mode: "export", memoryConfig: config.memory });
   if (config.memory.enabled) spawnConsolidation(cwd, checkpoint.manifest.id, configPath);
+}
+
+// Cumulative measured savings so far (compaction, disclosure, prompt caps) —
+// the same numbers `cag memory savings` reports, computed fresh each call so
+// it's never stale. Empty when disabled, nothing has been measured yet, or
+// the runtime lacks node:sqlite — never noise, matching every other hook.
+export async function taskCompletionSavingsLine(cwd: string, config: GatewayConfig): Promise<string> {
+  if (!config.memory.enabled || !config.memory.hooks.taskCompletionSavings) return "";
+  try {
+    const memory = await openMemoryDb(cwd, { quiet: true });
+    if (!memory) return "";
+    try {
+      const totals = savingsTotals(memory);
+      if (totals.events === 0) return "";
+      return (
+        `[cag] measured savings so far: ~${totals.estimatedTokensSaved} tokens ` +
+        `(${totals.charsSaved} chars) across ${totals.events} event(s). Run \`cag memory savings\` for a breakdown.`
+      );
+    } finally {
+      memory.close();
+    }
+  } catch {
+    return "";
+  }
+}
+
+// Claude Code / Codex "Stop" (task-completion) hook: reports cumulative
+// measured savings so it's visible without the user remembering to run
+// `cag memory savings`. Side-effect-free — pure read of already-recorded data.
+export async function handleStop(cwd: string, config: GatewayConfig): Promise<string> {
+  const line = await taskCompletionSavingsLine(cwd, config);
+  return line ? `${line}\n` : "";
 }
 
 // Deterministic per-prompt injection: top memory previews matched to the

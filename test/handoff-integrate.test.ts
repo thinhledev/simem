@@ -20,10 +20,11 @@ test("claude integrate writes hooks, .mcp.json, and instruction block; second ru
   assert.equal(byFile[".claude/settings.json"], "created");
 
   const settings = JSON.parse(await readFile(join(cwd, ".claude", "settings.json"), "utf8"));
-  for (const event of ["SessionStart", "PreCompact", "UserPromptSubmit"]) {
+  for (const event of ["SessionStart", "PreCompact", "UserPromptSubmit", "Stop"]) {
     const command = settings.hooks[event][0].hooks[0].command as string;
-    assert.match(command, /^cag hook (session-start|pre-compact|user-prompt-submit) --provider claude$/);
+    assert.match(command, /^cag hook (session-start|pre-compact|user-prompt-submit|stop) --provider claude$/);
   }
+  assert.equal(settings.hooks.Stop[0].hooks[0].command, "cag hook stop --provider claude");
   const mcp = JSON.parse(await readFile(join(cwd, ".mcp.json"), "utf8"));
   assert.deepEqual(mcp.mcpServers["cag-memory"], { command: "cag", args: ["mcp", "--cwd", cwd] });
   const local = await readFile(join(cwd, "CLAUDE.local.md"), "utf8");
@@ -90,6 +91,7 @@ test("codex integrate writes hooks.json, a marker-delimited TOML MCP block, and 
 
   const hooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
   assert.equal(hooks.hooks.PreCompact[0].hooks[0].command, "cag hook pre-compact --provider codex");
+  assert.equal(hooks.hooks.Stop[0].hooks[0].command, "cag hook stop --provider codex");
   const toml = await readFile(join(cwd, ".codex", "config.toml"), "utf8");
   assert.match(toml, /# cag:integrate:start\n\[mcp_servers\.cag-memory\]/);
   const agents = await readFile(join(cwd, "AGENTS.md"), "utf8");
@@ -114,6 +116,7 @@ test("cursor integrate writes mcp.json, best-guess hooks.json flagged unverified
   const hooks = JSON.parse(await readFile(join(cwd, ".cursor", "hooks.json"), "utf8"));
   assert.equal(hooks.hooks.sessionStart[0].command, "cag hook session-start --provider cursor");
   assert.equal(hooks.hooks.beforeSubmitPrompt[0].command, "cag hook user-prompt-submit --provider cursor");
+  assert.equal(hooks.hooks.stop[0].command, "cag hook stop --provider cursor");
   const rules = await readFile(join(cwd, ".cursor", "rules", "cag-memory.mdc"), "utf8");
   assert.match(rules, /alwaysApply: true/);
   assert.match(rules, /context_brief/);

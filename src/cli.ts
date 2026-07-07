@@ -10,8 +10,10 @@ import {
   HOOK_EVENTS,
   handlePreCompact,
   handleSessionStart,
+  handleStop,
   handleUserPromptSubmit,
   readHookInput,
+  taskCompletionSavingsLine,
   type HookEvent,
 } from "./handoff/hooks.js";
 import { checkIntegration, integrateProvider } from "./handoff/integrate.js";
@@ -106,7 +108,7 @@ Context revival:
   cag brief [--objective TEXT] [--max-chars N] [--json]
                                   Print a deterministic revival brief (latest objective/outcome,
                                   live git state, budgeted project memory) — zero LLM calls
-  cag hook <session-start|pre-compact|user-prompt-submit> --provider P [--cwd PATH]
+  cag hook <session-start|pre-compact|user-prompt-submit|stop> --provider P [--cwd PATH]
                                   Host-agent lifecycle hook entry (reads the hook JSON from stdin;
                                   wired automatically by "cag integrate"; always exits 0)
   cag integrate [--provider P] [--check] [--remove] [--cwd PATH]
@@ -479,6 +481,8 @@ async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promi
       process.stdout.write(await handleSessionStart(input, cwd, provider, config, runner));
     } else if (event === "pre-compact") {
       await handlePreCompact(input, cwd, provider, config, runner, undefined, options.configPath);
+    } else if (event === "stop") {
+      process.stdout.write(await handleStop(cwd, config));
     } else {
       process.stdout.write(await handleUserPromptSubmit(input, cwd, provider, config));
     }
@@ -653,6 +657,8 @@ async function main(): Promise<void> {
     process.stdout.write(`${result.result.output}\n`);
     const credential = result.attempts.at(-1)?.credential;
     process.stderr.write(`\n[cag] ${result.result.provider} · ${credential?.tier ?? "unknown"} · session ${result.result.sessionId ?? "n/a"}\n`);
+    const savingsLine = await taskCompletionSavingsLine(options.cwd, config);
+    if (savingsLine) process.stderr.write(`${savingsLine}\n`);
   } else if (result.attempts.length === 0) {
     process.stderr.write("[cag] No configured provider is both installed and authenticated. Run `cag status`.\n");
     process.exitCode = 2;

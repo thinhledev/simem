@@ -98,11 +98,19 @@ function stripBlock(original: string | undefined, tomlMarkers = false): string |
 
 // The registration shape Claude Code and Codex share (verified against both
 // docs): { hooks: { EventName: [{ hooks: [{ type: "command", command }] }] } }.
-const HOOK_EVENT_NAMES = ["SessionStart", "PreCompact", "UserPromptSubmit"] as const;
+// "Stop" fires when the agent finishes responding — the task-completion
+// moment where cumulative measured savings get reported.
+const HOOK_EVENT_NAMES = ["SessionStart", "PreCompact", "UserPromptSubmit", "Stop"] as const;
+
+const HOOK_EVENT_ARGS: Record<(typeof HOOK_EVENT_NAMES)[number], string> = {
+  SessionStart: "session-start",
+  PreCompact: "pre-compact",
+  UserPromptSubmit: "user-prompt-submit",
+  Stop: "stop",
+};
 
 function hookCommand(event: (typeof HOOK_EVENT_NAMES)[number], provider: ProviderId): string {
-  const eventArg = event === "SessionStart" ? "session-start" : event === "PreCompact" ? "pre-compact" : "user-prompt-submit";
-  return `cag hook ${eventArg} --provider ${provider}`;
+  return `cag hook ${HOOK_EVENT_ARGS[event]} --provider ${provider}`;
 }
 
 function groupHasCommand(group: unknown, command: string): boolean {
@@ -273,7 +281,7 @@ async function integrateCursor(cwd: string, options: IntegrateOptions): Promise<
   const mcpPath = join(cwd, ".cursor", "mcp.json");
   await applyFile(plan, mcpPath, jsonTransform(mcpPath, (existing) => withCagMcpServer(existing, cwd, remove)), options);
   // Best-guess registration mirroring Cursor's documented event vocabulary
-  // (sessionStart / beforeSubmitPrompt); Cursor has no compaction hook.
+  // (sessionStart / beforeSubmitPrompt / stop); Cursor has no compaction hook.
   const hooksPath = join(cwd, ".cursor", "hooks.json");
   await applyFile(
     plan,
@@ -284,6 +292,7 @@ async function integrateCursor(cwd: string, options: IntegrateOptions): Promise<
       const entries: Array<[string, string]> = [
         ["sessionStart", "cag hook session-start --provider cursor"],
         ["beforeSubmitPrompt", "cag hook user-prompt-submit --provider cursor"],
+        ["stop", "cag hook stop --provider cursor"],
       ];
       for (const [event, command] of entries) {
         const groups = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];

@@ -49,6 +49,8 @@ export interface MemoryHooksConfig {
   sessionStartBrief: boolean;
   /** Character cap for the session-start revival brief. */
   briefMaxChars: number;
+  /** Report cumulative measured savings on `cag hook stop` and after `cag run` completes. */
+  taskCompletionSavings: boolean;
 }
 
 export interface MemoryConfig {
@@ -128,6 +130,7 @@ export const DEFAULT_CONFIG: GatewayConfig = {
       perPromptMaxChars: 600,
       sessionStartBrief: true,
       briefMaxChars: 4_000,
+      taskCompletionSavings: true,
     },
   },
 };

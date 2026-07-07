@@ -7,9 +7,11 @@ import { DEFAULT_CONFIG, type GatewayConfig } from "../src/config.js";
 import {
   handlePreCompact,
   handleSessionStart,
+  handleStop,
   handleUserPromptSubmit,
   parseHookInput,
 } from "../src/handoff/hooks.js";
+import { recordSavings } from "../src/memory/savings.js";
 import { loadSqlite, openMemoryDb } from "../src/memory/db.js";
 import type { CommandResult, CommandRunner, CommandSpec } from "../src/process.js";
 
@@ -40,6 +42,7 @@ function config(overrides?: Partial<GatewayConfig["memory"]["hooks"]> & { memory
         ...(overrides?.perPromptInjection !== undefined ? { perPromptInjection: overrides.perPromptInjection } : {}),
         ...(overrides?.sessionStartBrief !== undefined ? { sessionStartBrief: overrides.sessionStartBrief } : {}),
         ...(overrides?.perPromptMaxChars !== undefined ? { perPromptMaxChars: overrides.perPromptMaxChars } : {}),
+        ...(overrides?.taskCompletionSavings !== undefined ? { taskCompletionSavings: overrides.taskCompletionSavings } : {}),
       },
     },
   };
@@ -199,4 +202,34 @@ test("user-prompt-submit respects perPromptMaxChars", withSqlite, async () => {
     config({ perPromptMaxChars: 200 }),
   );
   assert.ok(output.length <= 200, `injection too long: ${output.length}`);
+});
+
+test("stop reports cumulative measured savings when some exist, and stays silent when there are none", withSqlite, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "cag-hook-stop-"));
+  const memory = await openMemoryDb(workspace);
+  assert.ok(memory);
+  recordSavings(memory, { mechanism: "compaction", charsFull: 4000, charsSent: 400 });
+  memory.close();
+
+  const output = await handleStop(workspace, config());
+  assert.match(output, /measured savings so far/);
+  assert.match(output, /~900 tokens/);
+  assert.match(output, /cag memory savings/);
+
+  const emptyWorkspace = await mkdtemp(join(tmpdir(), "cag-hook-stop-empty-"));
+  const emptyMemory = await openMemoryDb(emptyWorkspace);
+  assert.ok(emptyMemory);
+  emptyMemory.close();
+  assert.equal(await handleStop(emptyWorkspace, config()), "", "nothing measured yet should stay silent, not print zeroes");
+});
+
+test("stop honors the taskCompletionSavings config gate", withSqlite, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "cag-hook-stop-gated-"));
+  const memory = await openMemoryDb(workspace);
+  assert.ok(memory);
+  recordSavings(memory, { mechanism: "disclosure", charsFull: 1000, charsSent: 100 });
+  memory.close();
+
+  assert.equal(await handleStop(workspace, config({ taskCompletionSavings: false })), "");
+  assert.equal(await handleStop(workspace, config({ memoryEnabled: false })), "");
 });

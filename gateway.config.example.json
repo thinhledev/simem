@@ -50,7 +50,8 @@
       "perPromptInjection": true,
       "perPromptMaxChars": 600,
       "sessionStartBrief": true,
-      "briefMaxChars": 4000
+      "briefMaxChars": 4000,
+      "taskCompletionSavings": true
     }
   }
 }

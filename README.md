@@ -248,6 +248,8 @@ All of the above is tunable under `memory` in `gateway.config.json` (see `gatewa
 
   Deliberately **not included**: a "vs. not using cag at all" headline number. That would require knowing what a from-scratch agent spends re-exploring the repo without persistent memory — cag has no visibility into that counterfactual, and estimating it risks exactly the overselling the 614M-token study above caught other tools doing. Savings are also forward-looking only, recorded from whenever this feature shipped (schema v4) — not backfilled for history that predates it.
 
+  Cumulative savings are also surfaced automatically, not just on request: `cag hook stop` (wired by `cag integrate` for Claude Code/Codex/Cursor's Stop/task-completion event) prints the same running total, and `cag run` prints it to stderr after each completed task. Both stay silent when nothing has been measured yet. Turn either off with `memory.hooks.taskCompletionSavings: false`.
+
 - **Progressive disclosure.** `cag memory search` (both the CLI and the MCP tool) returns short previews with IDs by default instead of full text bodies — the single most token-heavy path before this. Pass `--full` (CLI) or `full: true` (MCP) to get complete text; drill into a specific hit with `cag memory show <id>` / the MCP `memory_get` tool. `--category`, `--min-importance`, `--since`, and `--until` push filters into SQL instead of filtering client-side after fetching everything.
 - **Bounded, cache-stable prompts.** Consolidation caps `EXISTING ITEMS` to `consolidationExistingItemsLimit` (importance-first, so the highest-value standing facts never fall off) and notes how many lower-importance items were omitted, pointing back at `memory_search`. Rollup prompts cap each input summary to `rollupSummaryCharCap` and open with a byte-identical instruction prefix across every rollup call, for determinism and diffability — not a measured caching win, since each rollup/consolidation call is an independent one-shot CLI invocation, not a growing multi-turn session.
 - **Milestone-aware compaction.** When consolidation judges a checkpoint completed a distinct, nameable objective (not routine progress), it flags that checkpoint's summary as a milestone. Milestone summaries are annotated `[MILESTONE]` in rollup prompts with an instruction to weight them more heavily, so a shipped feature is less likely to get diluted into a same-size sentence alongside routine checkpoints during epoch/project digestion.
@@ -269,9 +271,9 @@ Everything `integrate` writes is an idempotent, marker-delimited file edit that 
 
 | Provider | Lifecycle hooks | MCP registration | Instructions |
 |---|---|---|---|
-| Claude Code | `.claude/settings.json` (SessionStart / PreCompact / UserPromptSubmit) | `.mcp.json` | `CLAUDE.local.md` block (plus the Phase-1 handoff import) |
+| Claude Code | `.claude/settings.json` (SessionStart / PreCompact / UserPromptSubmit / Stop) | `.mcp.json` | `CLAUDE.local.md` block (plus the Phase-1 handoff import) |
 | Codex | `.codex/hooks.json` (same events; loads once the project is trusted) | `.codex/config.toml` marker block | `AGENTS.md` block |
-| Cursor | `.cursor/hooks.json` — **best-guess schema, flagged unverified** | `.cursor/mcp.json` | `.cursor/rules/cag-memory.mdc` |
+| Cursor | `.cursor/hooks.json` (sessionStart / beforeSubmitPrompt / stop) — **best-guess schema, flagged unverified** | `.cursor/mcp.json` | `.cursor/rules/cag-memory.mdc` |
 | Antigravity | none (`agy` has no hooks) | unverified | global `~/.gemini/GEMINI.md` block |
 
 ### What the hooks do
@@ -279,6 +281,7 @@ Everything `integrate` writes is an idempotent, marker-delimited file edit that 
 - **Pre-compact** (`cag hook pre-compact`): the moment before the host agent compacts its context window, the current session is checkpointed and indexed — token-free, synchronous, fast — and LLM consolidation is handed to a **detached background `cag` process** so compaction never waits on a model call. Nothing the agent knew is lost: the raw transcript is on disk and distills into durable memory shortly after.
 - **Session-start** (`cag hook session-start`): after a compaction, resume, or `/clear`, the hook injects `cag brief` — the latest objective and outcome, **live** git state, and the budgeted project-memory section. Deterministic file reads and SQL only, zero LLM calls. (On Claude Code, plain resume is suppressed because the `CLAUDE.local.md` import already loads the handoff there.)
 - **Every prompt** (`cag hook user-prompt-submit`, on by default): the top memory previews matching the submitted prompt are prepended, hard-capped at `memory.hooks.perPromptMaxChars` (600 chars default). Empty output when nothing matches — no noise. Disable with `memory.hooks.perPromptInjection: false`; each injection is recorded in the ledger (purpose `inject`, always $0 — it's char accounting, not an LLM call), so `cag memory spend --group-by purpose` shows exactly what this feature adds before you decide to keep it.
+- **Task completion** (`cag hook stop`, on by default): when the host agent finishes responding, prints the same cumulative measured-savings total as `cag memory savings` — so it's visible after every task, not just when you remember to go check. Silent when nothing has been measured yet. `cag run` prints the identical line to stderr after each completed task. Disable with `memory.hooks.taskCompletionSavings: false`.
 
 Hooks always exit 0 and never block: a `cag` bug degrades to a missing injection, never a broken agent turn.
 
