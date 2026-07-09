@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +38,7 @@ import { GatewayOrchestrator } from "./orchestrator.js";
 import { NodeCommandRunner } from "./process.js";
 import { PROVIDER_APP_NAME, PROVIDER_IDS, type NormalizedEvent, type ProviderHealth, type ProviderId } from "./types.js";
 
-type Command = "run" | "status" | "sessions" | "export" | "switch" | "fork" | "memory" | "mcp" | "brief" | "hook" | "integrate" | "help";
+type Command = "run" | "status" | "sessions" | "export" | "switch" | "fork" | "memory" | "mcp" | "brief" | "hook" | "integrate" | "help" | "version";
 
 interface CliOptions {
   command: Command;
@@ -77,6 +77,12 @@ interface CliOptions {
   cwdExplicit: boolean;
   check: boolean;
   remove: boolean;
+}
+
+function readVersion(): string {
+  const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
+  return pkg.version ?? "0.0.0";
 }
 
 const HELP = `mixai — coding-agent relay and persistent memory
@@ -171,12 +177,14 @@ function takeValue(args: string[], index: number, flag: string): string {
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   const first = args.shift();
-  const known: Command[] = ["run", "status", "sessions", "export", "switch", "fork", "memory", "mcp", "brief", "hook", "integrate", "help"];
+  const known: Command[] = ["run", "status", "sessions", "export", "switch", "fork", "memory", "mcp", "brief", "hook", "integrate", "help", "version"];
   const command: Command = first && known.includes(first as Command)
     ? (first as Command)
     : first === "--help" || first === "-h" || !first
       ? "help"
-      : "run";
+      : first === "--version" || first === "-v"
+        ? "version"
+        : "run";
   if (command === "run" && first !== "run") args.unshift(first as string);
 
   const options: CliOptions = {
@@ -284,6 +292,9 @@ export function parseArgs(argv: string[]): CliOptions {
       options.timeoutMs = seconds * 1_000;
     } else if (arg === "--help" || arg === "-h") {
       options.command = "help";
+      args.splice(index, 1);
+    } else if (arg === "--version" || arg === "-v") {
+      options.command = "version";
       args.splice(index, 1);
     } else {
       positional.push(arg ?? "");
@@ -688,6 +699,10 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if (options.command === "help") {
     process.stdout.write(HELP);
+    return;
+  }
+  if (options.command === "version") {
+    process.stdout.write(`${readVersion()}\n`);
     return;
   }
   const runner = new NodeCommandRunner();
