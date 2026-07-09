@@ -16,7 +16,7 @@ Everything runs on your machine. Your credentials never leave your computer, and
 
 ## Requirements
 
-- **Node.js 20 or newer.** Persistent-memory features use Node's built-in SQLite and need **Node 22.5+**; on older Node those commands report the database as unavailable and everything else keeps working.
+- **Node.js 22.5 or newer.** Persistent-memory features use Node's built-in SQLite.
 - **At least one supported agent** installed and signed in: Claude Code, Codex, Cursor, or Antigravity.
 - **macOS** for one-click desktop hand-offs. Other platforms use the agents' terminal CLIs (`--surface interactive`).
 
