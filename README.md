@@ -23,7 +23,7 @@ Everything runs on your machine. Your credentials never leave your computer, and
 ## Installation
 
 ```bash
-npm install -g mixai
+npm install -g mixai-cli
 mixai status      # see which agents are installed and ready
 ```
 
