@@ -32,6 +32,16 @@ export interface SearchOptions {
   since?: string;
   /** ISO timestamp upper bound (inclusive). */
   until?: string;
+  /**
+   * Skip raw checkpoint messages, searching only memory_items and summaries
+   * (the curated content). Automatic injection paths (buildMemoryContextBlock)
+   * set this — raw messages are noisy for an unattended "here's relevant
+   * context" surface and can surface low-value results, like a prompt
+   * matching an earlier, near-identical question verbatim. Deliberate
+   * searches (cag memory search, the memory_search MCP tool) leave it unset,
+   * since broader recall is exactly what a human-invoked search wants.
+   */
+  excludeMessages?: boolean;
 }
 
 function dateRangeClause(column: string, since: string | undefined, until: string | undefined): { sql: string; params: string[] } {
@@ -336,7 +346,7 @@ export async function search(memory: MemoryDb, query: string, options: SearchOpt
 
   const itemsFts = queryMemoryItems(memory, raw, perSource, options);
   const summariesFts = options.kind ? [] : querySummaries(memory, raw, perSource, options);
-  const messagesFts = options.kind ? [] : queryMessages(memory, raw, perSource, options);
+  const messagesFts = options.kind || options.excludeMessages ? [] : queryMessages(memory, raw, perSource, options);
 
   let items = itemsFts;
   let summaries = summariesFts;

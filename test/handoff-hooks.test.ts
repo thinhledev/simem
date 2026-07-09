@@ -5,11 +5,13 @@ import { join } from "node:path";
 import test from "node:test";
 import { DEFAULT_CONFIG, type GatewayConfig } from "../src/config.js";
 import {
+  buildMemoryContextBlock,
   handlePreCompact,
   handleSessionStart,
   handleStop,
   handleUserPromptSubmit,
   parseHookInput,
+  recordMemoryInjection,
 } from "../src/handoff/hooks.js";
 import { recordSavings } from "../src/memory/savings.js";
 import { loadSqlite, openMemoryDb } from "../src/memory/db.js";
@@ -232,4 +234,83 @@ test("stop honors the taskCompletionSavings config gate", withSqlite, async () =
 
   assert.equal(await handleStop(workspace, config({ taskCompletionSavings: false })), "");
   assert.equal(await handleStop(workspace, config({ memoryEnabled: false })), "");
+});
+
+test("buildMemoryContextBlock returns real hits with a nonzero hitCount, and empty when nothing matches", withSqlite, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-context-"));
+  const memory = await openMemoryDb(workspace);
+  assert.ok(memory);
+  memory.db
+    .prepare(
+      "INSERT INTO memory_items (kind, category, text, importance, status, created_at, last_reinforced_at) " +
+        "VALUES ('semantic', 'constraint', 'The parser must reject unterminated strings.', 9, 'active', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
+    )
+    .run();
+  memory.close();
+
+  const withHits = await buildMemoryContextBlock(workspace, "parser unterminated strings", config());
+  assert.equal(withHits.hitCount, 1);
+  assert.match(withHits.block, /reject unterminated strings/);
+
+  const withoutHits = await buildMemoryContextBlock(workspace, "zzz-no-match-anywhere", config());
+  assert.deepEqual(withoutHits, { block: "", hitCount: 0 });
+});
+
+test("buildMemoryContextBlock never surfaces raw checkpoint messages, only curated memory_items/summaries", withSqlite, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-context-nomsg-"));
+  const memory = await openMemoryDb(workspace);
+  assert.ok(memory);
+  memory.db
+    .prepare(
+      "INSERT INTO checkpoints (id, created_at, workspace, source_provider, source_session_id, lineage_mode, directory, manifest_json) " +
+        "VALUES ('cp-1', '2026-07-01T00:00:00Z', ?, 'codex', 's', 'export', 'dir', '{}')",
+    )
+    .run(workspace);
+  // Only a raw message matches this query — no memory_items/summaries exist
+  // at all. Without excludeMessages, this would surface the user's own past
+  // question back at them; with it, there's genuinely nothing to inject.
+  memory.db
+    .prepare("INSERT INTO messages (checkpoint_id, seq, role, text) VALUES ('cp-1', 0, 'user', 'explain the riskiest module')")
+    .run();
+  memory.close();
+
+  const result = await buildMemoryContextBlock(workspace, "explain the riskiest module", config());
+  assert.deepEqual(result, { block: "", hitCount: 0 }, "a message-only match must not be injected");
+});
+
+test("buildMemoryContextBlock honors the perPromptInjection gate and an empty prompt", withSqlite, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-context-gated-"));
+  const memory = await openMemoryDb(workspace);
+  assert.ok(memory);
+  memory.db
+    .prepare(
+      "INSERT INTO memory_items (kind, text, importance, status, created_at, last_reinforced_at) " +
+        "VALUES ('semantic', 'the gateway retries on 429s', 9, 'active', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
+    )
+    .run();
+  memory.close();
+
+  const disabled = await buildMemoryContextBlock(workspace, "gateway retries", config({ perPromptInjection: false }));
+  assert.deepEqual(disabled, { block: "", hitCount: 0 });
+  const emptyPrompt = await buildMemoryContextBlock(workspace, "   ", config());
+  assert.deepEqual(emptyPrompt, { block: "", hitCount: 0 });
+});
+
+test("recordMemoryInjection writes an inject-purpose ledger row attributed to the given provider", withSqlite, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-inject-ledger-"));
+  const memory = await openMemoryDb(workspace);
+  assert.ok(memory);
+  memory.close();
+
+  await recordMemoryInjection(workspace, "codex", 42, 100, 5);
+
+  const reopened = await openMemoryDb(workspace);
+  assert.ok(reopened);
+  const row = reopened.db.prepare("SELECT purpose, provider, ok FROM llm_calls WHERE purpose = 'inject'").get() as
+    | { purpose: string; provider: string; ok: number }
+    | undefined;
+  reopened.close();
+  assert.equal(row?.purpose, "inject");
+  assert.equal(row?.provider, "codex");
+  assert.equal(row?.ok, 1);
 });

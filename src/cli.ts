@@ -8,11 +8,13 @@ import { buildBrief } from "./handoff/brief.js";
 import { createCheckpoint } from "./handoff/checkpoints.js";
 import {
   HOOK_EVENTS,
+  buildMemoryContextBlock,
   handlePreCompact,
   handleSessionStart,
   handleStop,
   handleUserPromptSubmit,
   readHookInput,
+  recordMemoryInjection,
   taskCompletionSavingsLine,
   type HookEvent,
 } from "./handoff/hooks.js";
@@ -33,7 +35,7 @@ import { recordGatewayAttempts } from "./memory/ledger.js";
 import { runMcpServer } from "./memory/mcp-server.js";
 import { GatewayOrchestrator } from "./orchestrator.js";
 import { NodeCommandRunner } from "./process.js";
-import { PROVIDER_APP_NAME, PROVIDER_IDS, type ProviderHealth, type ProviderId } from "./types.js";
+import { PROVIDER_APP_NAME, PROVIDER_IDS, type NormalizedEvent, type ProviderHealth, type ProviderId } from "./types.js";
 
 type Command = "run" | "status" | "sessions" | "export" | "switch" | "fork" | "memory" | "mcp" | "brief" | "hook" | "integrate" | "help";
 
@@ -426,6 +428,60 @@ async function recordRunLedger(
   }
 }
 
+// When `mixai run` can't finish via any CLI-authenticated agent, a desktop
+// app may still work — desktop apps use their own separate login (often a
+// different account than the CLI's API key/session), so a CLI-side failure
+// doesn't mean the desktop app would fail too. Suggests continuing there
+// instead of just reporting failure, with the exact prompt to paste
+// (including any injected memory context, so that value isn't lost).
+async function suggestDesktopFallback(runner: NodeCommandRunner, prompt: string): Promise<void> {
+  const installed = (
+    await Promise.all(PROVIDER_IDS.map(async (provider) => ({ provider, status: await checkDesktopApp(runner, provider) })))
+  ).filter((entry) => entry.status.installed);
+  if (installed.length === 0) return;
+  const names = installed.map((entry) => PROVIDER_APP_NAME[entry.provider]).join(", ");
+  process.stderr.write(
+    `\n[mixai] No CLI-authenticated agent could finish this task. Desktop apps use their own separate login and ` +
+      `may work even when the CLI doesn't — installed: ${names}. Open one and paste this prompt to continue:\n\n${prompt}\n`,
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+// ~1,000 chars/sec — a visible type-ahead reveal without meaningfully
+// delaying a response that already took real seconds to generate.
+const TYPE_CHARS_PER_TICK = 4;
+const TYPE_TICK_MS = 4;
+
+async function typeOut(text: string): Promise<void> {
+  for (let index = 0; index < text.length; index += TYPE_CHARS_PER_TICK) {
+    process.stdout.write(text.slice(index, index + TYPE_CHARS_PER_TICK));
+    await sleep(TYPE_TICK_MS);
+  }
+}
+
+// Renders a live-streamed `mixai run` response: each assistant.delta chunk
+// plays out as a type-ahead reveal, queued strictly in arrival order so a
+// slow-to-render chunk can never interleave with the next one that arrives
+// while it's still typing. Consecutive chunks get a paragraph break between
+// them — providers emit one chunk per completed narration/tool-call segment,
+// not per token, so writing them back-to-back with no separator runs
+// unrelated sentences together on one line.
+function createRunPrinter(): { onDelta: (text: string) => void; settled: () => Promise<void> } {
+  let queue: Promise<void> = Promise.resolve();
+  let chunkCount = 0;
+  return {
+    onDelta: (text: string) => {
+      chunkCount += 1;
+      const prefixed = chunkCount > 1 ? `\n\n${text}` : text;
+      queue = queue.then(() => typeOut(prefixed));
+    },
+    settled: () => queue,
+  };
+}
+
 // Wires host agents to call mixai automatically: lifecycle hooks + MCP server
 // registration + standing instruction blocks, all idempotent file writes.
 // --check reports drift without writing (exit 1 on drift, for CI);
@@ -643,9 +699,34 @@ async function main(): Promise<void> {
   }
   if (!options.prompt) throw new Error("A prompt is required. Run `mixai --help` for usage.");
 
+  // Search project memory for context relevant to this prompt and, if any is
+  // found, actually prepend it to what gets sent to the agent — not just a
+  // side channel, real context the agent would otherwise lack. The proof
+  // line only prints when something real was added, never unconditionally.
+  const memoryContextStarted = Date.now();
+  const memoryContext = await buildMemoryContextBlock(options.cwd, options.prompt, config);
+  const memoryContextDurationMs = Date.now() - memoryContextStarted;
+  if (memoryContext.hitCount > 0 && !options.json) {
+    process.stderr.write(
+      `[mixai] Added ${memoryContext.hitCount} relevant memory item(s) to your prompt — context from earlier work the agent would otherwise have to ask about or miss.\n`,
+    );
+  }
+  const runPrompt = memoryContext.block ? `${memoryContext.block}\n${options.prompt}` : options.prompt;
+
+  // Non-JSON mode also streams the agent's response live instead of staying
+  // silent until the whole run finishes: "run.started" announces which
+  // provider picked up the task (including mid-run fallbacks), and
+  // "assistant.delta" is rendered as a type-ahead reveal with paragraph
+  // breaks between chunks (see createRunPrinter). Tool-call events are
+  // deliberately not printed — "using <tool>..." for every step added noise
+  // without giving the user anything actionable. --json mode keeps its
+  // existing behavior of emitting raw NormalizedEvent objects for another
+  // program to consume.
+  let streamedText = false;
+  const printer = createRunPrinter();
   const result = await orchestrator.run(
     {
-      prompt: options.prompt,
+      prompt: runPrompt,
       cwd: options.cwd,
       accessMode: options.write ? "workspace-write" : "read-only",
       timeoutMs: options.timeoutMs,
@@ -654,25 +735,47 @@ async function main(): Promise<void> {
     },
     {
       ...(options.provider ? { provider: options.provider } : {}),
-      ...(options.json ? { onEvent: (event: unknown) => process.stdout.write(`${JSON.stringify(event)}\n`) } : {}),
+      onEvent: options.json
+        ? (event: unknown) => process.stdout.write(`${JSON.stringify(event)}\n`)
+        : (event: NormalizedEvent) => {
+            if (event.type === "run.started") {
+              process.stderr.write(`[mixai] → ${event.provider}...\n`);
+            } else if (event.type === "assistant.delta" && event.text) {
+              streamedText = true;
+              printer.onDelta(event.text);
+            }
+          },
     },
   );
+  await printer.settled();
   await recordRunLedger(config, options.cwd, options.prompt.length, result);
+  if (memoryContext.hitCount > 0) {
+    const injectedInto = result.result?.provider ?? result.attempts.at(-1)?.provider;
+    if (injectedInto) {
+      await recordMemoryInjection(options.cwd, injectedInto, options.prompt.length, memoryContext.block.length, memoryContextDurationMs);
+    }
+  }
 
   if (options.json) process.stdout.write(`${JSON.stringify(compactGatewayResult(result))}\n`);
   else if (result.ok && result.result) {
-    process.stdout.write(`${result.result.output}\n`);
+    // Already streamed live via assistant.delta above; only fall back to a
+    // one-shot print if nothing streamed (e.g. a provider that reports no
+    // deltas), and otherwise just tidy up the trailing newline.
+    if (!streamedText) process.stdout.write(`${result.result.output}\n`);
+    else if (!result.result.output.endsWith("\n")) process.stdout.write("\n");
     const credential = result.attempts.at(-1)?.credential;
     process.stderr.write(`\n[mixai] ${result.result.provider} · ${credential?.tier ?? "unknown"} · session ${result.result.sessionId ?? "n/a"}\n`);
     const savingsLine = await taskCompletionSavingsLine(options.cwd, config);
     if (savingsLine) process.stderr.write(`${savingsLine}\n`);
   } else if (result.attempts.length === 0) {
     process.stderr.write("[mixai] No configured provider is both installed and authenticated. Run `mixai status`.\n");
+    await suggestDesktopFallback(runner, runPrompt);
     process.exitCode = 2;
   } else {
     for (const attempt of result.attempts) {
       process.stderr.write(`[mixai] ${attempt.provider}: ${attempt.result.failure ?? "failed"}: ${attempt.result.error ?? "unknown error"}\n`);
     }
+    await suggestDesktopFallback(runner, runPrompt);
     process.exitCode = 1;
   }
 }

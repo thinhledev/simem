@@ -83,6 +83,35 @@ test("importance and recency lift memory items over old messages", withSqlite, a
   }
 });
 
+test("excludeMessages skips raw checkpoint messages but still returns memory_item and summary hits", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedCheckpoint(memory, "cp-1", "2026-07-01T00:00:00Z");
+    seedMessage(memory, "cp-1", 0, "explain the architecture and flag the riskiest module please");
+    seedItem(memory, "architecture decision: the riskiest module is the memory consolidation pipeline", 8);
+    memory.db
+      .prepare(
+        "INSERT INTO summaries (level, text, covers_from, covers_to, checkpoint_count, created_at) VALUES (1, ?, 'cp-1', 'cp-1', 1, ?)",
+      )
+      .run("architecture summary: the riskiest module is memory consolidation", "2026-07-01T00:00:00Z");
+
+    const withMessages = await search(memory, "riskiest module architecture", { now: "2026-07-02T00:00:00Z" });
+    assert.ok(withMessages.some((hit) => hit.source === "message"), "sanity check: the message would normally match");
+
+    const excluded = await search(memory, "riskiest module architecture", {
+      now: "2026-07-02T00:00:00Z",
+      excludeMessages: true,
+    });
+    assert.ok(excluded.length > 0, "memory_item/summary hits should still be found");
+    assert.ok(!excluded.some((hit) => hit.source === "message"), "no message-source hits should survive excludeMessages");
+    assert.ok(excluded.some((hit) => hit.source === "memory_item"));
+    assert.ok(excluded.some((hit) => hit.source === "summary"));
+  } finally {
+    memory.close();
+  }
+});
+
 test("superseded and archived items are excluded; kind filter narrows results", withSqlite, async () => {
   const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
   assert.ok(memory);

@@ -25,7 +25,18 @@ export function classifyFailure(result: CommandResult): FailureKind {
 export function compactError(result: CommandResult): string {
   if (result.timedOut) return "Provider command timed out";
   if (result.error) return result.error.message;
-  const text = result.stderr.trim() || result.stdout.trim();
-  const lastLines = text.split(/\r?\n/).slice(-8).join("\n");
+  const combined = `${result.stderr}\n${result.stdout}`;
+  const lines = combined.split(/\r?\n/).filter((line) => line.trim());
+  // Prefer the line(s) that actually explain the failure over blind
+  // positional tail-slicing. Providers print a startup banner before the
+  // real error (Codex always prints "Reading additional input from
+  // stdin..." first, then version/workdir/model, then the actual error) —
+  // depending on exact process-exit timing, a tail slice can land on that
+  // banner text and surface it instead of the real message. Reusing
+  // MATCHERS keeps the shown detail consistent with why classifyFailure
+  // picked the failure kind it did.
+  const matched = lines.filter((line) => MATCHERS.some(([, pattern]) => pattern.test(line)));
+  if (matched.length > 0) return matched.slice(-4).join("\n");
+  const lastLines = lines.slice(-8).join("\n");
   return lastLines || `Provider exited with code ${String(result.exitCode)}`;
 }

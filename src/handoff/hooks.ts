@@ -216,25 +216,39 @@ export async function handleStop(cwd: string, config: GatewayConfig): Promise<st
   return line ? `${line}\n` : "";
 }
 
-// Deterministic per-prompt injection: top memory previews matched to the
-// submitted prompt, capped hard. Empty output (not noise) when disabled,
-// when nothing matches, or on runtimes without node:sqlite.
-export async function handleUserPromptSubmit(
-  input: RawHookInput,
+export interface MemoryContextBlock {
+  /** Formatted memory block ready to prepend to a prompt; "" when there was nothing to add. */
+  block: string;
+  /** Number of memory hits incorporated into `block`. */
+  hitCount: number;
+}
+
+// Deterministic per-prompt retrieval: top memory previews matched to the
+// submitted prompt, capped hard. Shared by the UserPromptSubmit hook (below)
+// and `mixai run` (cli.ts), which both want the same "search once, format
+// once" behavior but attribute the ledger row differently. Empty result
+// (not noise) when disabled, when nothing matches, or on runtimes without
+// node:sqlite. Searches memory_items/summaries only (excludeMessages) — raw
+// checkpoint messages are excluded from this automatic path because they're
+// noisy for something injected unattended into every prompt (e.g. a new
+// prompt can literally match an earlier, near-identical question verbatim,
+// echoing the user's own words back as "relevant context"). A deliberate
+// `mixai memory search` still searches messages too.
+export async function buildMemoryContextBlock(
   cwd: string,
-  provider: ProviderId,
+  prompt: string,
   config: GatewayConfig,
-): Promise<string> {
-  if (!config.memory.enabled || !config.memory.hooks.perPromptInjection) return "";
-  const prompt = input.prompt?.trim() ?? "";
-  if (!prompt) return "";
-  const started = Date.now();
+): Promise<MemoryContextBlock> {
+  const empty: MemoryContextBlock = { block: "", hitCount: 0 };
+  if (!config.memory.enabled || !config.memory.hooks.perPromptInjection) return empty;
+  const trimmed = prompt.trim();
+  if (!trimmed) return empty;
   try {
     const memory = await openMemoryDb(cwd, { quiet: true });
-    if (!memory) return "";
+    if (!memory) return empty;
     try {
-      const hits = await search(memory, prompt, { limit: 5, scoring: config.memory.scoring });
-      if (hits.length === 0) return "";
+      const hits = await search(memory, trimmed, { limit: 5, scoring: config.memory.scoring, excludeMessages: true });
+      if (hits.length === 0) return empty;
       const lines = hits.map((hit) => {
         const preview = toPreview(hit);
         return `- [${preview.source} ${preview.id}] ${preview.preview}`;
@@ -244,19 +258,53 @@ export async function handleUserPromptSubmit(
       // we add a trailing newline, so leave 2 chars of headroom to keep the
       // whole injection within the configured cap.
       const block = capText(`${header}\n${lines.join("\n")}`, config.memory.hooks.perPromptMaxChars - 2).text;
-      recordLlmCall(memory, {
-        purpose: "inject",
-        provider,
-        promptChars: prompt.length,
-        outputChars: block.length,
-        durationMs: Date.now() - started,
-        ok: true,
-      });
-      return `${block}\n`;
+      return { block: `${block}\n`, hitCount: hits.length };
     } finally {
       memory.close();
     }
   } catch {
-    return "";
+    return empty;
   }
+}
+
+// Records the injection in the token ledger — "inject" rows are char
+// accounting, not billable LLM usage (see ledger.ts), so callers can attach
+// whichever provider actually ended up using the injected context.
+export async function recordMemoryInjection(
+  cwd: string,
+  provider: ProviderId,
+  promptChars: number,
+  outputChars: number,
+  durationMs: number,
+): Promise<void> {
+  try {
+    const memory = await openMemoryDb(cwd, { quiet: true });
+    if (!memory) return;
+    try {
+      recordLlmCall(memory, { purpose: "inject", provider, promptChars, outputChars, durationMs, ok: true });
+    } finally {
+      memory.close();
+    }
+  } catch {
+    // Ledger is additive; a recording failure must never affect the caller.
+  }
+}
+
+// Deterministic per-prompt injection for the UserPromptSubmit hook: top
+// memory previews matched to the submitted prompt, capped hard. Empty
+// output (not noise) when disabled, when nothing matches, or on runtimes
+// without node:sqlite.
+export async function handleUserPromptSubmit(
+  input: RawHookInput,
+  cwd: string,
+  provider: ProviderId,
+  config: GatewayConfig,
+): Promise<string> {
+  const prompt = input.prompt?.trim() ?? "";
+  if (!prompt) return "";
+  const started = Date.now();
+  const { block, hitCount } = await buildMemoryContextBlock(cwd, prompt, config);
+  if (hitCount === 0) return "";
+  await recordMemoryInjection(cwd, provider, prompt.length, block.length, Date.now() - started);
+  return block;
 }
