@@ -113,16 +113,21 @@ const HOOK_EVENT_ARGS: Record<(typeof HOOK_EVENT_NAMES)[number], string> = {
   Stop: "stop",
 };
 
+// Codex's trust/approval UI has no dedicated "name" field for a hook entry —
+// it labels them positionally ("Hook 1", "Hook 2", ...) unless a
+// statusMessage is present, which Codex's docs describe as UI text shown
+// during execution but which also surfaces in that approval list. Purely
+// additive (unknown fields are ignored by parsers that don't recognize it),
+// so it's safe to include for every provider, not just Codex.
+const HOOK_STATUS_MESSAGE: Record<(typeof HOOK_EVENT_NAMES)[number], string> = {
+  SessionStart: "mixai: revival brief after compaction/resume",
+  PreCompact: "mixai: checkpoint before compaction",
+  UserPromptSubmit: "mixai: inject relevant project memory",
+  Stop: "mixai: report measured token savings",
+};
+
 function hookCommand(event: (typeof HOOK_EVENT_NAMES)[number], provider: ProviderId): string {
   return `mixai hook ${HOOK_EVENT_ARGS[event]} --provider ${provider}`;
-}
-
-function groupHasCommand(group: unknown, command: string): boolean {
-  return (
-    isRecord(group) &&
-    Array.isArray(group.hooks) &&
-    group.hooks.some((hook) => isRecord(hook) && hook.command === command)
-  );
 }
 
 function withCagHookEntries(
@@ -145,8 +150,27 @@ function withCagHookEntries(
         .filter((group) => !isRecord(group) || !Array.isArray(group.hooks) || group.hooks.length > 0);
       if (kept.length > 0) hooks[event] = kept;
       else delete hooks[event];
-    } else if (!groups.some((group) => groupHasCommand(group, command))) {
-      hooks[event] = [...groups, { hooks: [{ type: "command", command }] }];
+    } else {
+      // Update our own entry in place if one already exists (e.g. picking up
+      // a new statusMessage on a re-run), rather than only checking presence
+      // and silently leaving a stale entry — "integrate" should always
+      // converge an already-integrated project to the current shape.
+      let found = false;
+      const updated = groups.map((group) => {
+        if (!isRecord(group) || !Array.isArray(group.hooks)) return group;
+        let groupChanged = false;
+        const updatedHooks = group.hooks.map((hook) => {
+          if (!isRecord(hook) || hook.command !== command) return hook;
+          found = true;
+          if (hook.statusMessage === HOOK_STATUS_MESSAGE[event]) return hook;
+          groupChanged = true;
+          return { ...hook, statusMessage: HOOK_STATUS_MESSAGE[event] };
+        });
+        return groupChanged ? { ...group, hooks: updatedHooks } : group;
+      });
+      hooks[event] = found
+        ? updated
+        : [...groups, { hooks: [{ type: "command", command, statusMessage: HOOK_STATUS_MESSAGE[event] }] }];
     }
   }
   if (Object.keys(hooks).length > 0) clone.hooks = hooks;
@@ -331,7 +355,6 @@ async function integrateCursor(cwd: string, options: IntegrateOptions): Promise<
   const rulesPath = join(cwd, ".cursor", "rules", "mixai-memory.mdc");
   const rulesContent = `---\ndescription: Mixai persistent project memory\nalwaysApply: true\n---\n\n${instructionBlock()}\n`;
   await applyFile(plan, rulesPath, (original) => (remove ? undefined : original === rulesContent ? original : rulesContent), options);
-  if (!remove) plan.notes.push(CURSOR_HOOKS_NOTE);
   return plan;
 }
 

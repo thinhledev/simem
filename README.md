@@ -27,6 +27,29 @@ npm install -g mixai
 mixai status      # see which agents are installed and ready
 ```
 
+`npm install` sets up the `mixai` command globally, but it doesn't wire mixai into any project — that's a separate, per-project step, and it doesn't happen automatically:
+
+```bash
+cd your-project
+mixai integrate    # once per project: hooks, MCP registration, and instruction files
+```
+
+This installs mixai into that project's agent config (`.claude/`, `.codex/`, `.cursor/`, and Antigravity's global `~/.gemini/GEMINI.md`) so hand-off, memory, and context restoration happen automatically as you work — see [Automatic integration](#how-it-works) below. Without it, mixai still works, but only when you invoke it yourself (`mixai switch`, `mixai run`, `mixai memory search`, ...). Run `mixai integrate --check` anytime to confirm a project is still wired up correctly.
+
+### Hit a usage limit? Just switch
+
+If an agent's usage limit, rate limit, or quota kicks in mid-task — a real desktop-app account can hit this independently of any CLI credentials — switch to whichever other agent still has room. Your objective, git state, and conversation carry over, so you're not re-explaining anything:
+
+```bash
+mixai switch codex      --from claude   # Claude hit its limit — pick up in Codex instead
+mixai switch cursor     --from codex    # Codex is out of quota — try Cursor
+mixai switch claude     --from cursor   # ...or back to Claude, if it's recovered
+mixai switch antigravity --from claude  # continue in Antigravity
+```
+
+**NOTE:** Follow the instructions in the command's output, copy and paste them into the open desktop app to continue your work.
+
+
 ## Quick start
 
 ```bash
@@ -76,24 +99,12 @@ mixai memory search "why did we pick Postgres over Mongo"
 | `mixai integrate` | Wire mixai into your agents so memory and hand-off work automatically (`--check`, `--remove`) |
 | `mixai mcp` | Serve memory and hand-off tools over MCP for agents that speak it |
 
-## Switching between agents
-
-On macOS, `mixai switch <agent>` opens the target's desktop app by default, using its existing login. Add `--surface interactive` to skip the desktop app and continue in the agent's terminal CLI instead (each CLI has its own separate authentication).
-
-```bash
-mixai switch claude --from codex                       # open Claude Desktop
-mixai switch codex  --from claude --surface interactive # continue in the Codex CLI
-mixai switch claude --from codex --new                 # start a fresh target conversation
-mixai fork   claude --from codex                       # branch, leaving the original intact
-```
-
-A hand-off never modifies or deletes the source conversation. If the target agent isn't authenticated yet, your checkpoint is still saved and mixai prints the exact login command instead of failing silently. Two agents can't preselect a project folder from their launcher (Claude Desktop and Antigravity) — for those, mixai prints the folder path and continuation prompt for you to paste.
 
 ## How it works
 
 **Token-free checkpoints.** Every hand-off writes a checkpoint to `.mixai/` — the objective, the conversation, git status, and a patch of your changes. No model is called, so it works even after an agent's quota is exhausted. Your repository stays the source of truth; the checkpoint is just a portable hand-off bundle.
 
-**Persistent memory that stays small.** Each checkpoint is indexed into a local SQLite database and distilled into durable facts (decisions, constraints, preferences) plus a short summary. Recent history is kept verbatim; older history is progressively compressed into digests, while durable facts never expire. An agent can pick up a decision from weeks ago without the context ever growing unbounded. Search works out of the box with keyword ranking, and layers in semantic search automatically if a local [Ollama](https://ollama.com) is available.
+**Persistent memory that stays small.** Each checkpoint is indexed into a local SQLite database and distilled into durable facts (decisions, constraints, preferences) plus a short summary. Recent history is kept verbatim; older history is progressively compressed into digests, while durable facts never expire. An agent can pick up a decision from weeks ago without the context ever growing unbounded. Search works out of the box via SQLite's [FTS5](https://www.sqlite.org/fts5.html) full-text index with BM25 relevance ranking, and layers in semantic search automatically if a local [Ollama](https://ollama.com) is available.
 
 **Cost transparency.** mixai records every model call it makes with exact token counts where the provider reports them, and measures the token savings from its own compression. `mixai memory spend` and `mixai memory savings` give you the real numbers — not marketing percentages.
 

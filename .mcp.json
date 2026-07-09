@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "mixai-memory": {
+      "command": "mixai",
+      "args": [
+        "mcp",
+        "--cwd",
+        "/Users/thinh-agility/projects/training/coding-agents-orchestrator",
+        "--provider",
+        "claude"
+      ]
+    }
+  }
+}

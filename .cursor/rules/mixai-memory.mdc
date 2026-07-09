@@ -1,0 +1,10 @@
+---
+description: Mixai persistent project memory
+alwaysApply: true
+---
+
+<!-- mixai:integrate:start -->
+## Mixai project memory
+
+This project has persistent local memory managed by `mixai`. Before re-exploring the repository from scratch, check it first: use the `memory_search` MCP tool or `mixai memory search "<topic>"` for past decisions, constraints, and outcomes (results are compact previews — drill in with `memory_get` or `mixai memory show <id>`). Record new durable decisions the moment they are made with the `memory_save` MCP tool. If your context feels thin after a compaction or reset, run `mixai brief` (or the `context_brief` MCP tool) to reload the latest objective, live workspace state, and the most relevant project memory without re-reading the repository. If you or the user hit a usage or rate limit, or the user asks to switch coding agents, call `list_handoff_targets` to see which other agents (Codex, Claude Code, Cursor, Antigravity) are installed and ready right now, then — only after the user confirms — call `switch_to_provider` to hand off: it checkpoints this session's work and launches the target agent with a continuation prompt.
+<!-- mixai:integrate:end -->

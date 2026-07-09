@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdapters } from "./adapters/index.js";
 import { loadConfig, type GatewayConfig } from "./config.js";
@@ -482,6 +483,25 @@ function createRunPrinter(): { onDelta: (text: string) => void; settled: () => P
   };
 }
 
+// Shows a path relative to the project (or "~/..." for files outside it,
+// like antigravity's global GEMINI.md) instead of a full absolute path —
+// the raw absolute paths console.table produced were the main reason this
+// output was hard to read.
+function displayPath(filePath: string, cwd: string): string {
+  const rel = relative(cwd, filePath);
+  if (!rel.startsWith("..")) return rel;
+  const home = homedir();
+  return filePath.startsWith(home) ? `~${filePath.slice(home.length)}` : filePath;
+}
+
+const INTEGRATION_ACTION_MARKER: Record<string, string> = {
+  created: "+",
+  updated: "~",
+  removed: "-",
+  unchanged: "=",
+  failed: "!",
+};
+
 // Wires host agents to call mixai automatically: lifecycle hooks + MCP server
 // registration + standing instruction blocks, all idempotent file writes.
 // --check reports drift without writing (exit 1 on drift, for CI);
@@ -497,21 +517,40 @@ async function handleIntegrate(options: CliOptions): Promise<void> {
     process.stdout.write(`${JSON.stringify(plans)}\n`);
   } else if (options.check) {
     const checks = plans as Awaited<ReturnType<typeof checkIntegration>>[];
+    const dirty = checks.filter((check) => !check.upToDate);
+    process.stdout.write(
+      dirty.length === 0
+        ? `All ${checks.length} provider(s) up to date.\n`
+        : `${dirty.length}/${checks.length} provider(s) have drift.\n\n`,
+    );
     for (const check of checks) {
       process.stdout.write(`${check.provider}: ${check.upToDate ? "up to date" : "drift detected"}\n`);
       for (const line of check.drift) process.stdout.write(`  ${line}\n`);
-      for (const note of check.notes) process.stdout.write(`  note: ${note}\n`);
+      for (const note of check.notes) process.stdout.write(`  → ${note}\n`);
     }
   } else {
     const integrations = plans as Awaited<ReturnType<typeof integrateProvider>>[];
-    console.table(
-      integrations.flatMap((plan) =>
-        plan.files.map((file) => ({ provider: plan.provider, file: file.path, action: file.action, note: file.note ?? "" })),
-      ),
+    const totalFiles = integrations.reduce((sum, plan) => sum + plan.files.length, 0);
+    const changed = integrations.reduce(
+      (sum, plan) => sum + plan.files.filter((file) => file.action !== "unchanged").length,
+      0,
+    );
+    const verb = options.remove ? "Removed mixai from" : "Integrated";
+    process.stdout.write(
+      `${verb} ${integrations.length} provider(s) — ${changed}/${totalFiles} file(s) changed, ${totalFiles - changed} already up to date.\n\n`,
     );
     for (const plan of integrations) {
-      for (const note of plan.notes) process.stdout.write(`[${plan.provider}] ${note}\n`);
+      process.stdout.write(`${plan.provider}\n`);
+      for (const file of plan.files) {
+        const marker = INTEGRATION_ACTION_MARKER[file.action] ?? "?";
+        const path = displayPath(file.path, options.cwd);
+        const suffix = file.note ? ` — ${file.note}` : "";
+        process.stdout.write(`  ${marker} ${path} (${file.action})${suffix}\n`);
+      }
+      for (const note of plan.notes) process.stdout.write(`  → ${note}\n`);
+      process.stdout.write("\n");
     }
+    process.stdout.write("Run `mixai integrate --check` anytime to verify these are still in place.\n");
   }
   if (options.check && plans.some((plan) => "upToDate" in plan && !plan.upToDate)) process.exitCode = 1;
   const failed = plans.flatMap((plan) => ("files" in plan ? plan.files.filter((file) => file.action === "failed") : []));

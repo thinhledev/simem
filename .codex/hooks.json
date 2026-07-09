@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mixai hook session-start --provider codex",
+            "statusMessage": "mixai: revival brief after compaction/resume"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mixai hook pre-compact --provider codex",
+            "statusMessage": "mixai: checkpoint before compaction"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mixai hook user-prompt-submit --provider codex",
+            "statusMessage": "mixai: inject relevant project memory"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mixai hook stop --provider codex",
+            "statusMessage": "mixai: report measured token savings"
+          }
+        ]
+      }
+    ]
+  }
+}

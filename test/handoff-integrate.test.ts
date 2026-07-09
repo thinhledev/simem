@@ -13,6 +13,34 @@ function actions(plan: Awaited<ReturnType<typeof integrateProvider>>): Record<st
   return Object.fromEntries(plan.files.map((file) => [file.path.split("/").slice(-2).join("/"), file.action]));
 }
 
+test("re-running integrate upgrades a pre-existing hook entry in place instead of leaving it stale", async () => {
+  const cwd = await fixture("mixai-integrate-upgrade-");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  // Simulates a project integrated before statusMessage existed: the command
+  // matches exactly, but the entry predates the new field.
+  await writeFile(
+    join(cwd, ".codex", "hooks.json"),
+    JSON.stringify({
+      hooks: {
+        PreCompact: [{ hooks: [{ type: "command", command: "mixai hook pre-compact --provider codex" }] }],
+      },
+    }),
+  );
+  const plan = await integrateProvider(cwd, "codex");
+  const hooksEntry = plan.files.find((file) => file.path.endsWith("hooks.json"));
+  assert.equal(hooksEntry?.action, "updated", "a stale entry must be rewritten, not silently left alone");
+
+  const hooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
+  const entry = hooks.hooks.PreCompact[0].hooks[0];
+  assert.equal(entry.command, "mixai hook pre-compact --provider codex", "the command itself is untouched");
+  assert.equal(entry.statusMessage, "mixai: checkpoint before compaction");
+
+  // Running it again now must be a true no-op.
+  const second = await integrateProvider(cwd, "codex");
+  const secondHooksEntry = second.files.find((file) => file.path.endsWith("hooks.json"));
+  assert.equal(secondHooksEntry?.action, "unchanged");
+});
+
 test("claude integrate writes hooks, .mcp.json, and instruction block; second run is a no-op", async () => {
   const cwd = await fixture("mixai-integrate-claude-");
   const first = await integrateProvider(cwd, "claude");
@@ -21,10 +49,14 @@ test("claude integrate writes hooks, .mcp.json, and instruction block; second ru
 
   const settings = JSON.parse(await readFile(join(cwd, ".claude", "settings.json"), "utf8"));
   for (const event of ["SessionStart", "PreCompact", "UserPromptSubmit", "Stop"]) {
-    const command = settings.hooks[event][0].hooks[0].command as string;
-    assert.match(command, /^mixai hook (session-start|pre-compact|user-prompt-submit|stop) --provider claude$/);
+    const entry = settings.hooks[event][0].hooks[0];
+    assert.match(entry.command as string, /^mixai hook (session-start|pre-compact|user-prompt-submit|stop) --provider claude$/);
+    // statusMessage gives each hook a readable label instead of a positional
+    // "Hook 1"/"Hook 2" in a host app's trust/approval UI (observed on Codex).
+    assert.match(entry.statusMessage as string, /^mixai:/);
   }
   assert.equal(settings.hooks.Stop[0].hooks[0].command, "mixai hook stop --provider claude");
+  assert.equal(settings.hooks.Stop[0].hooks[0].statusMessage, "mixai: report measured token savings");
   const mcp = JSON.parse(await readFile(join(cwd, ".mcp.json"), "utf8"));
   assert.deepEqual(mcp.mcpServers["mixai-memory"], { command: "mixai", args: ["mcp", "--cwd", cwd, "--provider", "claude"] });
   const local = await readFile(join(cwd, "CLAUDE.local.md"), "utf8");
@@ -92,6 +124,11 @@ test("codex integrate writes hooks.json, a marker-delimited TOML MCP block, and 
   const hooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
   assert.equal(hooks.hooks.PreCompact[0].hooks[0].command, "mixai hook pre-compact --provider codex");
   assert.equal(hooks.hooks.Stop[0].hooks[0].command, "mixai hook stop --provider codex");
+  // Codex's trust/approval UI has no dedicated hook-name field and otherwise
+  // labels entries positionally ("Hook 1", "Hook 2", ...); statusMessage is
+  // the documented field that gives each one a readable label instead.
+  assert.equal(hooks.hooks.PreCompact[0].hooks[0].statusMessage, "mixai: checkpoint before compaction");
+  assert.equal(hooks.hooks.Stop[0].hooks[0].statusMessage, "mixai: report measured token savings");
   const toml = await readFile(join(cwd, ".codex", "config.toml"), "utf8");
   assert.match(toml, /# mixai:integrate:start\n\[mcp_servers\.mixai-memory\]/);
   const agents = await readFile(join(cwd, "AGENTS.md"), "utf8");
@@ -109,9 +146,13 @@ test("codex integrate writes hooks.json, a marker-delimited TOML MCP block, and 
 test("cursor integrate writes mcp.json, best-guess hooks.json flagged unverified, and an owned rules file", async () => {
   const cwd = await fixture("mixai-integrate-cursor-");
   const plan = await integrateProvider(cwd, "cursor");
-  assert.ok(plan.notes.some((note) => /unverified/.test(note)));
+  // The "unverified" caveat lives only on the specific file it applies to
+  // (not duplicated as a provider-level note too — the CLI now renders
+  // per-file notes inline, so a second copy at the provider level was
+  // redundant noise).
   const hooksEntry = plan.files.find((file) => file.path.endsWith("hooks.json"));
   assert.match(hooksEntry?.note ?? "", /unverified/);
+  assert.ok(!plan.notes.some((note) => /unverified/.test(note)), "should not duplicate the file-level note");
 
   const hooks = JSON.parse(await readFile(join(cwd, ".cursor", "hooks.json"), "utf8"));
   assert.equal(hooks.hooks.sessionStart[0].command, "mixai hook session-start --provider cursor");

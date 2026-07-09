@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "mixai hook session-start --provider cursor"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "mixai hook user-prompt-submit --provider cursor"
+      }
+    ],
+    "stop": [
+      {
+        "command": "mixai hook stop --provider cursor"
+      }
+    ]
+  }
+}
