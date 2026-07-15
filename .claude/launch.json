@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nativespeech-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/thinh-agility/projects/training/native-speech/nativespeech && npm run dev"],
+      "port": 3000
+    }
+  ]
+}

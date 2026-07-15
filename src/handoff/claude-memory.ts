@@ -1,14 +1,19 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { briefFromHandoff } from "./checkpoints.js";
 
 const START = "<!-- mixai:handoff:start -->";
 const END = "<!-- mixai:handoff:end -->";
+// Imports the LEAN brief, not the full HANDOFF.md. An @import is persistent
+// system-prompt context re-sent on every turn, so importing the full handoff
+// (recent transcript + memory, often tens of KB) taxes every message. BRIEF.md
+// carries just the objective + a pointer; the full handoff is one Read away.
 const BLOCK = `${START}
 ## Mixai cross-agent handoff
 
-The imported checkpoint below is continuity context from another coding agent. When the user asks to continue, inspect the live repository state and resume the latest unfinished objective without asking them to repeat completed work.
+The brief below is compact continuity context from another coding agent. When the user asks to continue, inspect the live repository state and resume the latest unfinished objective without asking them to repeat completed work. For the full prior-agent handoff, read \`.mixai/current/HANDOFF.md\`.
 
-@.mixai/current/HANDOFF.md
+@.mixai/current/BRIEF.md
 ${END}`;
 
 async function readOptional(path: string): Promise<string> {
@@ -37,11 +42,25 @@ export interface ClaudeMemoryIntegration {
   changed: boolean;
 }
 
+// Migration: workspaces whose latest checkpoint predates BRIEF.md still have
+// the block point at BRIEF.md now — so derive one from the existing HANDOFF.md
+// (best-effort) to avoid a dangling @import until the next checkpoint writes it.
+async function ensureBriefFile(cwd: string): Promise<void> {
+  const currentDir = join(cwd, ".mixai", "current");
+  const briefPath = join(currentDir, "BRIEF.md");
+  if (await readOptional(briefPath)) return;
+  const handoff = await readOptional(join(currentDir, "HANDOFF.md"));
+  if (!handoff) return;
+  const brief = briefFromHandoff(handoff);
+  if (brief) await writeFile(briefPath, brief, "utf8");
+}
+
 export async function ensureClaudeHandoffMemory(cwd: string): Promise<ClaudeMemoryIntegration> {
   const root = resolve(cwd);
   const memoryPath = join(root, "CLAUDE.local.md");
   const gitignorePath = join(root, ".gitignore");
   const worktreeIncludePath = join(root, ".worktreeinclude");
+  await ensureBriefFile(root);
   const original = await readOptional(memoryPath);
   const start = original.indexOf(START);
   const end = original.indexOf(END);

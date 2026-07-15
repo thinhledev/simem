@@ -119,6 +119,67 @@ test("HANDOFF.md gains an additive Project memory section only when memory is en
   assert.doesNotMatch(withoutMemory, /## Project memory/);
 });
 
+test("BRIEF.md is a lean per-turn import: objective + pointer, not the full transcript", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "mixai-checkpoint-brief-"));
+  const sessionPath = join(workspace, "session.jsonl");
+  const bigOutcome = "OUTCOMEBODY".repeat(2_000);
+  await writeFile(
+    sessionPath,
+    [
+      { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Add a tooltip to the button" }] } },
+      { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: bigOutcome }] } },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join("\n"),
+  );
+  const session: SessionInfo = {
+    provider: "codex",
+    id: "codex-brief",
+    path: sessionPath,
+    cwd: workspace,
+    modifiedAt: new Date().toISOString(),
+  };
+
+  await createCheckpoint(new GitRunner(), session, { mode: "export" });
+  const brief = await readFile(join(workspace, ".mixai", "current", "BRIEF.md"), "utf8");
+  const handoff = await readFile(join(workspace, ".mixai", "current", "HANDOFF.md"), "utf8");
+
+  // Carries the objective and a pointer to the full handoff…
+  assert.match(brief, /Add a tooltip to the button/);
+  assert.match(brief, /HANDOFF\.md/);
+  // …but never the heavy transcript body, and stays tiny + far smaller than
+  // HANDOFF.md, since it is re-sent to the model on every turn.
+  assert.doesNotMatch(brief, /OUTCOMEBODY/);
+  assert.ok(brief.length < 1_500, `BRIEF.md should stay tiny, was ${brief.length}`);
+  assert.ok(brief.length < handoff.length, "BRIEF.md must be leaner than HANDOFF.md");
+});
+
+test("BRIEF.md never surfaces the internal memory-consolidation prompt as the objective", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "mixai-checkpoint-brief-mem-"));
+  const sessionPath = join(workspace, "session.jsonl");
+  await writeFile(
+    sessionPath,
+    [
+      { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Ship the certificate feature" }] } },
+      { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "done" }] } },
+      { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "You are updating a persistent project memory store. Respond with ONLY a JSON object of this exact shape ..." }] } },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join("\n"),
+  );
+  const session: SessionInfo = {
+    provider: "codex",
+    id: "codex-brief-mem",
+    path: sessionPath,
+    cwd: workspace,
+    modifiedAt: new Date().toISOString(),
+  };
+  await createCheckpoint(new GitRunner(), session, { mode: "export" });
+  const brief = await readFile(join(workspace, ".mixai", "current", "BRIEF.md"), "utf8");
+  assert.doesNotMatch(brief, /persistent project memory store/);
+  assert.match(brief, /internal memory step/);
+});
+
 test("recent conversation context is capped only when memory is enabled; fully uncapped (Phase 1) when disabled", withSqlite, async () => {
   const workspace = await mkdtemp(join(tmpdir(), "mixai-checkpoint-verbatim-"));
   const sessionPath = join(workspace, "session.jsonl");

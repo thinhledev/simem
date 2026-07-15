@@ -81,6 +81,54 @@ function latestText(messages: TranscriptMessage[], role: TranscriptMessage["role
   return "Not available in the local transcript.";
 }
 
+// Cap for the objective line in BRIEF.md. This file is @-imported into
+// CLAUDE.local.md, which the host agent re-sends to the model on EVERY turn
+// (an @import is persistent system-prompt context, not a one-time session-start
+// injection). So BRIEF.md must stay tiny — the full objective/transcript/memory
+// live in HANDOFF.md and `mixai brief`.
+const BRIEF_OBJECTIVE_CAP = 600;
+
+// The internal memory-consolidation prompt can land as the last "user" message
+// in a transcript; it must never be surfaced as the human's objective.
+function isInternalMemoryPrompt(text: string): boolean {
+  return /persistent project memory store|Respond with ONLY a JSON object/i.test(text);
+}
+
+// The lean, per-turn continuity payload. Unlike HANDOFF.md (full transcript +
+// memory), this is only objective + live pointer, because relevant project
+// memory is already injected per-prompt by the UserPromptSubmit hook and the
+// full handoff is one Read away.
+function formatBrief(input: { id: string; branch?: string; head?: string; objective: string }): string {
+  const objective = isInternalMemoryPrompt(input.objective)
+    ? "See HANDOFF.md — the last checkpoint captured an internal memory step, not a user objective."
+    : capText(input.objective, BRIEF_OBJECTIVE_CAP).text || "Not captured.";
+  return `# Mixai continuity brief
+
+Latest objective (checkpoint ${input.id}): ${objective}
+
+Workspace: ${input.branch ?? "unborn or detached"} @ ${input.head ?? "no commit"}
+
+This compact brief is injected on every turn — it is intentionally minimal. When the user asks to continue, inspect the live repository and git state first, then resume the latest unfinished objective without redoing completed work. For the full prior-agent handoff (recent transcript, workspace patch, durable decisions) read \`.mixai/current/HANDOFF.md\`, or run \`mixai brief\` / the \`context_brief\` MCP tool for a fresh objective + live git + relevant memory. Project memory relevant to each prompt is injected automatically.
+`;
+}
+
+// Derives a minimal BRIEF.md from an existing HANDOFF.md (migration path for
+// workspaces whose latest checkpoint predates BRIEF.md, so the @import never
+// points at a missing file). Best-effort: returns undefined if it can't parse.
+export function briefFromHandoff(handoff: string): string | undefined {
+  const objective = /^## Latest user objective\n\n([\s\S]*?)(?=\n## |$)/m.exec(handoff)?.[1]?.trim();
+  const id = /^Checkpoint:\s*(.+)$/m.exec(handoff)?.[1]?.trim() ?? "unknown";
+  const branch = /- Branch:\s*(.+)$/m.exec(handoff)?.[1]?.trim();
+  const head = /- HEAD:\s*(.+)$/m.exec(handoff)?.[1]?.trim();
+  if (!objective) return undefined;
+  return formatBrief({
+    id,
+    objective,
+    ...(branch ? { branch } : {}),
+    ...(head ? { head } : {}),
+  });
+}
+
 function formatHandoff(input: {
   id: string;
   createdAt: string;
@@ -252,14 +300,25 @@ export async function createCheckpoint(
   const patch = `${workspace.diff}\n`;
   const status = `${workspace.status}\n`;
   const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  // Lean per-turn import (see formatBrief): keeps CLAUDE.local.md's @import
+  // small so the full HANDOFF.md isn't re-sent to the model every message.
+  const briefName = "BRIEF.md";
+  const brief = formatBrief({
+    id,
+    objective: latestText(messages, "user"),
+    ...(workspace.branch ? { branch: workspace.branch } : {}),
+    ...(workspace.head ? { head: workspace.head } : {}),
+  });
   await Promise.all([
     writeFile(handoffPath, handoff, "utf8"),
     writeFile(transcriptPath, transcript, "utf8"),
     writeFile(patchPath, patch, "utf8"),
     writeFile(statusPath, status, "utf8"),
+    writeFile(join(directory, briefName), brief, "utf8"),
     writeFile(join(directory, "manifest.json"), manifestJson, "utf8"),
     writeFile(join(gatewayDirectory(cwd), "CURRENT.md"), handoff, "utf8"),
     writeFile(join(currentDirectory, handoffName), handoff, "utf8"),
+    writeFile(join(currentDirectory, briefName), brief, "utf8"),
     writeFile(join(currentDirectory, transcriptName), transcript, "utf8"),
     writeFile(join(currentDirectory, patchName), patch, "utf8"),
     writeFile(join(currentDirectory, statusName), status, "utf8"),

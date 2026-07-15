@@ -21,7 +21,7 @@ test("installs an idempotent private Claude handoff import with worktree support
   assert.equal(second.changed, false);
   assert.match(memory, /Keep this\./);
   assert.equal(memory.match(/mixai:handoff:start/g)?.length, 1);
-  assert.match(memory, /@\.mixai\/current\/HANDOFF\.md/);
+  assert.match(memory, /@\.mixai\/current\/BRIEF\.md/);
   assert.match(gitignore, /^\.mixai\/$/m);
   assert.match(gitignore, /^CLAUDE\.local\.md$/m);
   assert.match(worktree, /^\.mixai\/current\/$/m);

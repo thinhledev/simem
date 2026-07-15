@@ -94,9 +94,10 @@ const REVIVAL_SOURCES = new Set(["compact", "resume", "clear"]);
 
 // Emits the revival brief for context-loss session starts. For Claude Code,
 // plain resume is suppressed: mixai's CLAUDE.local.md block already @imports
-// .mixai/current/HANDOFF.md on every session start, so injecting the brief
-// there too would double-feed the same context. "compact"/"clear" still get
-// the brief — its live git state and memory section aren't in the import.
+// the lean .mixai/current/BRIEF.md (objective + pointer) as persistent context,
+// which is enough to re-orient a resume; the fuller brief (live git + memory)
+// stays one `mixai brief` away. "compact"/"clear" still get the full brief here
+// because those lose more context and its live state isn't in the import.
 export async function handleSessionStart(
   input: RawHookInput,
   cwd: string,

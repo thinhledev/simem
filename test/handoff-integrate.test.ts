@@ -64,7 +64,7 @@ test("claude integrate writes hooks, .mcp.json, and instruction block; second ru
   assert.match(local, /memory_search/);
   // The handoff import block is installed alongside (double-injection guard depends on it).
   assert.match(local, /mixai:handoff:start/);
-  assert.match(local, /@\.mixai\/current\/HANDOFF\.md/);
+  assert.match(local, /@\.mixai\/current\/BRIEF\.md/);
 
   const second = await integrateProvider(cwd, "claude");
   assert.ok(second.files.every((file) => file.action === "unchanged"), JSON.stringify(second.files));
