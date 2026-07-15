@@ -7,6 +7,8 @@ import { checkLaunchReadiness } from "../handoff/preflight.js";
 import { displayCommand, launchSwitch, prepareSwitch, type SwitchPlan } from "../handoff/switcher.js";
 import { NodeCommandRunner, type CommandRunner } from "../process.js";
 import { PROVIDER_IDS, type ProviderId } from "../types.js";
+import { outlineFile } from "../codemap/outline.js";
+import { findReferences } from "../codemap/references.js";
 import { showRecord } from "./cli-commands.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
@@ -133,6 +135,40 @@ const TOOLS = [
         fork: { type: "boolean", description: "Keep this session active too, instead of an exclusive switch" },
       },
       required: ["target"],
+    },
+  },
+  {
+    name: "code_outline",
+    description:
+      "List a source file's symbols (functions, classes, methods, types, etc.) with line numbers — a structural " +
+      "map so you can jump to the right lines instead of reading the whole file. Dependency-free heuristic scan; " +
+      "best on TS/JS, Python, Go, Rust, Ruby, Java/C#, with a generic fallback for other languages.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File path relative to the workspace (or absolute)." },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "code_find_references",
+    description:
+      "Find every line that references a symbol across the repository — a word-boundary scan over git-tracked " +
+      "files (falls back to a directory walk outside a git repo). Use before a rename/refactor to get a complete " +
+      "reference list a single-directory grep can miss. Returns file:line:text, capped.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "A bare identifier (letters, digits, _ or $) to search for." },
+        extensions: {
+          type: "array",
+          items: { type: "string" },
+          description: 'Optional file-extension filter, e.g. [".ts", ".tsx"].',
+        },
+        maxResults: { type: "integer", minimum: 1, maximum: 1000 },
+      },
+      required: ["symbol"],
     },
   },
 ] as const;
@@ -385,6 +421,36 @@ export async function handleRequest(
             message: `Checkpoint ready. Run this in your terminal to continue in ${target}: ${displayCommand(plan)}`,
           }),
         };
+      } catch (error) {
+        return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
+      }
+    }
+    // Code-map tools need only the filesystem + git runner, not the memory DB,
+    // so they run even on Node runtimes without node:sqlite.
+    if (params.name === "code_outline") {
+      try {
+        const path = typeof args.path === "string" ? args.path : "";
+        if (!path) throw new Error("path is required");
+        const outline = await outlineFile(cwd, path);
+        return { jsonrpc: "2.0", id, result: toolResult(outline) };
+      } catch (error) {
+        return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (params.name === "code_find_references") {
+      try {
+        const symbol = typeof args.symbol === "string" ? args.symbol : "";
+        if (!symbol) throw new Error("symbol is required");
+        const extensions = Array.isArray(args.extensions)
+          ? args.extensions.filter((ext): ext is string => typeof ext === "string")
+          : undefined;
+        const maxResults =
+          typeof args.maxResults === "number" && Number.isInteger(args.maxResults) ? args.maxResults : undefined;
+        const result = await findReferences(deps.runner, cwd, symbol, {
+          ...(extensions ? { extensions } : {}),
+          ...(maxResults ? { maxResults } : {}),
+        });
+        return { jsonrpc: "2.0", id, result: toolResult(result) };
       } catch (error) {
         return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
       }

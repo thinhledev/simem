@@ -122,7 +122,16 @@ claude mcp add mixai-memory -- mixai mcp --cwd /path/to/project
 { "mcpServers": { "mixai-memory": { "command": "mixai", "args": ["mcp", "--cwd", "/path/to/project"] } } }
 ```
 
-Exposed tools: `memory_search`, `memory_get`, `memory_save`, `context_brief` (rebuild working context after a reset), and `list_handoff_targets` / `switch_to_provider` (see which other agents are ready and hand off to one, gated by your editor's own approval prompt).
+Exposed tools: `memory_search`, `memory_get`, `memory_save`, `context_brief` (rebuild working context after a reset), `list_handoff_targets` / `switch_to_provider` (see which other agents are ready and hand off to one, gated by your editor's own approval prompt), and the **code map** tools below.
+
+### Code map
+
+Two on-demand tools help the agent navigate your repo without reading whole files:
+
+- **`code_outline`** — lists a file's functions, classes, methods, and types with line numbers, so the agent jumps straight to the relevant lines instead of reading the whole file.
+- **`code_find_references`** — finds every place a symbol is used across the repo, so renames and refactors don't miss a spot (including files you just created).
+
+**Why it saves tokens and context:** the agent *pulls* just the structure it needs, on demand, instead of reading — and re-reading — large files. And unlike an always-loaded "repo map," these tools add nothing to every message: only the small result of a call you asked for, once. No native build and no extra dependencies, so they work anywhere mixai runs.
 
 ## Configuration
 

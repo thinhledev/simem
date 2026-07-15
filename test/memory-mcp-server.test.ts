@@ -43,6 +43,8 @@ test("tools/list advertises memory tools, context_brief, and the handoff tools",
     const response = await handleRequest(memory, cwd, JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }));
     const tools = (response?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name);
     assert.deepEqual(tools.sort(), [
+      "code_find_references",
+      "code_outline",
       "context_brief",
       "list_handoff_targets",
       "memory_get",

@@ -1,6 +1,6 @@
 {
   "name": "mixai-cli",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Local-first gateway for Codex, Claude Code, and Cursor CLI",
   "type": "module",
   "license": "MIT",
