@@ -1,10 +1,19 @@
-# mixai
+# mixai — switch between AI coding agents without losing context
 
 **Seamlessly move your work between AI coding agents — Claude Code, Codex, Cursor, and Antigravity — without losing context.**
 
-mixai is a local-first command-line tool that works alongside the coding agents you already use. When you hit a usage limit, want a second opinion, or simply prefer a different agent for the next task, mixai hands off your work — full context intact — in a single command. It also gives every agent a shared, persistent memory of your project's decisions and history, so no agent ever starts from scratch.
+[![npm version](https://img.shields.io/npm/v/mixai-cli.svg)](https://www.npmjs.com/package/mixai-cli)
+[![npm downloads](https://img.shields.io/npm/dm/mixai-cli.svg)](https://www.npmjs.com/package/mixai-cli)
+[![license](https://img.shields.io/npm/l/mixai-cli.svg)](LICENSE)
+[![Node.js](https://img.shields.io/node/v/mixai-cli.svg)](https://nodejs.org)
+
+> **npm package:** [`mixai-cli`](https://www.npmjs.com/package/mixai-cli) · **install:** `npm install -g mixai-cli` · **repository:** [github.com/thinhledev/mixai](https://github.com/thinhledev/mixai)
+
+**mixai** is a local-first command-line tool (CLI) that works alongside the AI coding agents you already use. When you hit a usage limit, want a second opinion, or simply prefer a different agent for the next task, mixai hands off your work — full context intact — in a single command. It also gives every agent a shared, persistent memory of your project's decisions and history, so no agent ever starts from scratch.
 
 Everything runs on your machine. Your credentials never leave your computer, and creating a hand-off never spends a single token.
+
+**Keywords:** AI coding agent orchestrator, Claude Code ↔ Codex ↔ Cursor ↔ Antigravity handoff, cross-agent context handoff, persistent project memory for LLM agents, MCP memory server, agent switching CLI.
 
 ## Why mixai
 
@@ -22,9 +31,12 @@ Everything runs on your machine. Your credentials never leave your computer, and
 
 ## Installation
 
+Install the [`mixai-cli`](https://www.npmjs.com/package/mixai-cli) package from npm:
+
 ```bash
 npm install -g mixai-cli
 mixai status      # see which agents are installed and ready
+mixai --version   # confirm the installed version
 ```
 
 `npm install` sets up the `mixai` command globally, but it doesn't wire mixai into any project — that's a separate, per-project step, and it doesn't happen automatically:

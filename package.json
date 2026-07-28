@@ -5,6 +5,31 @@
   "type": "module",
   "license": "MIT",
   "author": "Thinh Le",
+  "homepage": "https://github.com/thinhledev/mixai#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thinhledev/mixai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/thinhledev/mixai/issues"
+  },
+  "keywords": [
+    "ai",
+    "coding-agent",
+    "claude-code",
+    "codex",
+    "cursor",
+    "antigravity",
+    "cli",
+    "llm",
+    "agent-handoff",
+    "context-handoff",
+    "persistent-memory",
+    "mcp",
+    "developer-tools",
+    "ai-agents",
+    "orchestrator"
+  ],
   "bin": {
     "mixai": "./dist/cli.js"
   },
