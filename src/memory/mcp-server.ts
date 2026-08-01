@@ -173,6 +173,19 @@ const TOOLS = [
   },
 ] as const;
 
+// `.mixai/state.json` can point at a checkpoint the memory database never
+// indexed: indexCheckpointBestEffort swallows failures by design, so the
+// checkpoint files land on disk while the `checkpoints` row does not.
+// memory_items.source_checkpoint_id carries a foreign key to checkpoints(id),
+// so inserting an unindexed id fails the whole save. Provenance is optional on
+// a memory item — drop it rather than lose the memory. `mixai memory reindex`
+// backfills the missing checkpoint rows from the canonical files.
+function resolveSourceCheckpointId(memory: MemoryDb, checkpointId: string | undefined): string | null {
+  if (!checkpointId) return null;
+  const row = memory.db.prepare("SELECT 1 FROM checkpoints WHERE id = ?").get(checkpointId);
+  return row ? checkpointId : null;
+}
+
 async function callTool(memory: MemoryDb, cwd: string, name: string, args: Record<string, unknown>): Promise<unknown> {
   if (name === "memory_search") {
     const query = typeof args.query === "string" ? args.query : "";
@@ -239,7 +252,7 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
         `INSERT INTO memory_items (kind, category, text, importance, status, source_checkpoint_id, created_at, last_reinforced_at)
          VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
       )
-      .run(kind, category ?? null, text, importance, state.currentCheckpointId ?? null, now, now);
+      .run(kind, category ?? null, text, importance, resolveSourceCheckpointId(memory, state.currentCheckpointId), now, now);
     return toolResult({ id: Number(result.lastInsertRowid) });
   }
   throw new Error(`Unknown tool: ${name}`);

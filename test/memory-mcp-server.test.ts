@@ -357,6 +357,76 @@ test("tools/call memory_save writes a row, then memory_search finds it", withSql
   });
 });
 
+test("tools/call memory_save survives a state.json pointing at an unindexed checkpoint", withSqlite, async () => {
+  await withMemory(async (memory, cwd) => {
+    // A checkpoint whose files exist on disk but whose row never made it into
+    // the database (indexCheckpointBestEffort failed silently). The foreign key
+    // on memory_items.source_checkpoint_id used to reject every save.
+    await mkdir(join(cwd, ".mixai"), { recursive: true });
+    await writeFile(
+      join(cwd, ".mixai", "state.json"),
+      JSON.stringify({ version: 1, checkpoints: {}, sessions: {}, currentCheckpointId: "2026-07-09T05-04-45-416Z-f99ce6b7" }),
+      "utf8",
+    );
+    const save = await handleRequest(
+      memory,
+      cwd,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: {
+          name: "memory_save",
+          arguments: { text: "Saves must not depend on the checkpoint being indexed.", kind: "semantic", importance: 7 },
+        },
+      }),
+    );
+    assert.equal(save?.error, undefined, "a stale currentCheckpointId must not fail the save");
+    const saveResult = JSON.parse((save?.result as { content: Array<{ text: string }> }).content[0]?.text ?? "{}");
+    assert.equal(typeof saveResult.id, "number");
+    const row = memory.db
+      .prepare("SELECT source_checkpoint_id FROM memory_items WHERE id = ?")
+      .get(saveResult.id) as { source_checkpoint_id: string | null };
+    assert.equal(row.source_checkpoint_id, null, "unknown provenance is dropped, not forced");
+  });
+});
+
+test("tools/call memory_save keeps provenance when the checkpoint is indexed", withSqlite, async () => {
+  await withMemory(async (memory, cwd) => {
+    memory.db
+      .prepare(
+        "INSERT INTO checkpoints " +
+          "(id, created_at, workspace, source_provider, source_session_id, lineage_mode, directory, manifest_json) " +
+          "VALUES (?, '2026-07-09T05:04:45Z', ?, 'claude', 'session-1', 'fresh', ?, '{}')",
+      )
+      .run("2026-07-09T05-04-45-416Z-f99ce6b7", cwd, join(cwd, ".mixai", "checkpoints", "cp"));
+    await mkdir(join(cwd, ".mixai"), { recursive: true });
+    await writeFile(
+      join(cwd, ".mixai", "state.json"),
+      JSON.stringify({ version: 1, checkpoints: {}, sessions: {}, currentCheckpointId: "2026-07-09T05-04-45-416Z-f99ce6b7" }),
+      "utf8",
+    );
+    const save = await handleRequest(
+      memory,
+      cwd,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: {
+          name: "memory_save",
+          arguments: { text: "Provenance survives when the checkpoint row exists.", kind: "semantic", importance: 7 },
+        },
+      }),
+    );
+    const saveResult = JSON.parse((save?.result as { content: Array<{ text: string }> }).content[0]?.text ?? "{}");
+    const row = memory.db
+      .prepare("SELECT source_checkpoint_id FROM memory_items WHERE id = ?")
+      .get(saveResult.id) as { source_checkpoint_id: string | null };
+    assert.equal(row.source_checkpoint_id, "2026-07-09T05-04-45-416Z-f99ce6b7");
+  });
+});
+
 test("tools/call memory_search returns full RetrievalHit[] unchanged when full: true is set", withSqlite, async () => {
   await withMemory(async (memory, cwd) => {
     memory.db
