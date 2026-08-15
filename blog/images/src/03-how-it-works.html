@@ -1,0 +1,79 @@
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1600px; height: 1000px; background: #0b0e14; color: #e6edf3;
+    font-family: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    padding: 52px 60px; display: flex; flex-direction: column; align-items: center;
+  }
+  h2 { font-size: 42px; font-weight: 800; letter-spacing: -.01em; }
+  .sub { color: #8b949e; font-size: 21px; margin-top: 10px; margin-bottom: 42px; }
+  .lane { display: flex; align-items: center; gap: 22px; width: 100%; }
+  .box { border-radius: 16px; border: 1px solid #283040; background: #11161f; padding: 22px 24px; flex: 1; }
+  .box h3 { font-size: 22px; font-weight: 700; margin-bottom: 10px; }
+  .box p { font-size: 18px; line-height: 1.45; color: #9aa7b8; }
+  .a { color: #57647c; font-size: 32px; }
+  .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+  .stack { width: 100%; margin-top: 30px; display: flex; gap: 22px; }
+  .panel { flex: 1; border-radius: 18px; border: 1px solid #283040; background: #10151e; padding: 26px 28px; }
+  .panel .head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .pill { font-size: 14px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; padding: 5px 11px; border-radius: 8px; }
+  .panel h3 { font-size: 24px; font-weight: 700; }
+  .panel ul { list-style: none; }
+  .panel li { font-size: 19px; line-height: 1.5; color: #b9c4d4; padding-left: 22px; position: relative; margin-bottom: 10px; }
+  .panel li::before { content: "▸"; position: absolute; left: 0; color: #7c9cff; }
+  .panel li b { color: #fff; }
+  .files { margin-top: 34px; width: 100%; border-radius: 18px; border: 1px solid #2c3a52; background: #0e1420; padding: 26px 30px; }
+  .files .title { font-size: 19px; font-weight: 700; color: #c7d3e8; margin-bottom: 16px; letter-spacing: .04em; }
+  .grid { display: flex; gap: 14px; }
+  .f { flex: 1; border-radius: 12px; background: #131b2a; border: 1px solid #2a3850; padding: 16px 18px; }
+  .f .n { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 18px; color: #a9c2ff; margin-bottom: 6px; }
+  .f .d { font-size: 16px; color: #8b949e; line-height: 1.4; }
+  .note { margin-top: 26px; font-size: 20px; color: #58d68d; font-weight: 600; }
+</style>
+<h2>What actually moves between agents</h2>
+<div class="sub">Everything is written to <span class="mono">.mixai/</span> on your machine. No cloud, no API keys, no model call.</div>
+
+<div class="lane">
+  <div class="box"><h3>1 · Read the session</h3><p>mixai parses the agent's own local session log — the objective, the conversation, what was tried.</p></div>
+  <div class="a">→</div>
+  <div class="box"><h3>2 · Snapshot the work</h3><p>Branch, HEAD, <span class="mono">git status</span>, and a patch of your uncommitted changes.</p></div>
+  <div class="a">→</div>
+  <div class="box"><h3>3 · Write a checkpoint</h3><p>A portable handoff bundle on disk. Pure file I/O — costs literally zero tokens.</p></div>
+  <div class="a">→</div>
+  <div class="box"><h3>4 · Launch the next agent</h3><p>Opened with a continuation prompt pointing straight at the checkpoint.</p></div>
+</div>
+
+<div class="files">
+  <div class="title">.mixai/current/ — the handoff bundle</div>
+  <div class="grid">
+    <div class="f"><div class="n">BRIEF.md</div><div class="d">Tiny always-on context: current objective + git state</div></div>
+    <div class="f"><div class="n">HANDOFF.md</div><div class="d">Objective, last outcome, recent conversation, memory</div></div>
+    <div class="f"><div class="n">TRANSCRIPT.md</div><div class="d">The full extracted conversation, if more detail is needed</div></div>
+    <div class="f"><div class="n">WORKSPACE.patch</div><div class="d">Your tracked changes as a diff</div></div>
+    <div class="f"><div class="n">memory.db</div><div class="d">SQLite: decisions, digests, FTS5 search index</div></div>
+  </div>
+</div>
+
+<div class="stack">
+  <div class="panel">
+    <div class="head"><span class="pill" style="background:#152a3f;color:#7c9cff">Memory</span><h3>Never starts from scratch</h3></div>
+    <ul>
+      <li>Every checkpoint is indexed into local <b>SQLite</b> and distilled into durable facts</li>
+      <li>Decisions and constraints <b>never expire</b>; routine chatter gets compressed</li>
+      <li>Any agent can answer <b>"why did we choose Postgres?"</b> without re-reading history</li>
+      <li>Full-text <b>FTS5 + BM25</b> search, plus semantic search if Ollama is running</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <div class="head"><span class="pill" style="background:#143026;color:#58d68d">Token budget</span><h3>Small on purpose</h3></div>
+    <ul>
+      <li>Recent history stays verbatim; older history folds into <b>compact digests</b></li>
+      <li>Search returns <b>previews</b>, not walls of text — drill in only if needed</li>
+      <li><span class="mono">code_outline</span> / <span class="mono">code_find_references</span> replace reading whole files</li>
+      <li>A ledger reports <b>measured</b> savings — not marketing percentages</li>
+    </ul>
+  </div>
+</div>
+
+<div class="note">Result: context that survives quota limits, context resets, and agent switches alike.</div>

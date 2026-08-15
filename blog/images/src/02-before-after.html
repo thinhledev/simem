@@ -1,0 +1,57 @@
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1600px; height: 800px; background: #0b0e14; color: #e6edf3;
+    font-family: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    padding: 56px 60px; display: flex; flex-direction: column;
+  }
+  h2 { font-size: 42px; font-weight: 800; letter-spacing: -.01em; text-align: center; }
+  .sub { text-align: center; color: #8b949e; font-size: 21px; margin-top: 12px; margin-bottom: 40px; }
+  .cols { display: flex; gap: 34px; flex: 1; }
+  .card { flex: 1; border-radius: 20px; padding: 32px 34px; border: 1px solid #283040; background: #11161f; display: flex; flex-direction: column; }
+  .card.bad { border-color: #5a2b2b; background: linear-gradient(180deg,#1a1113,#11161f); }
+  .card.good { border-color: #2c5a44; background: linear-gradient(180deg,#0f1a17,#11161f); }
+  .tag { font-size: 17px; letter-spacing: .18em; text-transform: uppercase; font-weight: 700; margin-bottom: 20px; }
+  .bad .tag { color: #ef7a7a; }
+  .good .tag { color: #58d68d; }
+  .step { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 20px; }
+  .num { flex: 0 0 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; font-size: 17px; }
+  .bad .num { background: #3a1d20; color: #ef7a7a; }
+  .good .num { background: #143026; color: #58d68d; }
+  .txt { font-size: 22px; line-height: 1.45; color: #cbd5e1; }
+  .txt b { color: #ffffff; font-weight: 700; }
+  .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 20px; }
+  .cost { margin-top: auto; padding-top: 24px; border-top: 1px dashed #2c3542; font-size: 24px; font-weight: 700; }
+  .bad .cost { color: #ef7a7a; }
+  .good .cost { color: #58d68d; }
+  .cost span { display: block; font-size: 18px; font-weight: 500; color: #8b949e; margin-top: 8px; }
+</style>
+<h2>You hit the usage limit at 4pm. Now what?</h2>
+<div class="sub">Same task, same repo, two very different afternoons</div>
+
+<div class="cols">
+  <div class="card bad">
+    <div class="tag">Without mixai</div>
+    <div class="step"><div class="num">1</div><div class="txt">Agent A stops mid-refactor: <b>"usage limit reached"</b></div></div>
+    <div class="step"><div class="num">2</div><div class="txt">Open agent B. It knows <b>nothing</b> about your repo.</div></div>
+    <div class="step"><div class="num">3</div><div class="txt">Re-explain the goal. Paste the plan. Again.</div></div>
+    <div class="step"><div class="num">4</div><div class="txt">It re-reads 30 files to rebuild context you already paid for.</div></div>
+    <div class="step"><div class="num">5</div><div class="txt">It undoes a decision you made two days ago — because nobody told it.</div></div>
+    <div class="cost">~20 minutes + tens of thousands of wasted tokens
+      <span>…and you still don't fully trust the result.</span>
+    </div>
+  </div>
+
+  <div class="card good">
+    <div class="tag">With mixai</div>
+    <div class="step"><div class="num">1</div><div class="txt">Agent A stops mid-refactor: <b>"usage limit reached"</b></div></div>
+    <div class="step"><div class="num">2</div><div class="txt"><span class="mono">mixai switch codex --from claude</span></div></div>
+    <div class="step"><div class="num">3</div><div class="txt">A checkpoint is written locally: objective, conversation, git diff, decisions.</div></div>
+    <div class="step"><div class="num">4</div><div class="txt">Agent B opens <b>already knowing</b> what you were doing and why.</div></div>
+    <div class="step"><div class="num">5</div><div class="txt">You type: <span class="mono">"continue"</span></div></div>
+    <div class="cost">~5 seconds + 0 tokens to hand off
+      <span>The checkpoint never calls a model — it works even when your quota is gone.</span>
+    </div>
+  </div>
+</div>

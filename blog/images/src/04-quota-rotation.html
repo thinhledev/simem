@@ -1,0 +1,76 @@
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1600px; height: 700px; background: #0b0e14; color: #e6edf3;
+    font-family: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    padding: 54px 64px; display: flex; flex-direction: column;
+  }
+  h2 { font-size: 42px; font-weight: 800; letter-spacing: -.01em; text-align: center; }
+  .sub { text-align: center; color: #8b949e; font-size: 21px; margin-top: 12px; margin-bottom: 46px; }
+  .track { display: flex; flex-direction: column; gap: 18px; }
+  .row { display: flex; align-items: center; gap: 20px; }
+  .who { width: 250px; display: flex; align-items: center; gap: 12px; }
+  .sw { width: 16px; height: 16px; border-radius: 5px; }
+  .who .n { font-size: 21px; font-weight: 700; }
+  .who .p { font-size: 16px; color: #8b949e; }
+  .bar { flex: 1; height: 56px; border-radius: 12px; background: #11161f; border: 1px solid #232c3a; position: relative; overflow: hidden; }
+  .seg { position: absolute; top: 0; bottom: 0; border-radius: 10px; display: grid; place-items: center; font-size: 16px; font-weight: 700; color: #0b0e14; }
+  .empty { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg,#161c26,#161c26 8px,#11161f 8px,#11161f 16px); }
+  .axis { display: flex; margin-top: 14px; margin-left: 270px; }
+  .axis div { flex: 1; font-size: 17px; color: #7d8798; font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+  .handoffs { margin-top: 42px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .h {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 18px;
+    padding: 13px 18px; border-radius: 12px; background: #101725; border: 1px solid #2c3a52; color: #a9c2ff;
+  }
+  .punch { margin-top: 40px; text-align: center; font-size: 26px; font-weight: 700; color: #58d68d; }
+  .punch span { display: block; font-size: 20px; font-weight: 500; color: #8b949e; margin-top: 10px; }
+</style>
+<h2>One workday, four free tiers, zero context lost</h2>
+<div class="sub">Quotas reset at different times, on different clocks. Stop treating them as one budget you can run out of.</div>
+
+<div class="track">
+  <div class="row">
+    <div class="who"><div class="sw" style="background:#d97757"></div><div><div class="n">Claude Code</div><div class="p">Pro plan</div></div></div>
+    <div class="bar">
+      <div class="seg" style="left:0;width:34%;background:#d97757">working</div>
+      <div class="empty" style="left:34%;right:0"></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="who"><div class="sw" style="background:#8fd7c4"></div><div><div class="n">Codex</div><div class="p">ChatGPT plan</div></div></div>
+    <div class="bar">
+      <div class="empty" style="left:0;width:34%"></div>
+      <div class="seg" style="left:34%;width:28%;background:#8fd7c4">working</div>
+      <div class="empty" style="left:62%;right:0"></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="who"><div class="sw" style="background:#7c9cff"></div><div><div class="n">Cursor</div><div class="p">Free tier</div></div></div>
+    <div class="bar">
+      <div class="empty" style="left:0;width:62%"></div>
+      <div class="seg" style="left:62%;width:21%;background:#7c9cff">working</div>
+      <div class="empty" style="left:83%;right:0"></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="who"><div class="sw" style="background:#f2c14e"></div><div><div class="n">Antigravity</div><div class="p">Free tier</div></div></div>
+    <div class="bar">
+      <div class="empty" style="left:0;width:83%"></div>
+      <div class="seg" style="left:83%;right:0;background:#f2c14e">working</div>
+    </div>
+  </div>
+</div>
+
+<div class="axis"><div>9:00</div><div>11:00</div><div>13:00</div><div>15:00</div><div>17:00</div><div>19:00</div></div>
+
+<div class="handoffs">
+  <div class="h">mixai switch codex --from claude</div>
+  <div class="h">mixai switch cursor --from codex</div>
+  <div class="h">mixai switch antigravity --from cursor</div>
+</div>
+
+<div class="punch">Same task. Same memory. Four providers.
+  <span>Every handoff carries the objective, the diff, and every decision you already made.</span>
+</div>

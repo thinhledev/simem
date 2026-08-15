@@ -1,0 +1,61 @@
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1500px; height: 940px;
+    background: radial-gradient(900px 600px at 50% 0%, #17223b 0%, #0b0e14 65%);
+    font-family: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 44px;
+  }
+  .term {
+    width: 100%; border-radius: 16px; overflow: hidden;
+    border: 1px solid #2b3446; background: #0d1117;
+    box-shadow: 0 30px 70px rgba(0,0,0,.5);
+  }
+  .bar { height: 46px; background: #161b22; display: flex; align-items: center; padding: 0 18px; gap: 9px; border-bottom: 1px solid #232c3a; }
+  .b { width: 13px; height: 13px; border-radius: 50%; }
+  .title { margin-left: 16px; color: #7d8798; font-size: 16px; font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+  pre {
+    font-family: "SF Mono", ui-monospace, Menlo, Monaco, monospace;
+    font-size: 19px; line-height: 1.62; color: #c9d1d9; padding: 26px 28px; white-space: pre-wrap;
+  }
+  .p { color: #58d68d; font-weight: 700; }
+  .c { color: #e6edf3; font-weight: 600; }
+  .d { color: #6e7a8a; }
+  .g { color: #58d68d; }
+  .y { color: #f2c14e; }
+  .bl { color: #7c9cff; }
+  .r { color: #ef7a7a; }
+</style>
+<div class="term">
+  <div class="bar">
+    <div class="b" style="background:#ff5f57"></div><div class="b" style="background:#febc2e"></div><div class="b" style="background:#28c840"></div>
+    <div class="title">~/projects/my-app — mixai</div>
+  </div>
+<pre><span class="p">$</span> <span class="c">claude</span>
+<span class="r">✗ You've reached your usage limit. Try again at 6:00 PM.</span>
+
+<span class="p">$</span> <span class="c">mixai status</span>
+  provider      ready   credential                  version
+  <span class="bl">codex</span>         <span class="g">yes</span>     included (ChatGPT login)    0.58.0
+  <span class="bl">claude</span>        <span class="y">no</span>      paid (limit reached)        1.30096.1
+  <span class="bl">cursor</span>        <span class="g">yes</span>     free                        3.10.17
+  <span class="bl">antigravity</span>   <span class="g">yes</span>     free                        2.2.1
+
+<span class="p">$</span> <span class="c">mixai switch codex --from claude</span>
+  <span class="g">✔</span> checkpoint 2026-08-15T09-12-04Z-a71f3c written to .mixai/
+  <span class="d">  objective   · "extract the billing webhook into its own module"</span>
+  <span class="d">  workspace   · master @ 9f2c1ab (4 files changed)</span>
+  <span class="d">  memory      · 13 durable decisions, 4 digests attached</span>
+  <span class="g">✔</span> launching codex with the continuation prompt…
+
+<span class="p">$</span> <span class="c">mixai memory search <span class="y">"why did we drop the queue"</span></span>
+  <span class="bl">[decision 41]</span> Webhook retries handled inline; the queue added ops cost
+              without fixing ordering. Revisit only if volume &gt; 50/s.
+  <span class="bl">[summary 12]</span> Billing module split from api/ during the Aug refactor…
+
+<span class="p">$</span> <span class="c">mixai memory savings</span>
+  disclosure: 2 event(s), ~549 tokens (2197 chars)
+  <span class="d">Total: ~549 tokens across 2 event(s) — measured, not estimated.</span>
+</pre>
+</div>
