@@ -38,7 +38,7 @@ export function memoryDbPath(cwd: string): string {
   if (ref.mode === "global") {
     const outcome = migrateLegacyStore(ref);
     // Another process holds the migration lock past the wait: read the
-    // not-yet-moved legacy database rather than create an empty global one.
+    // not-yet-copied legacy database rather than create an empty global one.
     if (outcome === "busy") return join(ref.root, ".mixai", "memory.db");
   }
   return join(projectStoreDir(cwd), "memory.db");

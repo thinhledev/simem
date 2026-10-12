@@ -19,6 +19,10 @@ import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
 import { upsertMemoryItem } from "./items.js";
 import { readOutput } from "../compress/exec.js";
+import { parseSince } from "../commands/common.js";
+import { collectChecks } from "../commands/doctor.js";
+import { collectStats, formatStats } from "../stats/stats.js";
+import { resolveProject } from "../store/project.js";
 import { embedNewRows, resolveEmbeddings } from "../vec/client.js";
 import { toPreview } from "./preview.js";
 import { search } from "./retrieval.js";
@@ -60,7 +64,54 @@ function toolResult(payload: unknown): { content: Array<{ type: "text"; text: st
   return { content: [{ type: "text", text: JSON.stringify(payload) }] };
 }
 
+// Tool groups (config mcp.toolGroups) so users can drop whole groups and the
+// schema tokens that come with them on every request.
+export const TOOL_GROUPS: Record<string, string> = {
+  recall: "memory",
+  memory_search: "memory",
+  memory_get: "memory",
+  memory_save: "memory",
+  memory_forget: "memory",
+  memory_stats: "memory",
+  context_brief: "memory",
+  code_search: "code",
+  code_read: "code",
+  code_outline: "code",
+  code_find_references: "code",
+  repo_map: "code",
+  output_get: "compression",
+  mixai_doctor: "setup",
+  list_handoff_targets: "handoff",
+  switch_to_provider: "handoff",
+};
+
 const TOOLS = [
+  {
+    name: "recall",
+    description:
+      "What does project memory know about this? Past decisions, constraints, preferences, and earlier work from any agent or account, " +
+      "ranked (keywords + local embeddings). Returns short previews; memory_get <id> for full text. Use before re-exploring the repo.",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 30 } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "memory_forget",
+    description: "Archive a memory item that is wrong or obsolete (the user asked to forget it). It stops appearing in results.",
+    inputSchema: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
+  },
+  {
+    name: "memory_stats",
+    description: "Token usage of this project's agent sessions and what mixai saved (measured vs estimated), for when the user asks.",
+    inputSchema: { type: "object", properties: { since: { type: "string", description: "e.g. 7d, 24h, or an ISO date" } } },
+  },
+  {
+    name: "mixai_doctor",
+    description: "Check mixai's setup for this machine and project (hooks, tools, memory, embeddings) and say what to fix.",
+    inputSchema: { type: "object", properties: {} },
+  },
   {
     name: "memory_search",
     description:
@@ -236,7 +287,20 @@ function resolveSourceCheckpointId(memory: MemoryDb, checkpointId: string | unde
   return row ? checkpointId : null;
 }
 
-async function callTool(memory: MemoryDb, cwd: string, name: string, args: Record<string, unknown>, memoryConfig: MemoryConfig): Promise<unknown> {
+async function callTool(memory: MemoryDb, cwd: string, toolName: string, args: Record<string, unknown>, memoryConfig: MemoryConfig): Promise<unknown> {
+  let name = toolName;
+  if (name === "memory_forget") {
+    const itemId = typeof args.id === "number" ? args.id : Number(args.id);
+    if (!Number.isInteger(itemId)) throw new Error("id must be a memory item id");
+    const result = memory.db.prepare("UPDATE memory_items SET status = 'archived' WHERE id = ? AND status = 'active'").run(itemId);
+    return toolResult({ id: itemId, archived: Number(result.changes) > 0 });
+  }
+  if (name === "memory_stats") {
+    const since = typeof args.since === "string" ? parseSince(args.since)?.toISOString() : undefined;
+    const stats = collectStats(memory, since ? { since } : {});
+    return toolResult({ summary: formatStats(stats, resolveProject(cwd).name), stats });
+  }
+  if (name === "recall") name = "memory_search";
   if (name === "memory_search") {
     const query = typeof args.query === "string" ? args.query : "";
     if (!query.trim()) throw new Error("query is required");
@@ -514,6 +578,14 @@ export async function handleRequest(
     }
     // Code-map tools need only the filesystem + git runner, not the memory DB,
     // so they run even on Node runtimes without node:sqlite.
+    if (params.name === "mixai_doctor") {
+      try {
+        const checks = await collectChecks(cwd);
+        return { jsonrpc: "2.0", id, result: toolResult({ checks }) };
+      } catch (error) {
+        return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
+      }
+    }
     if (params.name === "code_search" || params.name === "code_read" || params.name === "repo_map") {
       try {
         const ready = await ensureIndexed(cwd, deps.memoryConfig);

@@ -84,8 +84,8 @@ export async function runInit(options: InitOptions): Promise<void> {
   const project = resolveProject(options.cwd);
   const memory = await openMemoryDb(options.cwd, { quiet: true });
   memory?.close();
-  if (existsSync(join(project.root, ".mixai", "memory.db.bak-1x"))) {
-    lines.push(`Moved this project's 1.x memory to ${displayPath(project.storeDir)} (old file kept as .mixai/memory.db.bak-1x).`);
+  if (existsSync(join(project.root, ".mixai", "MIGRATED.txt"))) {
+    lines.push(`This project's 1.x memory now lives in ${displayPath(project.storeDir)} (the old .mixai/ files are left untouched).`);
   }
   const legacy = legacyIntegrationFiles(project.root);
   if (legacy.length > 0) {

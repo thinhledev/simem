@@ -73,7 +73,16 @@ export async function collectChecks(cwd: string, extra: ExtraChecks[] = []): Pro
   const project = resolveProject(cwd);
   checks.push({ level: "info", area: "project", message: `${project.name} (${project.id}) → ${displayPath(project.storeDir)} [${project.mode}, by ${project.identifiedBy}]` });
   const legacyDb = join(project.root, ".mixai", "memory.db");
-  if (project.mode === "global" && existsSync(legacyDb) && existsSync(join(project.storeDir, "memory.db"))) {
+  const marker = join(project.root, ".mixai", "MIGRATED.txt");
+  if (project.mode === "global" && existsSync(legacyDb) && existsSync(marker)) {
+    if (statSync(legacyDb).mtimeMs > statSync(marker).mtimeMs + 60_000) {
+      checks.push({
+        level: "warn",
+        area: "project",
+        message: `${displayPath(legacyDb, cwd)} changed after it was copied to the global store — an old mixai 1.x is still writing there. Update it (npm i -g mixai-cli) and re-run mixai init.`,
+      });
+    }
+  } else if (project.mode === "global" && existsSync(legacyDb) && existsSync(join(project.storeDir, "memory.db"))) {
     checks.push({ level: "warn", area: "project", message: `An unmerged 1.x database remains at ${displayPath(legacyDb, cwd)}; merge it with mixai memory export/import.` });
   }
   const memory = await openMemoryDb(cwd, { quiet: true });

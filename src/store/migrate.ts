@@ -35,18 +35,23 @@ function acquireLock(path: string): boolean {
   }
 }
 
-// One-time move of a 1.x in-repo store (<repo>/.mixai/memory.db, checkpoints/,
-// current/, state.json) into the global per-project store. Copy-first: the
-// database is copied with VACUUM INTO (consistent even with a live WAL),
-// renamed into place atomically, and only then is the old file renamed to
-// memory.db.bak-1x. The repo's .mixai/current/ is left in place so a 1.x
-// CLAUDE.local.md @import keeps resolving. Concurrent callers wait on a lock.
+export function migratedMarker(root: string): string {
+  return join(root, ".mixai", "MIGRATED.txt");
+}
+
+// One-time copy of a 1.x in-repo store (<repo>/.mixai/memory.db, checkpoints/,
+// current/, state.json) into the global per-project store. The database is
+// copied with VACUUM INTO (consistent even with a live WAL) and renamed into
+// place atomically. The old files are left exactly as they were — only
+// MIGRATED.txt is added — so a 1.x mixai that is still installed somewhere
+// keeps working against them instead of starting an empty database; `mixai
+// doctor` warns if that file keeps changing. Concurrent callers wait on a lock.
 export function migrateLegacyStore(ref: ProjectRef): MigrationOutcome {
   if (ref.mode !== "global") return "none";
   const legacyDir = join(ref.root, ".mixai");
   const legacyDb = join(legacyDir, "memory.db");
   const target = join(ref.storeDir, "memory.db");
-  if (!existsSync(legacyDb) || existsSync(target)) return "none";
+  if (!existsSync(legacyDb) || existsSync(target) || existsSync(migratedMarker(ref.root))) return "none";
   const sqlite = loadSqliteSync();
   if (!sqlite) return "none";
   ensurePrivateDir(ref.storeDir);
@@ -77,18 +82,11 @@ export function migrateLegacyStore(ref: ProjectRef): MigrationOutcome {
       staged.close();
     }
     renameSync(staging, target);
-    renameSync(legacyDb, `${legacyDb}.bak-1x`);
-    for (const suffix of ["-wal", "-shm"]) {
-      try {
-        unlinkSync(`${legacyDb}${suffix}`);
-      } catch {
-        // Already gone after the TRUNCATE checkpoint.
-      }
-    }
     writeFileSync(
-      join(legacyDir, "MIGRATED.txt"),
-      `mixai 2.0 moved this project's memory to ${ref.storeDir}.\n` +
-        "The previous database is kept as memory.db.bak-1x. Run `mixai migrate --to project` to move it back.\n",
+      migratedMarker(ref.root),
+      `mixai 2.0 copied this project's memory to ${ref.storeDir} on ${new Date().toISOString()}.\n` +
+        "The files here are left untouched (and no longer read by mixai 2.0). Delete this folder once you no longer need\n" +
+        "mixai 1.x, or run `mixai migrate --to project` to keep using an in-repo store.\n",
       "utf8",
     );
     return "migrated";
@@ -131,5 +129,10 @@ export function migrateToProject(ref: ProjectRef): string {
     copied.close();
   }
   writeFileSync(join(legacyDir, "project-local"), "This project keeps its mixai memory in this directory.\n", "utf8");
+  try {
+    unlinkSync(migratedMarker(ref.root));
+  } catch {
+    // No earlier global migration.
+  }
   return target;
 }

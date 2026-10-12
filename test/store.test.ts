@@ -133,8 +133,7 @@ test("a 1.x in-repo store migrates into the global store once, and migrates back
       migrated.close();
     }
     assert.ok(existsSync(join(ref.storeDir, "checkpoints", "cp-1", "manifest.json")));
-    assert.ok(existsSync(join(repo, ".mixai", "memory.db.bak-1x")));
-    assert.ok(!existsSync(join(repo, ".mixai", "memory.db")));
+    assert.ok(existsSync(join(repo, ".mixai", "memory.db")), "the 1.x files are left untouched for any 1.x still installed");
     assert.ok(existsSync(join(repo, ".mixai", "MIGRATED.txt")));
 
     // Opening again is a no-op (no second migration, same data).

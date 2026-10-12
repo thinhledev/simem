@@ -14,7 +14,7 @@ import {
   handlePreToolUse,
   handlePreCompact,
   handleSessionStart,
-  handleStop,
+  handleStopNotice,
   handleUserPromptSubmit,
   readHookInput,
   recordMemoryInjection,
@@ -29,6 +29,9 @@ import { runMigrate, runProject } from "./commands/project.js";
 import { runSources, runSync } from "./commands/sources.js";
 import { runEval, runRecall } from "./commands/recall.js";
 import { runIndex } from "./commands/index.js";
+import { runStats } from "./commands/stats.js";
+import { installStatusline, runStatusline } from "./commands/statusline.js";
+import { runDashboard } from "./commands/dashboard.js";
 import { execCompressed, readOutput } from "./compress/exec.js";
 import { BUILTIN_MODEL_SPEC, installModel, modelInstalled } from "./vec/install.js";
 import { embedNewRows } from "./vec/client.js";
@@ -36,6 +39,12 @@ import { embedNewRows } from "./vec/client.js";
 // Subsystems contribute steps to `mixai init` and checks to `mixai doctor`.
 function initSteps(): Array<(context: InitContext) => Promise<string | undefined>> {
   return [
+    async (context) => {
+      if (!context.statusline && !context.remove) return undefined;
+      const plans = await installStatusline(context.remove);
+      const changed = plans.some((plan) => plan.files.some((file) => file.action !== "unchanged"));
+      return context.remove ? undefined : changed ? "Status line: installed in Claude Code (kept any status line you already had)." : "Status line: already set (yours is kept).";
+    },
     async (context) => {
       if (context.remove || context.noModel || context.config.memory.embeddings.provider !== "builtin") return undefined;
       const outcome = await installModel();
@@ -78,7 +87,7 @@ import { consolidateBestEffort } from "./memory/consolidate.js";
 import { selectDistillRunner } from "./memory/distill/runner.js";
 import { openMemoryDb } from "./memory/db.js";
 import { recordGatewayAttempts } from "./memory/ledger.js";
-import { runMcpServer } from "./memory/mcp-server.js";
+import { runMcpServer, TOOL_GROUPS } from "./memory/mcp-server.js";
 import { GatewayOrchestrator } from "./orchestrator.js";
 import { NodeCommandRunner } from "./process.js";
 import { PROVIDER_APP_NAME, PROVIDER_IDS, type NormalizedEvent, type ProviderHealth, type ProviderId } from "./types.js";
@@ -142,6 +151,8 @@ interface CliOptions {
   statusline: boolean;
   /** init --no-model: skip the embedding model download. */
   noModel: boolean;
+  /** dashboard --detach: run in the background and print the URL. */
+  detach: boolean;
 }
 
 function readVersion(): string {
@@ -281,6 +292,7 @@ export function parseArgs(argv: string[]): CliOptions {
     open: false,
     statusline: false,
     noModel: false,
+    detach: false,
   };
   const positional: string[] = [];
   for (let index = 0; index < args.length; ) {
@@ -329,6 +341,9 @@ export function parseArgs(argv: string[]): CliOptions {
       args.splice(index, 1);
     } else if (arg === "--statusline") {
       options.statusline = true;
+      args.splice(index, 1);
+    } else if (arg === "--detach") {
+      options.detach = true;
       args.splice(index, 1);
     } else if (arg === "--no-model") {
       options.noModel = true;
@@ -699,7 +714,7 @@ async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promi
       await captureSession(input, provider, config, undefined, options.configPath);
     } else if (event === "stop") {
       await captureSession(input, provider, config, undefined, options.configPath);
-      process.stdout.write(await handleStop(cwd, config));
+      process.stdout.write(await handleStopNotice(input, cwd, provider, config));
     } else if (event === "session-end") {
       await captureSession(input, provider, config, undefined, options.configPath);
     } else if (event === "pre-tool-use") {
@@ -893,6 +908,26 @@ async function main(): Promise<void> {
       ...(options.positional[0] === "search" ? { query: options.positional.slice(1).join(" ") } : {}),
     });
   }
+  if (options.command === "statusline") return await runStatusline(options.cwd);
+  if (options.command === "dashboard") {
+    return await runDashboard({
+      ...out,
+      cwd: options.cwd,
+      config: await loadConfig(options.configPath),
+      open: options.open,
+      detach: options.detach,
+      ...(options.port !== undefined ? { port: options.port } : {}),
+    });
+  }
+  if (options.command === "stats") {
+    return await runStats({
+      ...out,
+      cwd: options.cwd,
+      config: await loadConfig(options.configPath),
+      ...(options.since ? { since: options.since } : {}),
+      ...(options.groupBy ? { groupBy: options.groupBy } : {}),
+    });
+  }
   if (options.command === "eval") return await runEval({ ...out, config: await loadConfig(options.configPath), calibrate: options.all });
   if (options.command === "project") return await runProject(options.positional[0], options.positional.slice(1), { ...out, cwd: options.cwd });
   if (options.command === "migrate") return await runMigrate(options.to, { ...out, cwd: options.cwd });
@@ -934,10 +969,12 @@ async function main(): Promise<void> {
   if (options.command === "mcp") {
     const mcpConfig = await loadConfig(options.configPath);
     const superseded = options.scope !== "user" && options.provider !== undefined && userLevelCovers(options.provider);
+    const groups = new Set(mcpConfig.mcp.toolGroups);
+    const enabled = superseded ? new Set<string>() : new Set(Object.entries(TOOL_GROUPS).filter(([, group]) => groups.has(group)).map(([tool]) => tool));
     return await runMcpServer(options.cwd, undefined, {
       runner,
       memoryConfig: mcpConfig.memory,
-      ...(superseded ? { enabledTools: new Set<string>() } : {}),
+      enabledTools: enabled,
       ...(options.provider ? { selfProvider: options.provider } : {}),
       ...(options.configPath ? { configPath: options.configPath } : {}),
     });

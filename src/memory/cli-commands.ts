@@ -8,7 +8,10 @@ import {
 } from "./consolidate.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
-import { resolveEmbeddings } from "../vec/client.js";
+import { embedNewRows, resolveEmbeddings } from "../vec/client.js";
+import { upsertMemoryItem } from "./items.js";
+import { demoteGlobal, listGlobalItems, promoteToGlobal } from "../sources/native.js";
+import { resolveProject } from "../store/project.js";
 import { spendSummary, spendTotals } from "./ledger.js";
 import { toPreview } from "./preview.js";
 import { embedMissing, reindexMemory } from "./reindex.js";
@@ -337,6 +340,69 @@ export async function handleMemoryCommand(
   }
   // Zero-token backfill: run the rules tier over checkpoints that never got
   // distilled (and with --all, over every checkpoint; restatements reinforce).
+  // Hand-curated memory: add a fact, forget a wrong one, or make one apply to
+  // every project (promote) / stop doing so (demote).
+  if (sub === "add") {
+    const text = options.args.join(" ").trim();
+    if (!text) throw new Error('mixai memory add "<fact, decision, or preference>" [--category decision] [--min-importance 8]');
+    const memory = await requireMemory(options);
+    try {
+      const category = MEMORY_CATEGORIES.includes(options.category as MemoryCategory) ? (options.category as MemoryCategory) : undefined;
+      const saved = upsertMemoryItem(memory, {
+        kind: "semantic",
+        ...(category ? { category } : {}),
+        text,
+        importance: options.minImportance ?? 8,
+        origin: "user",
+      });
+      await embedNewRows(memory, options.memoryConfig);
+      process.stdout.write(options.json ? `${JSON.stringify(saved)}\n` : `${saved.reinforced ? "Already known; reinforced" : "Saved"} as memory item ${saved.id}.\n`);
+    } finally {
+      memory.close();
+    }
+    return;
+  }
+  if (sub === "forget") {
+    const id = Number(options.args[0]);
+    if (!Number.isInteger(id)) throw new Error("mixai memory forget <item-id>");
+    const memory = await requireMemory(options);
+    try {
+      const changed = Number(memory.db.prepare("UPDATE memory_items SET status = 'archived' WHERE id = ? AND status = 'active'").run(id).changes) > 0;
+      process.stdout.write(options.json ? `${JSON.stringify({ id, archived: changed })}\n` : changed ? `Forgot item ${id} (archived; it no longer appears).\n` : `No active item ${id}.\n`);
+    } finally {
+      memory.close();
+    }
+    return;
+  }
+  if (sub === "promote") {
+    const id = Number(options.args[0]);
+    if (!Number.isInteger(id)) throw new Error("mixai memory promote <item-id>");
+    const memory = await requireMemory(options);
+    try {
+      const row = memory.db.prepare("SELECT text, category, importance FROM memory_items WHERE id = ?").get(id) as
+        | { text: string; category: string | null; importance: number }
+        | undefined;
+      if (!row) throw new Error(`No memory item ${id}`);
+      const globalId = promoteToGlobal(row.text, row.category, row.importance, resolveProject(options.cwd).id);
+      process.stdout.write(options.json ? `${JSON.stringify({ globalId })}\n` : `Item ${id} now applies to all your projects (global ${globalId}).\n`);
+    } finally {
+      memory.close();
+    }
+    return;
+  }
+  if (sub === "demote") {
+    const id = Number(options.args[0]);
+    if (!Number.isInteger(id)) throw new Error("mixai memory demote <global-id>   (see mixai memory global)");
+    const removed = demoteGlobal(id);
+    process.stdout.write(options.json ? `${JSON.stringify({ removed })}\n` : removed ? `Removed global preference ${id}.\n` : `No global preference ${id}.\n`);
+    return;
+  }
+  if (sub === "global") {
+    const items = listGlobalItems(100);
+    if (options.json) process.stdout.write(`${JSON.stringify(items)}\n`);
+    else process.stdout.write(items.length ? `${items.map((item) => `${item.id}. ${item.text}`).join("\n")}\n` : "No preferences apply to all projects yet.\n");
+    return;
+  }
   if (sub === "distill") {
     const memory = await requireMemory(options);
     try {
@@ -354,6 +420,6 @@ export async function handleMemoryCommand(
     return;
   }
   throw new Error(
-    `Unknown memory subcommand: ${sub ?? "(none)"}. Use: search, show, stats, spend, savings, distill, compact, reindex`,
+    `Unknown memory subcommand: ${sub ?? "(none)"}. Use: search, show, add, forget, promote, demote, global, stats, spend, savings, distill, compact, reindex, export, import`,
   );
 }

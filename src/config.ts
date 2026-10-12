@@ -114,6 +114,15 @@ export interface CompressionConfig {
   rtk: string;
 }
 
+export interface McpConfig {
+  /**
+   * Tool groups the MCP server exposes: memory, code, compression, setup,
+   * handoff. Every tool's schema rides along on each request, so drop the
+   * groups you don't use.
+   */
+  toolGroups: string[];
+}
+
 export interface GatewayConfig {
   routing: {
     providers: ProviderId[];
@@ -123,6 +132,7 @@ export interface GatewayConfig {
   providers: Record<ProviderId, ProviderConfig>;
   memory: MemoryConfig;
   compression: CompressionConfig;
+  mcp: McpConfig;
 }
 
 export const DEFAULT_CONFIG: GatewayConfig = {
@@ -193,6 +203,9 @@ export const DEFAULT_CONFIG: GatewayConfig = {
     largeReadLines: 800,
     rtk: "defer",
   },
+  mcp: {
+    toolGroups: ["memory", "code", "compression", "setup", "handoff"],
+  },
 };
 
 type PartialConfig = {
@@ -204,6 +217,7 @@ type PartialConfig = {
   providers?: Partial<Record<ProviderId, Partial<ProviderConfig>>>;
   memory?: unknown;
   compression?: unknown;
+  mcp?: unknown;
 };
 
 function mergeSection<T extends Record<string, unknown>>(defaults: T, override: unknown, field: string): T {
@@ -280,6 +294,7 @@ export function mergeConfig(input: PartialConfig = {}): GatewayConfig {
       input.compression,
       "compression",
     ) as unknown as CompressionConfig,
+    mcp: mergeSection(DEFAULT_CONFIG.mcp as unknown as Record<string, unknown>, input.mcp, "mcp") as unknown as McpConfig,
   };
 }
 

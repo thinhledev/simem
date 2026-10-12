@@ -21,6 +21,7 @@ import type { SourceAgent } from "../sources/homes.js";
 import { ingestTranscript, sessionKey, unreadBytes } from "../sources/ingest.js";
 import { clearInjections, injectedRefs, recordInjections } from "../memory/injections.js";
 import { sessionPrimer } from "../memory/primer.js";
+import { collectStats } from "../stats/stats.js";
 import { openCodeIndex } from "../codeindex/db.js";
 import { repoMap } from "../codeindex/search.js";
 
@@ -448,6 +449,36 @@ function existingLayout(cwd: string): string {
       return repoMap(index, { maxChars: 1_200 });
     } finally {
       index.close();
+    }
+  } catch {
+    return "";
+  }
+}
+
+// Below this, a "mixai saved…" notice is noise.
+const NOTICE_MIN_TOKENS = 1_000;
+
+// Claude Code's Stop hook can show the user a line (`systemMessage`); plain
+// stdout from Stop is not shown in the app. Once per session, only when
+// today's savings in this project are worth mentioning.
+export async function handleStopNotice(input: RawHookInput, cwd: string, provider: ProviderId, config: GatewayConfig): Promise<string> {
+  if (provider !== "claude") return await handleStop(cwd, config);
+  if (!config.memory.enabled || !config.memory.hooks.taskCompletionSavings || !input.sessionId) return "";
+  try {
+    const memory = await openMemoryDb(cwd, { quiet: true });
+    if (!memory) return "";
+    try {
+      const key = `notice:${sessionKey("claude", input.sessionId)}`;
+      if (memory.db.prepare("SELECT 1 FROM hook_runs WHERE key = ?").get(key)) return "";
+      const since = new Date();
+      since.setHours(0, 0, 0, 0);
+      const { savedTokens } = collectStats(memory, { since: since.toISOString() });
+      if (savedTokens < NOTICE_MIN_TOKENS) return "";
+      memory.db.prepare("INSERT OR IGNORE INTO hook_runs (key, ts) VALUES (?, ?)").run(key, new Date().toISOString());
+      const rounded = savedTokens >= 10_000 ? `${Math.round(savedTokens / 1000)}k` : `${(savedTokens / 1000).toFixed(1)}k`;
+      return `${JSON.stringify({ systemMessage: `mixai kept ~${rounded} tokens out of context in this project today. Ask "how much did mixai save?" for details.` })}\n`;
+    } finally {
+      memory.close();
     }
   } catch {
     return "";
