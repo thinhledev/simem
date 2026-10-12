@@ -1,0 +1,12 @@
+{
+  "name": "mixai",
+  "interface": { "displayName": "mixai" },
+  "plugins": [
+    {
+      "name": "mixai",
+      "source": { "source": "local", "path": "./plugin" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Developer Tools"
+    }
+  ]
+}

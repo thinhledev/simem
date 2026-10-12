@@ -64,7 +64,12 @@ What survives: logging out and in, switching accounts, switching between Claude 
 | *"Open the mixai dashboard."* | A private page on your machine: usage, savings, and your memory to search, edit, forget, or apply to all projects. |
 | *"Continue."* (in the other app) | Opening Codex after Claude Code (or vice versa) starts with the other app's latest work in the primer — no switch command, no copy-paste. |
 
-Optional extras for Claude Code: a plugin that teaches the agent these requests and can install mixai for you (`/plugin marketplace add thinhledev/mixai`, then install **mixai**), and a status line showing today's savings (`mixai init --statusline`).
+**Plugins (optional).** Both apps can install a mixai plugin that teaches the agent these requests and can install or repair mixai for you:
+
+- Claude Code: `/plugin marketplace add thinhledev/mixai`, then `/plugin install mixai@mixai`
+- Codex: `codex plugin marketplace add https://github.com/thinhledev/mixai`, then `codex plugin add mixai@mixai` (or find **mixai memory** in the Codex app's plugin list)
+
+The plugins carry skills only; hooks and tools come from `mixai init`, so nothing is registered twice. Claude Code can also show today's savings in its status line (`mixai init --statusline`).
 
 ## Privacy and safety
 

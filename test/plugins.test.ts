@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import test from "node:test";
+
+const read = (path: string) => JSON.parse(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"));
+
+test("Claude Code and Codex plugin manifests match the package version and share the same skills", () => {
+  const pkg = read("package.json");
+  const claude = read("plugin/.claude-plugin/plugin.json");
+  const codex = read("plugin/.codex-plugin/plugin.json");
+  assert.equal(claude.version, pkg.version);
+  assert.equal(codex.version, pkg.version);
+  assert.equal(claude.name, "mixai");
+  assert.equal(codex.name, "mixai");
+  assert.equal(codex.skills, "./skills/");
+  assert.ok(existsSync(new URL(`../plugin/${codex.interface.logo}`, import.meta.url)));
+  const skills = readdirSync(new URL("../plugin/skills/", import.meta.url));
+  assert.deepEqual(skills.sort(), ["mixai", "mixai-setup"]);
+  for (const skill of skills) {
+    const body = readFileSync(new URL(`../plugin/skills/${skill}/SKILL.md`, import.meta.url), "utf8");
+    assert.match(body, new RegExp(`^---\\nname: ${skill}\\ndescription: .{20,300}\\n---\\n`), `${skill}: frontmatter`);
+  }
+});
+
+test("both marketplaces point at the plugin folder", () => {
+  const claude = read(".claude-plugin/marketplace.json");
+  const codex = read(".agents/plugins/marketplace.json");
+  assert.equal(claude.plugins[0].source, "./plugin");
+  assert.deepEqual(codex.plugins[0].source, { source: "local", path: "./plugin" });
+});

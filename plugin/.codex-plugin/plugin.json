@@ -1,0 +1,27 @@
+{
+  "name": "mixai",
+  "version": "2.0.0",
+  "description": "Local project memory shared across every agent and account, plus tools that keep context small. Requires the mixai-cli package (the setup skill installs it).",
+  "author": { "name": "Thinh Le", "url": "https://github.com/thinhledev" },
+  "homepage": "https://github.com/thinhledev/mixai#readme",
+  "license": "MIT",
+  "keywords": ["memory", "tokens", "context", "claude-code", "mcp"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "mixai memory",
+    "shortDescription": "Project memory shared across agents and accounts",
+    "longDescription": "mixai keeps what your agents learn about a project on your machine and shares it with every agent and account you use (Codex, Claude Code, Cursor). It also keeps noisy command output and whole-file reads out of the context. Everything stays local.",
+    "developerName": "Thinh Le",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/thinhledev/mixai",
+    "logo": "./assets/mixai.svg",
+    "composerIcon": "./assets/mixai.svg",
+    "defaultPrompt": [
+      "Set up mixai memory for this machine",
+      "What did we decide about this project before?",
+      "How many tokens did mixai save this week?"
+    ],
+    "brandColor": "#2F6F5E"
+  }
+}
