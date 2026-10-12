@@ -1,4 +1,4 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ProviderId } from "../types.js";
@@ -6,10 +6,10 @@ import { ensureClaudeHandoffMemory } from "./claude-memory.js";
 
 // Distinct from claude-memory.ts's mixai:handoff markers so the two features
 // can update their own blocks in the same file without clobbering each other.
-const MD_START = "<!-- mixai:integrate:start -->";
-const MD_END = "<!-- mixai:integrate:end -->";
-const TOML_START = "# mixai:integrate:start";
-const TOML_END = "# mixai:integrate:end";
+export const MD_START = "<!-- mixai:integrate:start -->";
+export const MD_END = "<!-- mixai:integrate:end -->";
+export const TOML_START = "# mixai:integrate:start";
+export const TOML_END = "# mixai:integrate:end";
 
 export type IntegrationAction = "created" | "updated" | "unchanged" | "removed" | "failed";
 
@@ -31,7 +31,7 @@ export interface IntegrateOptions {
   dryRun?: boolean;
 }
 
-const INSTRUCTION_BODY =
+export const INSTRUCTION_BODY =
   "This project has persistent local memory managed by `mixai`. Before re-exploring the repository from " +
   "scratch, check it first: use the `memory_search` MCP tool or `mixai memory search \"<topic>\"` for past " +
   "decisions, constraints, and outcomes (results are compact previews — drill in with `memory_get` or " +
@@ -44,15 +44,15 @@ const INSTRUCTION_BODY =
   "`switch_to_provider` to hand off: it checkpoints this session's work and launches the target agent with a " +
   "continuation prompt.";
 
-function instructionBlock(extra?: string): string {
+export function instructionBlock(extra?: string): string {
   return `${MD_START}\n## Mixai project memory\n\n${INSTRUCTION_BODY}${extra ? `\n\n${extra}` : ""}\n${MD_END}`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-async function readOptional(path: string): Promise<string | undefined> {
+export async function readOptional(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, "utf8");
   } catch (error) {
@@ -61,7 +61,7 @@ async function readOptional(path: string): Promise<string | undefined> {
   }
 }
 
-function parseJsonObject(raw: string, path: string): Record<string, unknown> {
+export function parseJsonObject(raw: string, path: string): Record<string, unknown> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -74,7 +74,7 @@ function parseJsonObject(raw: string, path: string): Record<string, unknown> {
 
 // Replace an existing marker-delimited block or append one; returns the next
 // file content. Content outside the markers is never touched.
-function upsertBlock(original: string | undefined, block: string): string {
+export function upsertBlock(original: string | undefined, block: string): string {
   const start = block.startsWith(TOML_START) ? TOML_START : MD_START;
   const end = start === TOML_START ? TOML_END : MD_END;
   const text = original ?? "";
@@ -89,14 +89,18 @@ function upsertBlock(original: string | undefined, block: string): string {
 
 // Strip mixai's marker-delimited block; undefined means "delete the file"
 // (nothing but our block remained).
-function stripBlock(original: string | undefined, tomlMarkers = false): string | undefined {
+export function stripBlock(original: string | undefined, tomlMarkers = false): string | undefined {
   if (original === undefined) return undefined;
   const start = tomlMarkers ? TOML_START : MD_START;
   const end = tomlMarkers ? TOML_END : MD_END;
   const startIndex = original.indexOf(start);
   const endIndex = original.indexOf(end);
   if (startIndex < 0 || endIndex < startIndex) return original;
-  const next = `${original.slice(0, startIndex)}${original.slice(endIndex + end.length)}`.replace(/\n{3,}/g, "\n\n");
+  // upsertBlock added a blank line before the block and a newline after it;
+  // collapse those so removal restores the original bytes.
+  const next = `${original.slice(0, startIndex)}${original.slice(endIndex + end.length)}`
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\n{2,}$/, "\n");
   return next.trim() ? next : undefined;
 }
 
@@ -196,14 +200,14 @@ function withCagMcpServer(
   return clone;
 }
 
-function stableJson(value: Record<string, unknown>): string {
+export function stableJson(value: Record<string, unknown>): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 // Applies one file's next content (undefined = delete), recording what
 // happened. A parse failure on the existing file aborts THAT file only —
 // never overwrite something we could not understand.
-async function applyFile(
+export async function applyFile(
   plan: IntegrationPlan,
   path: string,
   compute: (original: string | undefined) => string | undefined,
@@ -233,13 +237,17 @@ async function applyFile(
       }
     } else {
       await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, next, "utf8");
+      // Atomic replace: user-level files such as ~/.claude.json are also
+      // written by the running app, so never leave a half-written file.
+      const temp = `${path}.mixai-${process.pid}.tmp`;
+      await writeFile(temp, next, "utf8");
+      await rename(temp, path);
     }
   }
   plan.files.push({ path, action, ...(note ? { note } : {}) });
 }
 
-function jsonTransform(
+export function jsonTransform(
   path: string,
   transform: (existing: Record<string, unknown>) => Record<string, unknown>,
 ): (original: string | undefined) => string | undefined {

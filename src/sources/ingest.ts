@@ -37,6 +37,18 @@ interface CursorRow {
   ignored: number;
 }
 
+// How many bytes of a transcript have not been ingested yet (whole file if never seen).
+export async function unreadBytes(path: string, size: number): Promise<number> {
+  const global = openGlobalDb();
+  if (!global) return size;
+  try {
+    const row = global.prepare("SELECT offset FROM ingest_cursors WHERE path = ?").get(path) as { offset: number } | undefined;
+    return Math.max(0, size - (row?.offset ?? 0));
+  } finally {
+    global.close();
+  }
+}
+
 export function sessionKey(agent: string, externalId: string): string {
   return `session:${agent}:${externalId}`;
 }

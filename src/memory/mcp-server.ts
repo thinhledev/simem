@@ -279,6 +279,16 @@ export interface McpDeps {
   // this in tests so handoff-tool behavior doesn't depend on what's actually
   // installed on the machine running the suite.
   checkReadiness?: typeof checkLaunchReadiness;
+  /**
+   * Which tools this server exposes; undefined = all. A 1.x per-project
+   * registration that a user-level install supersedes gets an empty set, so
+   * the agent never sees (and pays schema tokens for) the same tools twice.
+   */
+  enabledTools?: ReadonlySet<string>;
+}
+
+export function listedTools(deps: McpDeps): unknown[] {
+  return deps.enabledTools ? TOOLS.filter((tool) => deps.enabledTools!.has(tool.name)) : [...TOOLS];
 }
 
 function defaultDeps(): McpDeps {
@@ -314,7 +324,7 @@ export async function handleRequest(
     return request.id === undefined ? undefined : { jsonrpc: "2.0", id, result: {} };
   }
   if (request.method === "tools/list") {
-    return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
+    return { jsonrpc: "2.0", id, result: { tools: listedTools(deps) } };
   }
   if (request.method === "tools/call") {
     const params = request.params as { name?: unknown; arguments?: unknown } | undefined;

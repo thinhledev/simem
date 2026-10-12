@@ -10,6 +10,8 @@ import { createCheckpoint } from "./handoff/checkpoints.js";
 import {
   HOOK_EVENTS,
   buildMemoryContextBlock,
+  captureSession,
+  handlePreToolUse,
   handlePreCompact,
   handleSessionStart,
   handleStop,
@@ -20,6 +22,20 @@ import {
   type HookEvent,
 } from "./handoff/hooks.js";
 import { checkIntegration, integrateProvider } from "./handoff/integrate.js";
+import { userLevelCovers } from "./install/user-level.js";
+import { runDoctor, type ExtraChecks } from "./commands/doctor.js";
+import { runInit, type InitContext } from "./commands/init.js";
+import { runMigrate, runProject } from "./commands/project.js";
+import { runSources, runSync } from "./commands/sources.js";
+
+// Subsystems contribute steps to `mixai init` and checks to `mixai doctor`.
+function initSteps(): Array<(context: InitContext) => Promise<string | undefined>> {
+  return [];
+}
+
+function doctorChecks(): ExtraChecks[] {
+  return [];
+}
 import { discoverSessions } from "./handoff/sessions.js";
 import { checkDesktopApp, checkLaunchReadiness } from "./handoff/preflight.js";
 import {
@@ -39,7 +55,9 @@ import { GatewayOrchestrator } from "./orchestrator.js";
 import { NodeCommandRunner } from "./process.js";
 import { PROVIDER_APP_NAME, PROVIDER_IDS, type NormalizedEvent, type ProviderHealth, type ProviderId } from "./types.js";
 
-type Command = "run" | "status" | "sessions" | "export" | "switch" | "fork" | "memory" | "mcp" | "brief" | "hook" | "integrate" | "help" | "version";
+type Command =
+  | "run" | "status" | "sessions" | "export" | "switch" | "fork" | "memory" | "mcp" | "brief" | "hook" | "integrate" | "help" | "version"
+  | "init" | "doctor" | "sync" | "sources" | "project" | "migrate" | "recall" | "stats" | "index" | "out" | "dashboard" | "statusline" | "eval";
 
 interface CliOptions {
   command: Command;
@@ -79,6 +97,23 @@ interface CliOptions {
   cwdExplicit: boolean;
   check: boolean;
   remove: boolean;
+  /** "user" marks hook/MCP entries written by `mixai init` (vs 1.x per-project ones). */
+  scope?: string;
+  /** sync --path: ingest one transcript file. */
+  path?: string;
+  /** migrate --to project|global. */
+  to?: string;
+  /** dashboard --port. */
+  port?: number;
+  quiet: boolean;
+  /** init/integrate: apply without the interactive cleanup prompt. */
+  yes: boolean;
+  /** dashboard --open: open the browser. */
+  open: boolean;
+  /** init --statusline: also install the Claude Code status line. */
+  statusline: boolean;
+  /** init --no-model: skip the embedding model download. */
+  noModel: boolean;
 }
 
 function readVersion(): string {
@@ -181,7 +216,10 @@ function takeValue(args: string[], index: number, flag: string): string {
 export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   const first = args.shift();
-  const known: Command[] = ["run", "status", "sessions", "export", "switch", "fork", "memory", "mcp", "brief", "hook", "integrate", "help", "version"];
+  const known: Command[] = [
+    "run", "status", "sessions", "export", "switch", "fork", "memory", "mcp", "brief", "hook", "integrate", "help", "version",
+    "init", "doctor", "sync", "sources", "project", "migrate", "recall", "stats", "index", "out", "dashboard", "statusline", "eval",
+  ];
   const command: Command = first && known.includes(first as Command)
     ? (first as Command)
     : first === "--help" || first === "-h" || !first
@@ -210,6 +248,11 @@ export function parseArgs(argv: string[]): CliOptions {
     cwdExplicit: false,
     check: false,
     remove: false,
+    quiet: false,
+    yes: false,
+    open: false,
+    statusline: false,
+    noModel: false,
   };
   const positional: string[] = [];
   for (let index = 0; index < args.length; ) {
@@ -247,6 +290,31 @@ export function parseArgs(argv: string[]): CliOptions {
     } else if (arg === "--remove") {
       options.remove = true;
       args.splice(index, 1);
+    } else if (arg === "--quiet") {
+      options.quiet = true;
+      args.splice(index, 1);
+    } else if (arg === "--yes" || arg === "-y") {
+      options.yes = true;
+      args.splice(index, 1);
+    } else if (arg === "--open") {
+      options.open = true;
+      args.splice(index, 1);
+    } else if (arg === "--statusline") {
+      options.statusline = true;
+      args.splice(index, 1);
+    } else if (arg === "--no-model") {
+      options.noModel = true;
+      args.splice(index, 1);
+    } else if (arg === "--path") {
+      options.path = resolve(takeValue(args, index, arg));
+    } else if (arg === "--scope") {
+      options.scope = takeValue(args, index, arg);
+    } else if (arg === "--to") {
+      options.to = takeValue(args, index, arg);
+    } else if (arg === "--port") {
+      const port = Number(takeValue(args, index, arg));
+      if (!Number.isInteger(port) || port < 0 || port > 65_535) throw new Error("--port must be a port number");
+      options.port = port;
     } else if (arg === "--limit") {
       const limit = Number(takeValue(args, index, arg));
       if (!Number.isInteger(limit) || limit <= 0) throw new Error("--limit must be a positive integer");
@@ -588,6 +656,9 @@ async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promi
     }
     const provider = options.provider;
     if (!provider) throw new Error("mixai hook requires --provider so ledger rows carry a real provider");
+    // A 1.x per-project hook stays silent once `mixai init` installed the
+    // user-level one for this agent, so the work never runs twice.
+    if (options.scope !== "user" && userLevelCovers(provider)) return;
     const config = await loadConfig(options.configPath);
     const input = await readHookInput(process.stdin);
     // The hook payload's cwd (where the host agent runs) beats our own
@@ -597,8 +668,14 @@ async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promi
       process.stdout.write(await handleSessionStart(input, cwd, provider, config, runner));
     } else if (event === "pre-compact") {
       await handlePreCompact(input, cwd, provider, config, runner, undefined, options.configPath);
+      await captureSession(input, provider, config, undefined, options.configPath);
     } else if (event === "stop") {
+      await captureSession(input, provider, config, undefined, options.configPath);
       process.stdout.write(await handleStop(cwd, config));
+    } else if (event === "session-end") {
+      await captureSession(input, provider, config, undefined, options.configPath);
+    } else if (event === "pre-tool-use") {
+      process.stdout.write(await handlePreToolUse(input, cwd, provider, config));
     } else {
       process.stdout.write(await handleUserPromptSubmit(input, cwd, provider, config));
     }
@@ -714,6 +791,34 @@ async function main(): Promise<void> {
     return;
   }
   const runner = new NodeCommandRunner();
+  const out = { json: options.json, quiet: options.quiet };
+  if (options.command === "init") {
+    return await runInit({
+      ...out,
+      cwd: options.cwd,
+      remove: options.remove,
+      check: options.check,
+      noModel: options.noModel,
+      statusline: options.statusline,
+      config: await loadConfig(options.configPath),
+      extraSteps: initSteps(),
+    });
+  }
+  if (options.command === "doctor") return await runDoctor({ ...out, cwd: options.cwd, extra: doctorChecks() });
+  if (options.command === "sync") {
+    return await runSync({
+      ...out,
+      cwd: options.cwd,
+      all: options.all,
+      config: await loadConfig(options.configPath),
+      ...(options.since ? { since: options.since } : {}),
+      ...(options.path ? { path: options.path } : {}),
+      ...(options.provider && options.provider !== "antigravity" ? { agent: options.provider } : {}),
+    });
+  }
+  if (options.command === "sources") return await runSources(out);
+  if (options.command === "project") return await runProject(options.positional[0], options.positional.slice(1), { ...out, cwd: options.cwd });
+  if (options.command === "migrate") return await runMigrate(options.to, { ...out, cwd: options.cwd });
   if (options.command === "sessions") return await handleSessions(options);
   if (options.command === "integrate") return await handleIntegrate(options);
   if (options.command === "hook") return await handleHook(options, runner);
@@ -751,9 +856,11 @@ async function main(): Promise<void> {
   }
   if (options.command === "mcp") {
     const mcpConfig = await loadConfig(options.configPath);
+    const superseded = options.scope !== "user" && options.provider !== undefined && userLevelCovers(options.provider);
     return await runMcpServer(options.cwd, undefined, {
       runner,
       memoryConfig: mcpConfig.memory,
+      ...(superseded ? { enabledTools: new Set<string>() } : {}),
       ...(options.provider ? { selfProvider: options.provider } : {}),
       ...(options.configPath ? { configPath: options.configPath } : {}),
     });
@@ -764,10 +871,20 @@ async function main(): Promise<void> {
   if (options.command === "status") {
     const status = await collectStatusItems(runner, await orchestrator.status());
     if (options.json) process.stdout.write(`${JSON.stringify(status)}\n`);
-    else displayStatus(status);
+    else {
+      // 2.0: `status` is `doctor` plus which agent apps are ready for a handoff.
+      await runDoctor({ ...out, cwd: options.cwd, extra: doctorChecks() });
+      process.stdout.write("\nAgents (for handoff):\n");
+      displayStatus(status);
+    }
     return;
   }
   if (!options.prompt) throw new Error("A prompt is required. Run `mixai --help` for usage.");
+  if (!options.json) {
+    process.stderr.write(
+      "[mixai] `mixai run` is deprecated and will be removed in mixai 3.0; mixai now focuses on memory and saving tokens inside your agent apps.\n",
+    );
+  }
 
   // Search project memory for context relevant to this prompt and, if any is
   // found, actually prepend it to what gets sent to the agent — not just a

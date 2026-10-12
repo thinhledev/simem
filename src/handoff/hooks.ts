@@ -16,10 +16,12 @@ import { buildBrief } from "./brief.js";
 import { createCheckpoint } from "./checkpoints.js";
 import { resolveSession } from "./sessions.js";
 import type { SessionInfo } from "./types.js";
+import type { SourceAgent } from "../sources/homes.js";
+import { ingestTranscript, unreadBytes } from "../sources/ingest.js";
 
-export type HookEvent = "session-start" | "pre-compact" | "user-prompt-submit" | "stop";
+export type HookEvent = "session-start" | "pre-compact" | "user-prompt-submit" | "stop" | "session-end" | "pre-tool-use";
 
-export const HOOK_EVENTS: HookEvent[] = ["session-start", "pre-compact", "user-prompt-submit", "stop"];
+export const HOOK_EVENTS: HookEvent[] = ["session-start", "pre-compact", "user-prompt-submit", "stop", "session-end", "pre-tool-use"];
 
 // Loose superset of what host agents put on a hook's stdin. Claude Code and
 // Codex share the snake_case field names; anything else (Cursor's schema is
@@ -31,6 +33,9 @@ export interface RawHookInput {
   transcriptPath?: string;
   prompt?: string;
   cwd?: string;
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+  permissionMode?: string;
 }
 
 // Hook payloads are tiny; anything bigger than this is not a hook payload.
@@ -58,7 +63,13 @@ export function parseHookInput(raw: string): RawHookInput {
     const transcriptPath = firstString(record, ["transcript_path", "transcriptPath"]);
     const prompt = firstString(record, ["prompt", "user_prompt", "userPrompt", "text"]);
     const cwd = firstString(record, ["cwd", "workspace", "project_dir", "projectDir"]);
+    const toolName = firstString(record, ["tool_name", "toolName"]);
+    const toolInput = record.tool_input ?? record.toolInput;
+    const permissionMode = firstString(record, ["permission_mode", "permissionMode"]);
     return {
+      ...(toolName !== undefined ? { toolName } : {}),
+      ...(toolInput && typeof toolInput === "object" && !Array.isArray(toolInput) ? { toolInput: toolInput as Record<string, unknown> } : {}),
+      ...(permissionMode !== undefined ? { permissionMode } : {}),
       ...(source !== undefined ? { source } : {}),
       ...(sessionId !== undefined ? { sessionId } : {}),
       ...(transcriptPath !== undefined ? { transcriptPath } : {}),
@@ -313,4 +324,56 @@ export async function handleUserPromptSubmit(
   if (hitCount === 0) return "";
   await recordMemoryInjection(cwd, provider, prompt.length, block.length, Date.now() - started);
   return block;
+}
+
+const PROVIDER_SOURCE_AGENT: Partial<Record<ProviderId, SourceAgent>> = { claude: "claude", codex: "codex", cursor: "cursor" };
+
+// Above this many unread bytes, ingestion moves to a detached child so a
+// hook never stalls the host agent (e.g. the first capture of a long session).
+const INLINE_INGEST_MAX_BYTES = 2 * 1024 * 1024;
+
+export type IngestSpawner = (path: string, agent: SourceAgent, configPath?: string) => void;
+
+export function spawnDetachedIngest(path: string, agent: SourceAgent, configPath?: string): void {
+  const entrypoint = fileURLToPath(new URL("../cli.js", import.meta.url));
+  const args = [entrypoint, "sync", "--path", path, "--provider", agent, "--quiet", ...(configPath ? ["--config", configPath] : [])];
+  const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", env: { ...process.env, MIXAI_INTERNAL: "1" } });
+  child.unref();
+}
+
+// Continuous capture for Stop / SessionEnd / PreCompact: the session's own
+// transcript is ingested (new bytes only), distilled with the zero-token
+// rules tier, and becomes project memory — no switch or export needed.
+export async function captureSession(
+  input: RawHookInput,
+  provider: ProviderId,
+  config: GatewayConfig,
+  spawnIngest: IngestSpawner = spawnDetachedIngest,
+  configPath?: string,
+): Promise<void> {
+  if (!config.memory.enabled) return;
+  const agent = PROVIDER_SOURCE_AGENT[provider];
+  if (!agent || !input.transcriptPath) return;
+  try {
+    const info = await stat(input.transcriptPath);
+    if (info.size > INLINE_INGEST_MAX_BYTES && (await unreadBytes(input.transcriptPath, info.size)) > INLINE_INGEST_MAX_BYTES) {
+      spawnIngest(input.transcriptPath, agent, configPath);
+      return;
+    }
+    await ingestTranscript({ agent, path: input.transcriptPath }, { memoryConfig: config.memory });
+  } catch {
+    // Capture is additive; never fail the host agent's lifecycle event.
+  }
+}
+
+// PreToolUse: output compression and read guards (see guards.ts). Empty
+// output leaves the tool call to the host's normal permission flow.
+export async function handlePreToolUse(input: RawHookInput, cwd: string, provider: ProviderId, config: GatewayConfig): Promise<string> {
+  try {
+    const { decidePreToolUse } = await import("../compress/guards.js");
+    const decision = await decidePreToolUse(input, cwd, provider, config);
+    return decision ? `${JSON.stringify(decision)}\n` : "";
+  } catch {
+    return "";
+  }
 }
