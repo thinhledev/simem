@@ -57,7 +57,7 @@ claude plugin validate --strict ./plugin && claude plugin validate --strict .
 ### Test cases (optional for skills-only; useful if reviewers ask)
 
 Positive:
-1. "Set up simem on this machine." → `simem-setup` checks the Node.js version, installs `simem` (or the standalone binary after asking), runs `simem init` and `simem doctor`, and tells the user to restart.
+1. "Set up simem on this machine." → `simem-setup` checks the Node.js version, installs `@simem/cli` (or asks the user to install Node.js 22.5+ first), runs `simem init` and `simem doctor`, and tells the user to restart.
 2. "What did we decide about the database?" → `simem`: the `recall` tool or `simem recall`, quoting the matching memory.
 3. "Remember that we deploy only from CI." → `memory_save` (or `simem memory add`) with category `decision`.
 4. "How many tokens did simem save this week?" → `memory_stats` (or `simem stats --since 7d`), separating measured figures from estimates.

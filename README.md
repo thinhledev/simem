@@ -54,7 +54,7 @@ Or inside Codex, open `/plugins` and install **simem** from the `simem` marketpl
 
 ### Then: "set up simem"
 
-Start a new session in either app and say **"set up simem"**. The agent runs `npm install -g @simem/cli && simem init` (or, without Node.js, the standalone installer below — it asks you first). `simem init` runs once per machine, not per project, and:
+Start a new session in either app and say **"set up simem"**. The agent runs `npm install -g @simem/cli && simem init` (Node.js 22.5+; if it's missing, the agent tells you how to get it). `simem init` runs once per machine, not per project, and:
 
 - connects simem to **every Claude Code and Codex account** on the machine (hooks + tools),
 - imports this project's past sessions and the agents' own memories — **without spending a single token**,
@@ -68,11 +68,7 @@ The npm package is [**`@simem/cli`**](https://www.npmjs.com/package/@simem/cli);
 
 > Install and set up simem: run `npm install -g @simem/cli && simem init`, then tell me to restart the app.
 
-**No Node.js?** On macOS or Linux, install the standalone binary. It downloads one checksum-verified file and runs `simem init`:
-
-```bash
-curl -fsSL https://github.com/thinhledev/simem/releases/latest/download/install.sh | sh
-```
+**No Node.js?** Install Node.js 22.5 or newer from [nodejs.org](https://nodejs.org) first. Standalone binaries that need no Node.js are on the way (they will be attached to GitHub releases).
 
 ## The two problems it solves
 
@@ -138,7 +134,7 @@ Full details: [PRIVACY.md](PRIVACY.md) · [TERMS.md](TERMS.md).
 
 **Do I need a terminal?** No. Install the plugin from inside Claude Code or Codex and say "set up simem" — the agent runs the one-time install for you.
 
-**Do I need Node.js?** Not with the standalone binary (macOS and Linux, see *Install*). The npm package needs Node.js 22.5+.
+**Do I need Node.js?** Yes, 22.5 or newer for now. Standalone binaries that need no Node.js are coming with GitHub releases.
 
 **Does it proxy my API calls?** No. See *Privacy and safety*.
 
