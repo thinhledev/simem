@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.2
+
+### Added
+- **Homebrew:** `brew install thinhledev/simem/simem` installs simem with Homebrew's own Node.js, so Node.js isn't required. The formula is generated per release by `scripts/homebrew-formula.sh` and published in the `thinhledev/homebrew-simem` tap.
+- The `simem-setup` skill offers Homebrew when Node.js 22.5+ is missing (still asking before it installs anything).
+
+### Fixed
+- `simem init` pins Homebrew's stable `opt/` paths in the launcher instead of versioned `Cellar/` paths, so `brew upgrade` (of simem or Node.js) no longer breaks the hooks and tools in the desktop apps.
+
 ## 2.0.1
 
 ### Changed

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { cliEntry, launcherScript } from "../src/install/launcher.js";
 import { installUserLevel, userLevelCovers } from "../src/install/user-level.js";
+import { stableHomebrewPath } from "../src/runtime.js";
 import { claudeHome, codexHome } from "./helpers/transcripts.js";
 
 async function withHomes<T>(fn: (homes: { claude: string; codex: string }) => Promise<T>): Promise<T> {
@@ -94,6 +95,26 @@ test("the launcher pins node + CLI and falls back quietly when they move", () =>
   const ok = spawnSync(script, ["--version"], { env: { PATH: "/usr/bin:/bin" }, encoding: "utf8" });
   assert.equal(ok.status, 0);
   assert.match(ok.stdout, /^\d+\.\d+\.\d+/);
+});
+
+test("the launcher pins Homebrew's stable opt/ path, so `brew upgrade` doesn't break it", () => {
+  const prefix = realpathSync(mkdtempSync(join(tmpdir(), "simem-brew-")));
+  const keg = join(prefix, "Cellar", "simem", "2.0.2");
+  mkdirSync(join(keg, "libexec", "dist"), { recursive: true });
+  writeFileSync(join(keg, "libexec", "dist", "cli.js"), "");
+  mkdirSync(join(prefix, "opt"));
+  symlinkSync("../Cellar/simem/2.0.2", join(prefix, "opt", "simem"));
+  const kegPath = join(keg, "libexec", "dist", "cli.js");
+  assert.equal(stableHomebrewPath(kegPath), join(prefix, "opt", "simem", "libexec", "dist", "cli.js"));
+  // No opt/ link, a link to another keg, or a path outside Homebrew: unchanged.
+  mkdirSync(join(prefix, "Cellar", "node", "24.0.0", "bin"), { recursive: true });
+  writeFileSync(join(prefix, "Cellar", "node", "24.0.0", "bin", "node"), "");
+  assert.equal(stableHomebrewPath(join(prefix, "Cellar", "node", "24.0.0", "bin", "node")), join(prefix, "Cellar", "node", "24.0.0", "bin", "node"));
+  mkdirSync(join(prefix, "Cellar", "simem", "2.0.1", "libexec", "dist"), { recursive: true });
+  writeFileSync(join(prefix, "Cellar", "simem", "2.0.1", "libexec", "dist", "cli.js"), "");
+  const oldKeg = join(prefix, "Cellar", "simem", "2.0.1", "libexec", "dist", "cli.js");
+  assert.equal(stableHomebrewPath(oldKeg), oldKeg);
+  assert.equal(stableHomebrewPath("/usr/local/lib/node_modules/@simem/cli/dist/cli.js"), "/usr/local/lib/node_modules/@simem/cli/dist/cli.js");
 });
 
 test("`simem init` end to end: launcher, user-level install, history import, idempotent", () => {

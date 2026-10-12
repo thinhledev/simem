@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,12 +47,28 @@ export function selfCommand(): string[] {
   return [process.execPath, cliEntry()];
 }
 
+// Homebrew runs everything from versioned keg paths (<prefix>/Cellar/<name>/<version>/...)
+// and deletes old kegs after `brew upgrade`. Its <prefix>/opt/<name> symlink always
+// points at the current keg, so pin that instead when it leads to the same file.
+export function stableHomebrewPath(path: string): string {
+  const match = /^(.*)\/Cellar\/([^/]+)\/[^/]+\/(.+)$/.exec(path);
+  if (!match) return path;
+  const [, prefix, name, rest] = match;
+  const stable = `${prefix}/opt/${name}/${rest}`;
+  try {
+    return realpathSync(stable) === realpathSync(path) ? stable : path;
+  } catch {
+    return path;
+  }
+}
+
 // What the launcher should exec: the binary alone, or node + a script (the
 // bundle or dist/cli.js). An empty `cli` means "the binary is all of simem".
 export function launcherTarget(): { node: string; cli: string } {
-  if (isStandalone()) return { node: process.execPath, cli: "" };
-  if (isBundled() && process.argv[1]) return { node: process.execPath, cli: process.argv[1] };
-  return { node: process.execPath, cli: cliEntry() };
+  const node = stableHomebrewPath(process.execPath);
+  if (isStandalone()) return { node, cli: "" };
+  if (isBundled() && process.argv[1]) return { node, cli: stableHomebrewPath(process.argv[1]) };
+  return { node, cli: stableHomebrewPath(cliEntry()) };
 }
 
 export function simemVersion(): string {

@@ -4,7 +4,7 @@ Teaches Claude Code and Codex to use [simem](https://github.com/thinhledev/simem
 
 **Skills**
 - `simem` — answers "what did we decide…", "remember…", "forget…", "how much did simem save?", and opens the memory dashboard.
-- `simem-setup` — installs or repairs simem on this machine (`npm install -g @simem/cli && simem init`; needs Node.js 22.5+).
+- `simem-setup` — installs or repairs simem on this machine, asking before each step: `npm install -g @simem/cli` (Node.js 22.5+) or `brew install thinhledev/simem/simem` (no Node.js needed), then `simem init`.
 
 **Shortcuts** (run only when you type them; Claude Code doesn't load them into the context until then)
 - `/simem:stats [7d | 30d | all]` — token usage and what simem saved. In Codex: `$simem:stats`.

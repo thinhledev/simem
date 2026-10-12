@@ -1,6 +1,6 @@
 {
   "name": "@simem/cli",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "simem — Super Intelligence Memory for AI coding agents: spend fewer tokens in the Claude Code and Codex apps, and keep project memory across every account, agent, and worktree.",
   "type": "module",
   "license": "MIT",

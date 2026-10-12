@@ -1,7 +1,7 @@
 {
   "name": "simem",
   "displayName": "simem \u00b7 Super Intelligence Memory",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Super Intelligence Memory for coding agents: local project memory shared across every agent and account, plus tools that keep context small. The setup skill installs the simem CLI.",
   "author": {
     "name": "Thinh Le",
