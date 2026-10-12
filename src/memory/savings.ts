@@ -8,7 +8,13 @@ export type SavingsMechanism =
   | "compaction" // superseded per-checkpoint/epoch summaries vs their merged digest
   | "disclosure" // full hit text vs the preview actually returned by memory_search
   | "consolidation-cap" // active memory_items sent in the consolidation prompt vs all active items
-  | "rollup-cap"; // per-summary text as sent into a rollup prompt vs its raw length
+  | "rollup-cap" // per-summary text as sent into a rollup prompt vs its raw length
+  | "code-search" // estimate: files behind the top hits vs the hit list returned
+  | "code-read" // whole file vs the symbol/range returned
+  | "exec" // raw command output vs the filtered output returned
+  | "read-guard" // whole file a full read would have returned vs the outline given instead
+  | "reread-guard" // unchanged file re-read that was blocked
+  | "inject-dedupe"; // memory not re-injected because the context already held it
 
 export interface SavingsEntry {
   mechanism: SavingsMechanism;

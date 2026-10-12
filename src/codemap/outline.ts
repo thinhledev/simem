@@ -45,7 +45,8 @@ const TS_JS: Rule[] = [
   },
   // Indented, params, opening brace/return-type → a class/object method.
   {
-    re: /^\s+(?:(?:public|private|protected|readonly|static|async|get|set|override)\s+)*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\([^;{]*\)\s*(?::[^={;]+)?\{/,
+    // Control-flow statements share the `name(...) {` shape; never report them.
+    re: /^\s+(?:(?:public|private|protected|readonly|static|async|get|set|override)\s+)*\*?\s*(?!(?:if|for|while|switch|catch|with|return|else|do|try|await|new|typeof|function)\b)([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\([^;{]*\)\s*(?::[^={;]+)?\{/,
     kind: "method",
   },
 ];
@@ -116,7 +117,7 @@ const EXT_LANGUAGE: Record<string, string> = {
   ".cs": "csharp",
 };
 
-function detectLanguage(path: string): string {
+export function detectLanguage(path: string): string {
   return EXT_LANGUAGE[extname(path).toLowerCase()] ?? "unknown";
 }
 

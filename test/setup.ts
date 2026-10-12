@@ -12,3 +12,5 @@ import { join } from "node:path";
 process.env.MIXAI_HOME = mkdtempSync(join(tmpdir(), "mixai-test-home-"));
 process.env.MIXAI_STORAGE ??= "project";
 process.env.MIXAI_HOME_DISCOVERY = "env";
+// - MIXAI_NO_BACKGROUND=1 keeps hooks from spawning detached indexers.
+process.env.MIXAI_NO_BACKGROUND = "1";

@@ -21,6 +21,8 @@ import type { SourceAgent } from "../sources/homes.js";
 import { ingestTranscript, sessionKey, unreadBytes } from "../sources/ingest.js";
 import { clearInjections, injectedRefs, recordInjections } from "../memory/injections.js";
 import { sessionPrimer } from "../memory/primer.js";
+import { openCodeIndex } from "../codeindex/db.js";
+import { repoMap } from "../codeindex/search.js";
 
 export type HookEvent = "session-start" | "pre-compact" | "user-prompt-submit" | "stop" | "session-end" | "pre-tool-use";
 
@@ -124,10 +126,12 @@ export async function handleSessionStart(
   const agent = PROVIDER_SOURCE_AGENT[provider];
   const key = agent && input.sessionId ? sessionKey(agent, input.sessionId) : undefined;
   if (source === "startup") {
-    // A fresh session: the primer replaces the usual exploration turns.
+    // A fresh session: the primer replaces the usual exploration turns. The
+    // code index refreshes in the background for this session's code tools.
     if (!config.memory.enabled) return "";
+    spawnDetachedIndex(cwd);
     try {
-      return await sessionPrimer(cwd, config.memory, { ...(key ? { sessionKey: key } : {}) });
+      return await sessionPrimer(cwd, config.memory, { ...(key ? { sessionKey: key } : {}), layout: existingLayout(cwd) });
     } catch {
       return "";
     }
@@ -414,6 +418,37 @@ export async function handlePreToolUse(input: RawHookInput, cwd: string, provide
     const { decidePreToolUse } = await import("../compress/guards.js");
     const decision = await decidePreToolUse(input, cwd, provider, config);
     return decision ? `${JSON.stringify(decision)}\n` : "";
+  } catch {
+    return "";
+  }
+}
+
+export function spawnDetachedIndex(cwd: string): void {
+  if (process.env.MIXAI_NO_BACKGROUND === "1") return;
+  try {
+    const entrypoint = fileURLToPath(new URL("../cli.js", import.meta.url));
+    const child = spawn(process.execPath, [entrypoint, "index", "--quiet", "--cwd", cwd], {
+      detached: true,
+      stdio: "ignore",
+      env: { ...process.env, MIXAI_INTERNAL: "1" },
+    });
+    child.unref();
+  } catch {
+    // Indexing is an enhancement.
+  }
+}
+
+// The layout section of the primer, from an index that already exists — a
+// hook never builds the index synchronously.
+function existingLayout(cwd: string): string {
+  try {
+    const index = openCodeIndex(cwd);
+    if (!index) return "";
+    try {
+      return repoMap(index, { maxChars: 1_200 });
+    } finally {
+      index.close();
+    }
   } catch {
     return "";
   }

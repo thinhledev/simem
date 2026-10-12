@@ -28,6 +28,7 @@ import { runInit, type InitContext } from "./commands/init.js";
 import { runMigrate, runProject } from "./commands/project.js";
 import { runSources, runSync } from "./commands/sources.js";
 import { runEval, runRecall } from "./commands/recall.js";
+import { runIndex } from "./commands/index.js";
 import { BUILTIN_MODEL_SPEC, installModel, modelInstalled } from "./vec/install.js";
 import { embedNewRows } from "./vec/client.js";
 
@@ -849,6 +850,16 @@ async function main(): Promise<void> {
       cwd: options.cwd,
       config: await loadConfig(options.configPath),
       ...(options.limit !== undefined ? { limit: options.limit } : {}),
+    });
+  }
+  if (options.command === "index") {
+    return await runIndex({
+      ...out,
+      cwd: options.cwd,
+      config: await loadConfig(options.configPath),
+      status: options.positional[0] === "status" || options.check,
+      rebuild: options.rebuild,
+      ...(options.positional[0] === "search" ? { query: options.positional.slice(1).join(" ") } : {}),
     });
   }
   if (options.command === "eval") return await runEval({ ...out, config: await loadConfig(options.configPath), calibrate: options.all });

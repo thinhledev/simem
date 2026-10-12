@@ -45,11 +45,14 @@ test("tools/list advertises memory tools, context_brief, and the handoff tools",
     assert.deepEqual(tools.sort(), [
       "code_find_references",
       "code_outline",
+      "code_read",
+      "code_search",
       "context_brief",
       "list_handoff_targets",
       "memory_get",
       "memory_save",
       "memory_search",
+      "repo_map",
       "switch_to_provider",
     ]);
   });

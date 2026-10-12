@@ -9,6 +9,11 @@ import { NodeCommandRunner, type CommandRunner } from "../process.js";
 import { PROVIDER_IDS, type ProviderId } from "../types.js";
 import { outlineFile } from "../codemap/outline.js";
 import { findReferences } from "../codemap/references.js";
+import { symbolsWithRanges } from "../codeindex/indexer.js";
+import { codeRead, codeSearch, ensureIndexed, repoMap } from "../codeindex/search.js";
+import { recordCodeSavings, recordReadSavings } from "../codeindex/savings.js";
+import { readFile } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
 import { showRecord } from "./cli-commands.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
@@ -137,6 +142,43 @@ const TOOLS = [
         fork: { type: "boolean", description: "Keep this session active too, instead of an exclusive switch" },
       },
       required: ["target"],
+    },
+  },
+  {
+    name: "code_search",
+    description:
+      "Find where something is implemented: ranked symbols and code chunks from the local code index, as path:start-end " +
+      "with signatures (no file bodies). Use before grep+read loops; then code_read just the span you need.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Identifier or plain-language description" },
+        path: { type: "string", description: "Optional path prefix filter, e.g. src/memory/" },
+        limit: { type: "integer", minimum: 1, maximum: 30 },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "code_read",
+    description: "Read one symbol's body (by name) or a line range from a file, instead of the whole file.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        symbol: { type: "string" },
+        start: { type: "integer", minimum: 1 },
+        end: { type: "integer", minimum: 1 },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "repo_map",
+    description: "Compact map of the repository: top-level directories with sizes and the key files with one-line summaries; optional focus.",
+    inputSchema: {
+      type: "object",
+      properties: { focus: { type: "string" }, maxChars: { type: "integer", minimum: 500, maximum: 12_000 } },
     },
   },
   {
@@ -459,12 +501,55 @@ export async function handleRequest(
     }
     // Code-map tools need only the filesystem + git runner, not the memory DB,
     // so they run even on Node runtimes without node:sqlite.
+    if (params.name === "code_search" || params.name === "code_read" || params.name === "repo_map") {
+      try {
+        const ready = await ensureIndexed(cwd, deps.memoryConfig);
+        if (!ready) throw new Error("The code index needs node:sqlite (Node.js >= 22.5)");
+        try {
+          if (params.name === "code_search") {
+            const query = typeof args.query === "string" ? args.query : "";
+            if (!query.trim()) throw new Error("query is required");
+            const embeddings = await resolveEmbeddings(deps.memoryConfig);
+            const hits = await codeSearch(ready.index, query, {
+              ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
+              ...(typeof args.path === "string" ? { path: args.path } : {}),
+              ...(embeddings ? { embeddings } : {}),
+            });
+            recordCodeSavings(memory, ready.index, hits);
+            return { jsonrpc: "2.0", id, result: toolResult({ hits, hint: "code_read a hit's path with symbol or start/end to see the code." }) };
+          }
+          if (params.name === "code_read") {
+            const path = typeof args.path === "string" ? args.path : "";
+            if (!path) throw new Error("path is required");
+            const span = codeRead(ready.index, path, {
+              ...(typeof args.symbol === "string" ? { symbol: args.symbol } : {}),
+              ...(typeof args.start === "number" ? { start: args.start } : {}),
+              ...(typeof args.end === "number" ? { end: args.end } : {}),
+            });
+            recordReadSavings(memory, ready.index, span);
+            return { jsonrpc: "2.0", id, result: toolResult(span) };
+          }
+          const map = repoMap(ready.index, {
+            ...(typeof args.focus === "string" ? { focus: args.focus } : {}),
+            ...(typeof args.maxChars === "number" ? { maxChars: args.maxChars } : {}),
+          });
+          return { jsonrpc: "2.0", id, result: toolResult({ map: map || "The code index is empty for this checkout." }) };
+        } finally {
+          ready.index.close();
+        }
+      } catch (error) {
+        return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
+      }
+    }
     if (params.name === "code_outline") {
       try {
         const path = typeof args.path === "string" ? args.path : "";
         if (!path) throw new Error("path is required");
         const outline = await outlineFile(cwd, path);
-        return { jsonrpc: "2.0", id, result: toolResult(outline) };
+        // End lines too, so the agent can code_read exactly one symbol.
+        const ranged = symbolsWithRanges(await readFile(resolvePath(cwd, path), "utf8"), outline.language);
+        const withEnds = outline.symbols.map((symbol) => ({ ...symbol, end: ranged.find((r) => r.start === symbol.line)?.end ?? symbol.line }));
+        return { jsonrpc: "2.0", id, result: toolResult({ ...outline, symbols: withEnds }) };
       } catch (error) {
         return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
       }

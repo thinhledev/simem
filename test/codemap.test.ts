@@ -119,3 +119,10 @@ test("MCP exposes and dispatches code_outline and code_find_references (no memor
   const refs = JSON.parse((refsResp!.result as { content: Array<{ text: string }> }).content[0].text);
   assert.equal(refs.total, 2); // definition + call inside beta
 });
+
+test("control-flow statements are never reported as methods", async () => {
+  const { outlineText } = await import("../src/codemap/outline.js");
+  const source = "class A {\n  run(x: number) {\n    if (x) {\n      for (const y of z) {\n      }\n    }\n    while (true) {}\n  }\n}\n";
+  const { symbols } = outlineText(source, "typescript");
+  assert.deepEqual(symbols.map((symbol) => symbol.name), ["A", "run"]);
+});
