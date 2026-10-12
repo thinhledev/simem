@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.3
+
+### Changed
+- README: the problems simem solves now come in three parts (new sessions start from scratch; memory stuck in one app or account; re-sent text), with a plain-language savings example measured on real sessions (`scripts/replay-filters.mjs`).
+- README and the setup skill: the Homebrew install includes `brew trust --formula thinhledev/simem/simem`, which Homebrew 6 requires for third-party taps.
+
+No code changes.
+
 ## 2.0.2
 
 ### Added
