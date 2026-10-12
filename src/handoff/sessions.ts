@@ -3,6 +3,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { homesFor } from "../sources/homes.js";
 import type { ProviderId } from "../types.js";
 import type { SessionInfo, TranscriptMessage } from "./types.js";
 
@@ -31,7 +32,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function isInjected(text: string): boolean {
+export function isInjected(text: string): boolean {
   const trimmed = text.trimStart();
   return INJECTED_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
 }
@@ -112,7 +113,7 @@ async function forEachJsonLine(
   }
 }
 
-function contentTexts(content: unknown): string[] {
+export function contentTexts(content: unknown): string[] {
   if (typeof content === "string") return content.trim() ? [content] : [];
   if (!Array.isArray(content)) return [];
   return content.flatMap((item) => {
@@ -155,10 +156,13 @@ async function claudeHeader(path: string): Promise<Omit<SessionInfo, "provider" 
   return { id, cwd, ...(createdAt ? { createdAt } : {}), origin: "Claude Code" };
 }
 
-function sessionRoot(provider: ProviderId): string | undefined {
-  if (provider === "codex") return join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "sessions");
-  if (provider === "claude") return join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
-  return undefined;
+// Transcript roots across every account home on this machine (~/.claude,
+// ~/.claude-work, $CLAUDE_CONFIG_DIR, …), so a session started under one
+// account is found from any other.
+function sessionRoots(provider: ProviderId): string[] {
+  if (provider === "codex") return homesFor("codex").map((home) => join(home.dir, "sessions"));
+  if (provider === "claude") return homesFor("claude").map((home) => join(home.dir, "projects"));
+  return [];
 }
 
 // Cursor keys its per-project storage by a slugified absolute path
@@ -225,10 +229,10 @@ async function discoverAntigravitySessions(cwd: string | undefined): Promise<Ses
 export async function discoverSessions(provider: ProviderId, cwd?: string): Promise<SessionInfo[]> {
   if (provider === "cursor") return await discoverCursorSessions(cwd);
   if (provider === "antigravity") return await discoverAntigravitySessions(cwd);
-  const root = sessionRoot(provider);
-  if (!root) return [];
+  const roots = sessionRoots(provider);
+  if (roots.length === 0) return [];
   const wantedCwd = cwd ? resolve(cwd) : undefined;
-  const paths = await walkJsonl(root);
+  const paths = (await Promise.all(roots.map((root) => walkJsonl(root)))).flat();
   const desktopSessions = provider === "claude" ? await claudeDesktopSessions() : new Map<string, ClaudeDesktopSession>();
   const sessions = await Promise.all(
     paths.map(async (path): Promise<SessionInfo | undefined> => {
@@ -278,7 +282,7 @@ function addMessage(messages: TranscriptMessage[], role: "user" | "assistant", t
 // Cursor wraps the user's actual words in scaffolding: a <timestamp> header
 // plus a <user_query> envelope. The interesting content is INSIDE the tags,
 // so this unwraps rather than dropping the whole message like isInjected.
-function cleanCursorText(text: string): string {
+export function cleanCursorText(text: string): string {
   const withoutTimestamp = text.replace(/<timestamp>[\s\S]*?<\/timestamp>\s*/g, "");
   const query = /<user_query>\s*([\s\S]*?)\s*<\/user_query>/.exec(withoutTimestamp);
   return (query?.[1] ?? withoutTimestamp).trim();

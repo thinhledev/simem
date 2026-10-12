@@ -7,7 +7,7 @@ import { loadSqlite, type SqliteModule } from "../store/sqlite.js";
 
 export { loadSqlite, type SqliteModule } from "../store/sqlite.js";
 import { contentHash } from "./items.js";
-import { CURRENT_SCHEMA_VERSION, SCHEMA_CORE, SCHEMA_FTS, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5_COLUMNS, SCHEMA_V5_INDEX } from "./schema.js";
+import { CURRENT_SCHEMA_VERSION, SCHEMA_CORE, SCHEMA_FTS, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5_COLUMNS, SCHEMA_V5_INDEX, SCHEMA_V6 } from "./schema.js";
 
 export interface MemoryDb {
   db: DatabaseSync;
@@ -69,8 +69,11 @@ const MIGRATIONS: Array<(db: DatabaseSync, fts: boolean) => void> = [
     }
     db.exec(SCHEMA_V5_INDEX);
     const rows = db.prepare("SELECT id, text FROM memory_items").all() as Array<{ id: number; text: string }>;
-    const update = db.prepare("UPDATE memory_items SET content_hash = ? WHERE id = ?");
+    const update = db.prepare("UPDATE memory_items SET content_hash = ? WHERE id = ? AND content_hash IS NULL");
     for (const row of rows) update.run(contentHash(row.text), row.id);
+  },
+  (db) => {
+    db.exec(SCHEMA_V6);
   },
 ];
 
@@ -100,6 +103,14 @@ function readSchemaVersion(db: DatabaseSync): number {
 // canonical checkpoint files via reindex, so this is safe by design.
 export function resetMemoryDb(memory: MemoryDb): void {
   const drops = [
+    "DROP TABLE IF EXISTS counters",
+    "DROP TABLE IF EXISTS tool_reads",
+    "DROP TABLE IF EXISTS outputs",
+    "DROP TABLE IF EXISTS hook_runs",
+    "DROP TABLE IF EXISTS injections",
+    "DROP TABLE IF EXISTS events",
+    "DROP TABLE IF EXISTS turn_usage",
+    "DROP TABLE IF EXISTS sessions",
     "DROP TABLE IF EXISTS savings_events",
     "DROP TABLE IF EXISTS llm_calls",
     "DROP TABLE IF EXISTS consolidation_queue",
@@ -143,6 +154,9 @@ export async function openMemoryDb(
     const db = new sqlite.DatabaseSync(path);
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA foreign_keys = ON");
+    // Two apps (or an app and a background ingest) may write at once: wait
+    // for the lock briefly instead of failing with SQLITE_BUSY.
+    db.exec("PRAGMA busy_timeout = 3000");
     const fts = probeFts(db);
     let version = readSchemaVersion(db);
     while (version < CURRENT_SCHEMA_VERSION) {

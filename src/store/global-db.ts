@@ -20,6 +20,17 @@ CREATE TABLE IF NOT EXISTS project_paths (
   project_id  TEXT NOT NULL REFERENCES projects(id),
   last_seen   TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ingest_cursors (
+  path        TEXT PRIMARY KEY,
+  agent       TEXT NOT NULL,
+  inode       INTEGER NOT NULL,
+  offset      INTEGER NOT NULL,
+  session_id  TEXT,
+  cwd         TEXT,
+  project_id  TEXT,
+  ignored     INTEGER NOT NULL DEFAULT 0,
+  updated_at  TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS global_items (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
   category           TEXT,

@@ -204,6 +204,20 @@ function writeSummary(memory: MemoryDb, checkpointId: string, createdAt: string,
     .run(output.summary, checkpointId, checkpointId, createdAt, output.milestone ? 1 : 0);
 }
 
+// Tier 0.5: the agent app's own session title and status line (Claude app
+// metadata, Codex memories), captured at ingest, lead the rules summary.
+function withAppSummary(memory: MemoryDb, checkpointId: string, output: ConsolidationOutput): ConsolidationOutput {
+  let row: { title: string | null; app_summary: string | null } | undefined;
+  try {
+    row = memory.db.prepare("SELECT title, app_summary FROM sessions WHERE id = ?").get(checkpointId) as typeof row;
+  } catch {
+    return output;
+  }
+  if (!row?.title && !row?.app_summary) return output;
+  const lead = [row.title ? `Title: ${row.title}` : "", row.app_summary ? `App summary: ${row.app_summary}` : ""].filter(Boolean);
+  return { ...output, summary: `${lead.join("\n")}\n${output.summary}` };
+}
+
 // Tiered distillation of one checkpoint:
 //   1. Rules (always, zero tokens) write items and a template summary, and
 //      the checkpoint is marked "rules" (or "done" when no LLM tier is set).
@@ -232,7 +246,7 @@ export async function consolidateCheckpoint(
 
   const counts: WriteCounts = { written: 0, reinforced: 0 };
   if (checkpoint.consolidation_status !== "rules") {
-    const rules = distillWithRules(messages);
+    const rules = withAppSummary(memory, checkpointId, distillWithRules(messages));
     writeSummary(memory, checkpointId, checkpoint.created_at, rules);
     const ruleCounts = writeItems(memory, checkpointId, checkpoint.created_at, rules.items, "rule");
     counts.written += ruleCounts.written;

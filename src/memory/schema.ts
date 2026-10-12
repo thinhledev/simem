@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 // Core relational tables. Raw checkpoint files on disk stay canonical; every
 // row here is derivable by re-running `mixai memory reindex`.
@@ -192,3 +192,96 @@ CREATE INDEX IF NOT EXISTS idx_savings_events_mechanism ON savings_events(mechan
 export const SCHEMA_V5_COLUMNS = { origin: "TEXT", content_hash: "TEXT" } as const;
 export const SCHEMA_V5_INDEX =
   "CREATE INDEX IF NOT EXISTS idx_memory_items_content_hash ON memory_items(content_hash, status)";
+
+// v6: continuous capture. Each agent session is ingested incrementally (no
+// switch or compaction needed) as a "session:<agent>:<id>" pseudo-checkpoint,
+// so messages, FTS, distillation, and compaction reuse the checkpoint
+// machinery. Alongside: real provider usage per turn, tool events, and the
+// per-session bookkeeping for injection dedupe, hook dedupe, compressed
+// command outputs, and read tracking.
+export const SCHEMA_V6 = `
+CREATE TABLE IF NOT EXISTS sessions (
+  id               TEXT PRIMARY KEY REFERENCES checkpoints(id),
+  agent            TEXT NOT NULL,
+  external_id      TEXT NOT NULL,
+  source_dir       TEXT,
+  surface          TEXT NOT NULL DEFAULT 'unknown',
+  cwd              TEXT NOT NULL,
+  title            TEXT,
+  app_summary      TEXT,
+  model            TEXT,
+  transcript_path  TEXT,
+  started_at       TEXT NOT NULL,
+  last_activity_at TEXT NOT NULL,
+  message_count    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_activity ON sessions(last_activity_at);
+
+CREATE TABLE IF NOT EXISTS turn_usage (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id         TEXT NOT NULL,
+  usage_key          TEXT NOT NULL,
+  ts                 TEXT,
+  model              TEXT,
+  input_tokens       INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens      INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(session_id, usage_key)
+);
+CREATE INDEX IF NOT EXISTS idx_turn_usage_ts ON turn_usage(ts);
+
+CREATE TABLE IF NOT EXISTS events (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  call_id    TEXT,
+  ts         TEXT,
+  type       TEXT NOT NULL,
+  tool       TEXT NOT NULL,
+  target     TEXT,
+  bytes      INTEGER,
+  exit_code  INTEGER,
+  ok         INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_events_session_call ON events(session_id, call_id);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(type, target);
+
+CREATE TABLE IF NOT EXISTS injections (
+  session_id TEXT NOT NULL,
+  ref        TEXT NOT NULL,
+  ts         TEXT NOT NULL,
+  PRIMARY KEY (session_id, ref)
+);
+
+CREATE TABLE IF NOT EXISTS hook_runs (
+  key TEXT PRIMARY KEY,
+  ts  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS outputs (
+  id         TEXT PRIMARY KEY,
+  session_id TEXT,
+  command    TEXT NOT NULL,
+  raw_gz     BLOB NOT NULL,
+  raw_chars  INTEGER NOT NULL,
+  sent_chars INTEGER NOT NULL,
+  exit_code  INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_outputs_created ON outputs(created_at);
+
+CREATE TABLE IF NOT EXISTS tool_reads (
+  session_id TEXT NOT NULL,
+  path       TEXT NOT NULL,
+  size       INTEGER NOT NULL,
+  mtime_ms   INTEGER NOT NULL,
+  full       INTEGER NOT NULL,
+  ts         TEXT NOT NULL,
+  PRIMARY KEY (session_id, path)
+);
+
+CREATE TABLE IF NOT EXISTS counters (
+  key   TEXT PRIMARY KEY,
+  value INTEGER NOT NULL
+);
+`;
