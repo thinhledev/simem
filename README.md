@@ -13,6 +13,8 @@ simem is a **Super Intelligence Memory** for AI coding agents. It remembers what
 [![license](https://img.shields.io/npm/l/@simem/cli.svg)](LICENSE)
 [![Node.js](https://img.shields.io/node/v/@simem/cli.svg)](https://nodejs.org)
 
+**npm:** [`@simem/cli`](https://www.npmjs.com/package/@simem/cli) · **command:** `simem` · **plugins:** Claude Code and Codex marketplace `thinhledev/simem`
+
 ## Install
 
 Pick the app you use. Both routes end the same way: start a new session and say **"set up simem"** — the plugin's setup skill installs the simem CLI and runs `simem init` for you.
@@ -62,7 +64,7 @@ Restart the apps afterwards (the Codex app asks you once to trust the new hooks)
 
 ### Without the plugins
 
-The npm package is **`@simem/cli`**; the command it installs is **`simem`**. Paste this into Claude Code or Codex — or run it in a terminal (needs Node.js 22.5+):
+The npm package is [**`@simem/cli`**](https://www.npmjs.com/package/@simem/cli); the command it installs is **`simem`**. Paste this into Claude Code or Codex — or run it in a terminal (needs Node.js 22.5+):
 
 > Install and set up simem: run `npm install -g @simem/cli && simem init`, then tell me to restart the app.
 
