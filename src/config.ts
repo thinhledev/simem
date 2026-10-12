@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { globalConfigPath } from "./store/home.js";
 import { resolve } from "node:path";
 import {
   CREDENTIAL_TIERS,
@@ -76,6 +77,8 @@ export interface MemoryDistillConfig {
 
 export interface MemoryConfig {
   enabled: boolean;
+  /** "global" (default): ~/.mixai/projects/<id>, shared by every checkout and agent; "project": the repo's .mixai/. */
+  storage: string;
   verbatimCheckpoints: number;
   epochSize: number;
   projectDigestEpochs: number;
@@ -93,6 +96,24 @@ export interface MemoryConfig {
   distill: MemoryDistillConfig;
 }
 
+// What `mixai exec` and the PreToolUse hook may do to keep tool output small.
+export interface CompressionConfig {
+  /**
+   * "auto": wrap known-noisy Bash commands in `mixai exec`, only when the
+   * command would be auto-approved anyway (your allow rules, or bypass mode)
+   * — a rewrite must be approved by the hook, so it never widens permissions.
+   * "off": never rewrite; agents can still call `mixai exec` themselves.
+   */
+  bashRewrite: string;
+  /** Full reads of files longer than largeReadLines: "suggest" (outline first, once per file), "enforce", or "off". */
+  readGuard: string;
+  /** Re-reading an unchanged file already read in full this session: "suggest" (once), "enforce", or "off". */
+  rereadGuard: string;
+  largeReadLines: number;
+  /** "defer": leave Bash alone when RTK is installed; "ignore": rewrite anyway. */
+  rtk: string;
+}
+
 export interface GatewayConfig {
   routing: {
     providers: ProviderId[];
@@ -101,6 +122,7 @@ export interface GatewayConfig {
   };
   providers: Record<ProviderId, ProviderConfig>;
   memory: MemoryConfig;
+  compression: CompressionConfig;
 }
 
 export const DEFAULT_CONFIG: GatewayConfig = {
@@ -121,6 +143,7 @@ export const DEFAULT_CONFIG: GatewayConfig = {
   },
   memory: {
     enabled: true,
+    storage: "global",
     verbatimCheckpoints: 8,
     epochSize: 10,
     projectDigestEpochs: 5,
@@ -163,6 +186,13 @@ export const DEFAULT_CONFIG: GatewayConfig = {
       ollamaModel: "",
     },
   },
+  compression: {
+    bashRewrite: "auto",
+    readGuard: "suggest",
+    rereadGuard: "suggest",
+    largeReadLines: 800,
+    rtk: "defer",
+  },
 };
 
 type PartialConfig = {
@@ -173,6 +203,7 @@ type PartialConfig = {
   };
   providers?: Partial<Record<ProviderId, Partial<ProviderConfig>>>;
   memory?: unknown;
+  compression?: unknown;
 };
 
 function mergeSection<T extends Record<string, unknown>>(defaults: T, override: unknown, field: string): T {
@@ -244,18 +275,36 @@ export function mergeConfig(input: PartialConfig = {}): GatewayConfig {
       input.memory,
       "memory",
     ) as unknown as MemoryConfig,
+    compression: mergeSection(
+      DEFAULT_CONFIG.compression as unknown as Record<string, unknown>,
+      input.compression,
+      "compression",
+    ) as unknown as CompressionConfig,
   };
 }
 
-export async function loadConfig(path?: string): Promise<GatewayConfig> {
-  const configPath = resolve(path ?? "gateway.config.json");
+function deepMerge(base: unknown, override: unknown): unknown {
+  if (!base || typeof base !== "object" || Array.isArray(base)) return override ?? base;
+  if (!override || typeof override !== "object" || Array.isArray(override)) return override ?? base;
+  const merged: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  for (const [key, value] of Object.entries(override as Record<string, unknown>)) merged[key] = deepMerge(merged[key], value);
+  return merged;
+}
+
+async function readPartial(path: string, required: boolean): Promise<PartialConfig | undefined> {
   try {
-    const raw = await readFile(configPath, "utf8");
-    return mergeConfig(JSON.parse(raw) as PartialConfig);
+    return JSON.parse(await readFile(path, "utf8")) as PartialConfig;
   } catch (error) {
-    const nodeError = error as NodeJS.ErrnoException;
-    if (!path && nodeError.code === "ENOENT") return mergeConfig();
-    if (error instanceof SyntaxError) throw new Error(`Invalid JSON in ${configPath}: ${error.message}`);
+    if (!required && (error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if (error instanceof SyntaxError) throw new Error(`Invalid JSON in ${path}: ${error.message}`);
     throw error;
   }
+}
+
+// Layers: defaults ← ~/.mixai/config.json (user-wide, what the desktop apps'
+// hooks see) ← --config PATH or ./gateway.config.json (1.x, per project).
+export async function loadConfig(path?: string): Promise<GatewayConfig> {
+  const global = await readPartial(globalConfigPath(), false);
+  const local = await readPartial(resolve(path ?? "gateway.config.json"), Boolean(path));
+  return mergeConfig(deepMerge(global ?? {}, local ?? {}) as PartialConfig);
 }

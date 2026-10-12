@@ -52,6 +52,7 @@ test("tools/list advertises memory tools, context_brief, and the handoff tools",
       "memory_get",
       "memory_save",
       "memory_search",
+      "output_get",
       "repo_map",
       "switch_to_provider",
     ]);

@@ -18,6 +18,7 @@ import { showRecord } from "./cli-commands.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
 import { upsertMemoryItem } from "./items.js";
+import { readOutput } from "../compress/exec.js";
 import { embedNewRows, resolveEmbeddings } from "../vec/client.js";
 import { toPreview } from "./preview.js";
 import { search } from "./retrieval.js";
@@ -143,6 +144,11 @@ const TOOLS = [
       },
       required: ["target"],
     },
+  },
+  {
+    name: "output_get",
+    description: "Full, unfiltered output of a command that `mixai exec` shortened (the id is in its footer).",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   },
   {
     name: "code_search",
@@ -277,6 +283,13 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
     const record = showRecord(memory, selector);
     if (!record) throw new Error(`No memory record matched ${selector}`);
     return toolResult(record);
+  }
+  if (name === "output_get") {
+    const outputId = typeof args.id === "string" ? args.id : "";
+    if (!outputId) throw new Error("id is required");
+    const output = readOutput(memory, outputId);
+    if (!output) throw new Error(`No stored output ${outputId} (outputs are kept for 7 days)`);
+    return toolResult(output);
   }
   if (name === "memory_save") {
     const text = typeof args.text === "string" ? args.text.trim() : "";

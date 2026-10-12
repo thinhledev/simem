@@ -29,6 +29,7 @@ import { runMigrate, runProject } from "./commands/project.js";
 import { runSources, runSync } from "./commands/sources.js";
 import { runEval, runRecall } from "./commands/recall.js";
 import { runIndex } from "./commands/index.js";
+import { execCompressed, readOutput } from "./compress/exec.js";
 import { BUILTIN_MODEL_SPEC, installModel, modelInstalled } from "./vec/install.js";
 import { embedNewRows } from "./vec/client.js";
 
@@ -808,6 +809,21 @@ async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Pro
 }
 
 async function main(): Promise<void> {
+  // `mixai exec [--cwd DIR] -- <command…>`: everything after `--` belongs to
+  // the wrapped command, so it is never parsed as mixai flags.
+  if (process.argv[2] === "exec") {
+    const argv = process.argv.slice(3);
+    const separator = argv.indexOf("--");
+    const own = separator >= 0 ? argv.slice(0, separator) : [];
+    const command = separator >= 0 ? argv.slice(separator + 1) : argv;
+    if (command.length === 0) throw new Error("mixai exec -- <command>");
+    const cwdIndex = own.indexOf("--cwd");
+    const cwd = cwdIndex >= 0 && own[cwdIndex + 1] ? resolve(own[cwdIndex + 1]!) : process.cwd();
+    const result = await execCompressed(command, cwd);
+    process.stdout.write(result.text.endsWith("\n") ? result.text : `${result.text}\n`);
+    process.exitCode = result.exitCode;
+    return;
+  }
   const options = parseArgs(process.argv.slice(2));
   if (options.command === "help") {
     process.stdout.write(HELP);
@@ -844,6 +860,21 @@ async function main(): Promise<void> {
     });
   }
   if (options.command === "sources") return await runSources(out);
+  if (options.command === "out") {
+    const id = options.positional[0];
+    if (!id) throw new Error("mixai out <id>   (the id is printed in a filtered output's footer)");
+    const memory = await openMemoryDb(options.cwd, { quiet: true });
+    if (!memory) throw new Error(`Memory requires Node.js >= 22.5; this is ${process.version}`);
+    try {
+      const output = readOutput(memory, id);
+      if (!output) throw new Error(`No stored output ${id} (outputs are kept for 7 days)`);
+      if (options.json) process.stdout.write(`${JSON.stringify(output)}\n`);
+      else process.stdout.write(output.text.endsWith("\n") ? output.text : `${output.text}\n`);
+    } finally {
+      memory.close();
+    }
+    return;
+  }
   if (options.command === "recall") {
     return await runRecall(options.positional.join(" "), {
       ...out,
