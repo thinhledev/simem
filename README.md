@@ -85,9 +85,19 @@ simem init
 
 Homebrew brings its own Node.js, so this works without Node.js installed. Homebrew 6 installs from taps outside its own collection only after you trust them; the second command trusts just the simem formula. Upgrades (`brew upgrade simem`) keep working in the desktop apps without re-running `simem init`.
 
-## The two problems it solves
+## The three problems it solves
 
-**1. Agents pay for the same text again and again.** Think of a conversation with your coding agent as a stack of paper. Every time you send a message, the whole stack goes to the AI, and the AI reads all of it again — and every page it reads costs money or uses up your plan's limit. Pages are only removed when the app compacts the conversation.
+**1. Every new session starts from scratch.** Without memory, a fresh session doesn't know what you built yesterday, what you decided, or how to run the tests. So the agent rediscovers it: listing folders, reading the README, searching and opening files — or you explain it all again. With simem, what earlier sessions learned stays on your computer and comes back on its own:
+
+- **At the start of every new session**, the agent gets a short summary of the project: the latest work, the decisions still in force, the build and test commands that worked, and how the code is laid out. It starts knowing the basics instead of scanning the codebase for them.
+- **With each message you send**, simem adds the saved notes that clearly match what you wrote — for example the reason you chose your database when you mention the database.
+- **Whenever you or the agent asks** ("what did we decide about payments?"), it searches everything earlier sessions saved.
+
+The agent may still open files to do the actual work; what it no longer needs is to rediscover the project each time.
+
+**2. Memory is stuck in one app, one account, one folder.** Switch from Claude Code account A to account B, from Claude Code to Codex, open a new worktree, or re-clone the repo — and the agent starts from zero. simem's memory belongs to the **project**, not to an app or a login.
+
+**3. Agents pay for the same text again and again.** Think of a conversation with your coding agent as a stack of paper. Every time you send a message, the whole stack goes to the AI, and the AI reads all of it again — and every page it reads costs money or uses up your plan's limit. Pages are only removed when the app compacts the conversation.
 
 A lot of that stack is reports from tools the agent runs. Run the tests, and the report can be hundreds of lines, mostly "✓ passed, ✓ passed, ✓ passed…". That whole report goes on the stack and is read again on every turn after it.
 
@@ -110,8 +120,6 @@ Because the AI reads the stack again on every turn, each page simem removes is s
 **Why only 22% here?** In this project the agent was already cutting most reports short itself, so there was less left to trim. When a report arrives in full — a complete test run or package install — simem cuts **81–99%** of it.
 
 *In the Claude Code app, test, build, and install reports are trimmed automatically when your settings already let those commands run without asking; otherwise the agent can choose to use simem's trimming (`simem exec`). These are one project's numbers; your savings depend on your work. To measure your own projects: `node scripts/replay-filters.mjs`.*
-
-**2. Memory is stuck in one app, one account, one folder.** Switch from Claude Code account A to account B, from Claude Code to Codex, open a new worktree, or re-clone the repo — and the agent starts from zero. simem's memory belongs to the **project**, not to an app or a login.
 
 ## How it saves tokens
 
