@@ -1,9 +1,8 @@
 import type { MemoryConfig } from "../config.js";
-import type { ConsolidationRunner } from "./consolidate.js";
 import type { MemoryDb } from "./db.js";
-import { recordGatewayAttempts } from "./ledger.js";
+import { runDistill, type DistillRunner } from "./distill/runner.js";
 import { recordSavings } from "./savings.js";
-import { capText } from "./text-cap.js";
+import { capText, oneLine } from "./text-cap.js";
 
 export interface CompactionResult {
   epochDigests: number;
@@ -11,7 +10,7 @@ export interface CompactionResult {
   detail?: string;
 }
 
-interface SummaryRow {
+export interface SummaryRow {
   id: number;
   text: string;
   covers_from: string;
@@ -104,9 +103,28 @@ function highImportanceConstraints(memory: MemoryDb, checkpointIds: string[]): s
   return rows.map((row) => row.text);
 }
 
+// Zero-token rollup: one line per merged summary (milestones flagged), plus the
+// standing constraints, capped to the same budget an LLM digest gets. Less
+// fluent than prose, but nothing is invented and nothing is spent.
+export function extractiveDigest(
+  kind: "epoch" | "project",
+  summaries: SummaryRow[],
+  constraints: string[],
+  summaryCharCap: number,
+): string {
+  const wordCap = kind === "epoch" ? 250 : 300;
+  const perLine = Math.max(80, Math.min(summaryCharCap, Math.floor((wordCap * 7) / Math.max(1, summaries.length))));
+  const lines = summaries.map((summary) => {
+    const text = capText(oneLine(summary.text), perLine).text;
+    return `- ${summary.milestone ? "[MILESTONE] " : ""}${text}`;
+  });
+  const standing = constraints.length ? `\nStanding constraints:\n${constraints.map((text) => `- ${text}`).join("\n")}` : "";
+  return capText(`${lines.join("\n")}${standing}`, wordCap * 8).text;
+}
+
 async function rollup(
   memory: MemoryDb,
-  orchestrator: ConsolidationRunner,
+  runner: DistillRunner | undefined,
   config: MemoryConfig,
   kind: "epoch" | "project",
   batch: SummaryRow[],
@@ -116,18 +134,22 @@ async function rollup(
   const last = batch.at(-1);
   if (!first || !last) return false;
   const constraints = kind === "epoch" ? highImportanceConstraints(memory, batch.map((row) => row.covers_from)) : [];
-  const { prompt, charsFull, charsCapped } = rollupPrompt(kind, batch, constraints, config.rollupSummaryCharCap);
-  const result = await orchestrator.run({
-    prompt,
-    cwd: process.cwd(),
-    accessMode: "read-only",
-    timeoutMs: config.consolidationTimeoutMs,
-  });
-  recordGatewayAttempts(memory, kind === "epoch" ? "rollup-epoch" : "rollup-project", undefined, prompt.length, result);
-  // What the per-summary character cap kept out of the LLM prompt this call.
-  recordSavings(memory, { mechanism: "rollup-cap", charsFull, charsSent: charsCapped });
-  const text = result.ok ? result.result?.output.trim() : undefined;
-  if (!text) return false;
+  let text: string | undefined;
+  if (runner) {
+    const { prompt, charsFull, charsCapped } = rollupPrompt(kind, batch, constraints, config.rollupSummaryCharCap);
+    const call = await runDistill(memory, runner, {
+      purpose: kind === "epoch" ? "rollup-epoch" : "rollup-project",
+      prompt,
+      cwd: process.cwd(),
+      timeoutMs: config.consolidationTimeoutMs,
+    });
+    // What the per-summary character cap kept out of the LLM prompt this call.
+    recordSavings(memory, { mechanism: "rollup-cap", charsFull, charsSent: charsCapped });
+    text = call.output?.trim();
+  }
+  // No LLM tier, or it failed: fall back to the extractive digest so
+  // compaction never stalls waiting for a provider.
+  text ||= extractiveDigest(kind, batch, constraints, config.rollupSummaryCharCap);
   const checkpointCount = batch.reduce((sum, row) => sum + row.checkpoint_count, 0);
   const inserted = memory.db
     .prepare(
@@ -153,7 +175,7 @@ async function rollup(
 // Superseded summaries are kept (searchable with a flag), never deleted.
 export async function runCompaction(
   memory: MemoryDb,
-  orchestrator: ConsolidationRunner,
+  runner: DistillRunner | undefined,
   config: MemoryConfig,
 ): Promise<CompactionResult> {
   const result: CompactionResult = { epochDigests: 0, projectDigests: 0 };
@@ -162,7 +184,7 @@ export async function runCompaction(
   for (;;) {
     const eligible = activeLevelSummaries(memory, 1).filter((row) => !verbatim.has(row.covers_from));
     if (eligible.length < config.epochSize) break;
-    const ok = await rollup(memory, orchestrator, config, "epoch", eligible.slice(0, config.epochSize), 2);
+    const ok = await rollup(memory, runner, config, "epoch", eligible.slice(0, config.epochSize), 2);
     if (!ok) {
       result.detail = "epoch rollup unavailable; will retry on the next compact";
       return result;
@@ -174,7 +196,7 @@ export async function runCompaction(
   if (epochs.length >= config.projectDigestEpochs) {
     // Fold the previous project digest in so nothing already distilled is lost.
     const previous = activeLevelSummaries(memory, 3);
-    const ok = await rollup(memory, orchestrator, config, "project", [...previous, ...epochs], 3);
+    const ok = await rollup(memory, runner, config, "project", [...previous, ...epochs], 3);
     if (!ok) {
       result.detail = "project rollup unavailable; will retry on the next compact";
       return result;

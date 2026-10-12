@@ -1,8 +1,9 @@
 import type { MemoryConfig } from "../config.js";
-import type { GatewayRunResult, RunRequest } from "../types.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
-import { recordGatewayAttempts } from "./ledger.js";
+import { distillWithRules } from "./distill/rules.js";
+import { runDistill, type DistillRunner } from "./distill/runner.js";
+import { upsertMemoryItem, type MemoryOrigin } from "./items.js";
 import { recordSavings } from "./savings.js";
 import {
   MEMORY_CATEGORIES,
@@ -12,11 +13,7 @@ import {
   type ConsolidationResult,
 } from "./types.js";
 
-// The minimal orchestrator surface consolidation needs; GatewayOrchestrator
-// satisfies it, and tests can fake it with an object literal.
-export interface ConsolidationRunner {
-  run(request: RunRequest, options?: { onEvent?: unknown }): Promise<GatewayRunResult>;
-}
+export type { ConsolidationRunner, DistillRunner } from "./distill/runner.js";
 
 interface ActiveItemRow {
   id: number;
@@ -166,14 +163,37 @@ function queueCheckpoint(memory: MemoryDb, checkpointId: string, error: string):
     .run(checkpointId, new Date().toISOString(), error);
 }
 
-function writeConsolidation(
+function setStatus(memory: MemoryDb, checkpointId: string, status: "rules" | "done"): void {
+  memory.db.prepare("UPDATE checkpoints SET consolidation_status = ? WHERE id = ?").run(status, checkpointId);
+  if (status === "done") memory.db.prepare("DELETE FROM consolidation_queue WHERE checkpoint_id = ?").run(checkpointId);
+}
+
+interface WriteCounts {
+  written: number;
+  reinforced: number;
+}
+
+// Items are dated by their checkpoint, not by when distillation ran: a backfill
+// over July checkpoints must not make July's facts look fresh to recency scoring.
+function writeItems(
   memory: MemoryDb,
   checkpointId: string,
-  createdAt: string,
-  output: ConsolidationOutput,
-): number {
-  const now = new Date().toISOString();
-  // One level-1 summary per checkpoint: replace any previous attempt.
+  statedAt: string,
+  items: ConsolidationItem[],
+  origin: MemoryOrigin,
+): WriteCounts {
+  const counts: WriteCounts = { written: 0, reinforced: 0 };
+  for (const item of items) {
+    const result = upsertMemoryItem(memory, { ...item, origin, sourceCheckpointId: checkpointId }, statedAt);
+    if (result.reinforced) counts.reinforced += 1;
+    else counts.written += 1;
+  }
+  return counts;
+}
+
+// One level-1 summary per checkpoint: a later tier's summary replaces an
+// earlier one (the LLM's prose over the rules template).
+function writeSummary(memory: MemoryDb, checkpointId: string, createdAt: string, output: ConsolidationOutput): void {
   memory.db
     .prepare("DELETE FROM summaries WHERE level = 1 AND covers_from = ? AND covers_to = ?")
     .run(checkpointId, checkpointId);
@@ -182,35 +202,18 @@ function writeConsolidation(
       "INSERT INTO summaries (level, text, covers_from, covers_to, checkpoint_count, created_at, milestone) VALUES (1, ?, ?, ?, 1, ?, ?)",
     )
     .run(output.summary, checkpointId, checkpointId, createdAt, output.milestone ? 1 : 0);
-  const insertItem = memory.db.prepare(
-    `INSERT INTO memory_items (kind, category, text, importance, status, source_checkpoint_id, created_at, last_reinforced_at)
-     VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
-  );
-  const supersede = memory.db.prepare(
-    "UPDATE memory_items SET status = 'superseded', superseded_by = ? WHERE id = ? AND status = 'active'",
-  );
-  let written = 0;
-  for (const item of output.items) {
-    const result = insertItem.run(
-      item.kind,
-      item.category ?? null,
-      item.text,
-      item.importance,
-      checkpointId,
-      now,
-      now,
-    );
-    written += 1;
-    if (item.supersedes !== undefined) supersede.run(Number(result.lastInsertRowid), item.supersedes);
-  }
-  memory.db.prepare("UPDATE checkpoints SET consolidation_status = 'done' WHERE id = ?").run(checkpointId);
-  memory.db.prepare("DELETE FROM consolidation_queue WHERE checkpoint_id = ?").run(checkpointId);
-  return written;
 }
 
+// Tiered distillation of one checkpoint:
+//   1. Rules (always, zero tokens) write items and a template summary, and
+//      the checkpoint is marked "rules" (or "done" when no LLM tier is set).
+//   2. The optional LLM tier (local Ollama, or opt-in remote agent) sees the
+//      rule items as EXISTING ITEMS, so it adds only what rules missed and can
+//      supersede them. Its failure queues the checkpoint for another LLM try;
+//      the rule output is already saved, so nothing is lost meanwhile.
 export async function consolidateCheckpoint(
   memory: MemoryDb,
-  orchestrator: ConsolidationRunner,
+  runner: DistillRunner | undefined,
   checkpointId: string,
   config: MemoryConfig,
 ): Promise<ConsolidationResult> {
@@ -226,6 +229,28 @@ export async function consolidateCheckpoint(
   const messages = memory.db
     .prepare("SELECT role, text FROM messages WHERE checkpoint_id = ? ORDER BY seq")
     .all(checkpointId) as Array<{ role: string; text: string }>;
+
+  const counts: WriteCounts = { written: 0, reinforced: 0 };
+  if (checkpoint.consolidation_status !== "rules") {
+    const rules = distillWithRules(messages);
+    writeSummary(memory, checkpointId, checkpoint.created_at, rules);
+    const ruleCounts = writeItems(memory, checkpointId, checkpoint.created_at, rules.items, "rule");
+    counts.written += ruleCounts.written;
+    counts.reinforced += ruleCounts.reinforced;
+    setStatus(memory, checkpointId, runner ? "rules" : "done");
+  }
+  const result = (status: ConsolidationResult["status"], detail?: string): ConsolidationResult => ({
+    status,
+    checkpointId,
+    itemsWritten: counts.written,
+    ...(counts.reinforced > 0 ? { itemsReinforced: counts.reinforced } : {}),
+    ...(detail ? { detail } : {}),
+  });
+  if (!runner) {
+    setStatus(memory, checkpointId, "done");
+    return result("done", "rules");
+  }
+
   const existing = activeItems(memory, config.consolidationExistingItemsLimit);
   const existingIds = new Set(existing.items.map((item) => item.id));
   const prompt = buildConsolidationPrompt({
@@ -244,40 +269,41 @@ export async function consolidateCheckpoint(
     charsSent: existing.items.reduce((sum, item) => sum + item.text.length, 0),
   });
 
-  let result: GatewayRunResult;
+  let call;
   try {
-    result = await orchestrator.run({
+    call = await runDistill(memory, runner, {
+      purpose: "consolidate",
+      checkpointId,
       prompt,
       cwd: checkpoint.workspace,
-      accessMode: "read-only",
       timeoutMs: config.consolidationTimeoutMs,
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    queueCheckpoint(memory, checkpointId, detail);
-    return { status: "queued", checkpointId, itemsWritten: 0, detail };
+    call = { detail: error instanceof Error ? error.message : String(error) };
   }
-  recordGatewayAttempts(memory, "consolidate", checkpointId, prompt.length, result);
-  if (!result.ok || !result.result) {
-    const detail =
-      result.attempts.length === 0
-        ? "no provider ready"
-        : result.attempts.at(-1)?.result.error ?? "provider run failed";
+  if (!call.output) {
+    const detail = call.detail ?? "no output";
     queueCheckpoint(memory, checkpointId, detail);
-    return { status: "queued", checkpointId, itemsWritten: 0, detail };
+    return result("queued", detail);
   }
-  const output = parseConsolidationOutput(result.result.output, existingIds);
+  const output = parseConsolidationOutput(call.output, existingIds);
   if (!output) {
     queueCheckpoint(memory, checkpointId, "unparseable consolidation output");
-    return { status: "queued", checkpointId, itemsWritten: 0, detail: "unparseable consolidation output" };
+    return result("queued", "unparseable consolidation output");
   }
-  const itemsWritten = writeConsolidation(memory, checkpointId, checkpoint.created_at, output);
-  return { status: "done", checkpointId, itemsWritten };
+  writeSummary(memory, checkpointId, checkpoint.created_at, output);
+  const llmCounts = writeItems(memory, checkpointId, checkpoint.created_at, output.items, "llm");
+  counts.written += llmCounts.written;
+  counts.reinforced += llmCounts.reinforced;
+  setStatus(memory, checkpointId, "done");
+  return result("done");
 }
 
+// Retries queued checkpoints. With no LLM tier configured (any more), queued
+// checkpoints simply finish on the rules tier instead of waiting forever.
 export async function drainConsolidationQueue(
   memory: MemoryDb,
-  orchestrator: ConsolidationRunner,
+  runner: DistillRunner | undefined,
   config: MemoryConfig,
 ): Promise<ConsolidationResult[]> {
   const queued = memory.db
@@ -285,7 +311,7 @@ export async function drainConsolidationQueue(
     .all(config.queueDrainLimit) as Array<{ checkpoint_id: string }>;
   const results: ConsolidationResult[] = [];
   for (const entry of queued) {
-    const result = await consolidateCheckpoint(memory, orchestrator, entry.checkpoint_id, config);
+    const result = await consolidateCheckpoint(memory, runner, entry.checkpoint_id, config);
     results.push(result);
     // A queued retry that fails again means the provider is still unavailable;
     // stop early instead of paying the same failure for every queued row.
@@ -294,12 +320,47 @@ export async function drainConsolidationQueue(
   return results;
 }
 
-// Best-effort entry point for the switch/export path: drains a few queued
-// checkpoints, consolidates the new one, and never throws. The token-free
+export interface DistillAllResult {
+  checkpoints: number;
+  itemsWritten: number;
+  itemsReinforced: number;
+}
+
+// Backfill: runs the rules tier over checkpoints that never got it — those
+// still pending, and with `all`, also ones an LLM already consolidated
+// (items only: their LLM summary is kept). Re-running is safe; restated
+// items reinforce instead of duplicating.
+export function distillWithRulesBackfill(memory: MemoryDb, options: { all?: boolean } = {}): DistillAllResult {
+  const statuses = options.all ? ["pending", "rules", "done", "skipped"] : ["pending"];
+  const rows = memory.db
+    .prepare(
+      `SELECT id, created_at, consolidation_status FROM checkpoints
+       WHERE consolidation_status IN (${statuses.map(() => "?").join(",")}) ORDER BY created_at`,
+    )
+    .all(...statuses) as Array<{ id: string; created_at: string; consolidation_status: string }>;
+  const totals: DistillAllResult = { checkpoints: 0, itemsWritten: 0, itemsReinforced: 0 };
+  const selectMessages = memory.db.prepare("SELECT role, text FROM messages WHERE checkpoint_id = ? ORDER BY seq");
+  for (const row of rows) {
+    const messages = selectMessages.all(row.id) as Array<{ role: string; text: string }>;
+    const rules = distillWithRules(messages);
+    if (row.consolidation_status === "pending") {
+      writeSummary(memory, row.id, row.created_at, rules);
+      setStatus(memory, row.id, "done");
+    }
+    const counts = writeItems(memory, row.id, row.created_at, rules.items, "rule");
+    totals.checkpoints += 1;
+    totals.itemsWritten += counts.written;
+    totals.itemsReinforced += counts.reinforced;
+  }
+  return totals;
+}
+
+// Best-effort entry point for the switch/export/hook paths: drains a few
+// queued checkpoints, distills the new one, and never throws. The token-free
 // checkpoint write has already completed before this runs.
 export async function consolidateBestEffort(
   cwd: string,
-  orchestrator: ConsolidationRunner,
+  runner: DistillRunner | undefined,
   checkpointId: string,
   config: MemoryConfig,
 ): Promise<ConsolidationResult> {
@@ -313,8 +374,8 @@ export async function consolidateBestEffort(
     const memory = await openMemoryDb(cwd, { quiet: true });
     if (!memory) return fallback;
     try {
-      await drainConsolidationQueue(memory, orchestrator, config);
-      return await consolidateCheckpoint(memory, orchestrator, checkpointId, config);
+      await drainConsolidationQueue(memory, runner, config);
+      return await consolidateCheckpoint(memory, runner, checkpointId, config);
     } finally {
       memory.close();
     }

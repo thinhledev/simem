@@ -5,6 +5,7 @@ import { DEFAULT_CONFIG, type MemoryConfig } from "../config.js";
 import { assembleContext } from "../memory/budget.js";
 import { openMemoryDb } from "../memory/db.js";
 import { indexCheckpointBestEffort } from "../memory/index-checkpoint.js";
+import { isInternalMemoryPrompt } from "../memory/internal-prompt.js";
 import { capText } from "../memory/text-cap.js";
 import type { CommandRunner } from "../process.js";
 import type { ProviderId } from "../types.js";
@@ -88,11 +89,6 @@ function latestText(messages: TranscriptMessage[], role: TranscriptMessage["role
 // live in HANDOFF.md and `mixai brief`.
 const BRIEF_OBJECTIVE_CAP = 600;
 
-// The internal memory-consolidation prompt can land as the last "user" message
-// in a transcript; it must never be surfaced as the human's objective.
-function isInternalMemoryPrompt(text: string): boolean {
-  return /persistent project memory store|Respond with ONLY a JSON object/i.test(text);
-}
 
 // The lean, per-turn continuity payload. Unlike HANDOFF.md (full transcript +
 // memory), this is only objective + live pointer, because relevant project

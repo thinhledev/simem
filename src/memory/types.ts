@@ -45,7 +45,7 @@ export interface CheckpointRow {
   head?: string;
   dirty: boolean;
   directory: string;
-  consolidationStatus: "pending" | "done" | "skipped";
+  consolidationStatus: "pending" | "rules" | "done" | "skipped";
 }
 
 export interface RetrievalHit {
@@ -93,5 +93,7 @@ export interface ConsolidationResult {
   status: ConsolidationStatus;
   checkpointId: string;
   itemsWritten: number;
+  /** Existing items a restatement reinforced instead of duplicating. */
+  itemsReinforced?: number;
   detail?: string;
 }

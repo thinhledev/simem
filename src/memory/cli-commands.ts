@@ -1,6 +1,11 @@
 import type { MemoryConfig } from "../config.js";
 import { runCompaction } from "./compaction.js";
-import { consolidateBestEffort, drainConsolidationQueue, type ConsolidationRunner } from "./consolidate.js";
+import {
+  consolidateBestEffort,
+  distillWithRulesBackfill,
+  drainConsolidationQueue,
+  type DistillRunner,
+} from "./consolidate.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
 import { detectOllama } from "./embeddings.js";
@@ -31,7 +36,10 @@ export interface MemoryCommandOptions {
   since?: string;
   until?: string;
   full: boolean;
-  orchestrator?: ConsolidationRunner;
+  /** Optional LLM tier for consolidation/rollups; undefined = rules only (zero provider tokens). */
+  distillRunner?: DistillRunner | undefined;
+  /** `memory distill --all`: also re-run rules over already-consolidated checkpoints. */
+  all?: boolean;
   memoryConfig?: MemoryConfig;
 }
 
@@ -286,13 +294,11 @@ export async function handleMemoryCommand(
     return;
   }
   if (sub === "compact") {
-    if (!options.orchestrator || !options.memoryConfig) {
-      throw new Error("memory compact needs the routing configuration; run it via the mixai CLI");
-    }
+    if (!options.memoryConfig) throw new Error("memory compact needs the memory configuration; run it via the mixai CLI");
     const memory = await requireMemory(options);
     try {
-      const drained = await drainConsolidationQueue(memory, options.orchestrator, options.memoryConfig);
-      const compaction = await runCompaction(memory, options.orchestrator, options.memoryConfig);
+      const drained = await drainConsolidationQueue(memory, options.distillRunner, options.memoryConfig);
+      const compaction = await runCompaction(memory, options.distillRunner, options.memoryConfig);
       const report = { drained, compaction };
       if (options.json) process.stdout.write(`${JSON.stringify(report)}\n`);
       else {
@@ -318,10 +324,10 @@ export async function handleMemoryCommand(
   if (sub === "consolidate-checkpoint") {
     const checkpointId = options.args[0];
     if (!checkpointId) throw new Error("memory consolidate-checkpoint requires a checkpoint id");
-    if (!options.orchestrator || !options.memoryConfig) {
-      throw new Error("memory consolidate-checkpoint needs the routing configuration; run it via the mixai CLI");
+    if (!options.memoryConfig) {
+      throw new Error("memory consolidate-checkpoint needs the memory configuration; run it via the mixai CLI");
     }
-    const result = await consolidateBestEffort(options.cwd, options.orchestrator, checkpointId, options.memoryConfig);
+    const result = await consolidateBestEffort(options.cwd, options.distillRunner, checkpointId, options.memoryConfig);
     if (options.json) process.stdout.write(`${JSON.stringify(result)}\n`);
     else {
       process.stdout.write(
@@ -330,7 +336,25 @@ export async function handleMemoryCommand(
     }
     return;
   }
+  // Zero-token backfill: run the rules tier over checkpoints that never got
+  // distilled (and with --all, over every checkpoint; restatements reinforce).
+  if (sub === "distill") {
+    const memory = await requireMemory(options);
+    try {
+      const result = distillWithRulesBackfill(memory, { all: Boolean(options.all) });
+      if (options.json) process.stdout.write(`${JSON.stringify(result)}\n`);
+      else {
+        process.stdout.write(
+          `Distilled ${result.checkpoints} checkpoint(s) with local rules: ` +
+            `${result.itemsWritten} new item(s), ${result.itemsReinforced} reinforced. No provider tokens used.\n`,
+        );
+      }
+    } finally {
+      memory.close();
+    }
+    return;
+  }
   throw new Error(
-    `Unknown memory subcommand: ${sub ?? "(none)"}. Use: search, show, stats, spend, savings, compact, reindex`,
+    `Unknown memory subcommand: ${sub ?? "(none)"}. Use: search, show, stats, spend, savings, distill, compact, reindex`,
   );
 }

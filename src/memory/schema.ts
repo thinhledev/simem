@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 // Core relational tables. Raw checkpoint files on disk stay canonical; every
 // row here is derivable by re-running `mixai memory reindex`.
@@ -182,3 +182,13 @@ CREATE TABLE IF NOT EXISTS savings_events (
 );
 CREATE INDEX IF NOT EXISTS idx_savings_events_mechanism ON savings_events(mechanism, created_at);
 `;
+
+// v5: provenance and dedupe for memory items. `origin` records which tier
+// wrote the item (rule | llm | agent | user | import); `content_hash` is the
+// hash of the normalized text, so a fact restated by a later checkpoint or a
+// second tier reinforces the existing row instead of duplicating it.
+// ADD COLUMN has no IF NOT EXISTS, so the migration adds only the columns
+// that are missing (see db.ts) to stay idempotent.
+export const SCHEMA_V5_COLUMNS = { origin: "TEXT", content_hash: "TEXT" } as const;
+export const SCHEMA_V5_INDEX =
+  "CREATE INDEX IF NOT EXISTS idx_memory_items_content_hash ON memory_items(content_hash, status)";

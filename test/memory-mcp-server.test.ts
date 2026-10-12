@@ -357,6 +357,29 @@ test("tools/call memory_save writes a row, then memory_search finds it", withSql
   });
 });
 
+test("tools/call memory_save reinforces a restated fact instead of duplicating it", withSqlite, async () => {
+  await withMemory(async (memory, cwd) => {
+    const save = async (id: number, text: string) => {
+      const response = await handleRequest(
+        memory,
+        cwd,
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          method: "tools/call",
+          params: { name: "memory_save", arguments: { text, kind: "semantic", category: "decision", importance: 8 } },
+        }),
+      );
+      return JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]?.text ?? "{}");
+    };
+    const first = await save(40, "Vectors are stored inside memory.db.");
+    const again = await save(41, "vectors are stored inside `memory.db`");
+    assert.deepEqual(again, { id: first.id, reinforced: true });
+    const row = memory.db.prepare("SELECT origin FROM memory_items WHERE id = ?").get(first.id) as { origin: string };
+    assert.equal(row.origin, "agent");
+  });
+});
+
 test("tools/call memory_save survives a state.json pointing at an unindexed checkpoint", withSqlite, async () => {
   await withMemory(async (memory, cwd) => {
     // A checkpoint whose files exist on disk but whose row never made it into

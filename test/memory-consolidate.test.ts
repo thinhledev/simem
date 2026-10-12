@@ -3,6 +3,7 @@ import test from "node:test";
 import { DEFAULT_CONFIG, type MemoryConfig } from "../src/config.js";
 import {
   consolidateCheckpoint,
+  distillWithRulesBackfill,
   drainConsolidationQueue,
   parseConsolidationOutput,
   type ConsolidationRunner,
@@ -128,7 +129,15 @@ test("writes summary and items, applies supersession, marks checkpoint done", wi
     ]);
     const result = await consolidateCheckpoint(memory, runner, "cp-1", memoryConfig);
     assert.equal(result.status, "done");
-    assert.equal(result.itemsWritten, 1);
+    // One item from the rules tier (the user's "never use dependency X"), one from the LLM tier.
+    assert.equal(result.itemsWritten, 2);
+    const origins = memory.db
+      .prepare("SELECT origin FROM memory_items WHERE status = 'active' ORDER BY id")
+      .all() as Array<{ origin: string }>;
+    assert.deepEqual(
+      origins.map((row) => row.origin),
+      ["rule", "llm"],
+    );
 
     const summary = memory.db.prepare("SELECT level, covers_from FROM summaries").get() as {
       level: number;
@@ -199,6 +208,9 @@ test("queues on no ready provider and drains later without duplicating", withSql
     assert.equal(drained[0]?.status, "done");
     const after = memory.db.prepare("SELECT COUNT(*) AS n FROM consolidation_queue").get() as { n: number };
     assert.equal(after.n, 0);
+    // The rule items were saved on the first (failed) attempt and not re-written by the retry.
+    const ruleItems = memory.db.prepare("SELECT COUNT(*) AS n FROM memory_items WHERE origin = 'rule'").get() as { n: number };
+    assert.equal(ruleItems.n, 1);
   } finally {
     memory.close();
   }
@@ -222,7 +234,8 @@ test("caps EXISTING ITEMS to consolidationExistingItemsLimit and notes how many 
     const prompt = runner.prompts[0] ?? "";
     const itemLines = prompt.split("\n").filter((line) => /^\d+\. \[semantic/.test(line));
     assert.equal(itemLines.length, 50);
-    assert.match(prompt, /\(\+70 older lower-importance items omitted; use memory_search to find them\)/);
+    // 120 seeded items + 1 the rules tier extracted from the checkpoint's message.
+    assert.match(prompt, /\(\+71 older lower-importance items omitted; use memory_search to find them\)/);
 
     const savings = memory.db
       .prepare("SELECT chars_full, chars_sent FROM savings_events WHERE mechanism = 'consolidation-cap'")
@@ -280,6 +293,72 @@ test("malformed model output queues instead of throwing", withSqlite, async () =
       .prepare("SELECT last_error FROM consolidation_queue WHERE checkpoint_id = 'cp-bad'")
       .get() as { last_error: string };
     assert.match(row.last_error, /unparseable/);
+  } finally {
+    memory.close();
+  }
+});
+
+test("default config distills with rules only: done, origin rule, zero provider calls", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedCheckpoint(memory, "cp-rules");
+    const result = await consolidateCheckpoint(memory, undefined, "cp-rules", memoryConfig);
+    assert.equal(result.status, "done");
+    assert.equal(result.detail, "rules");
+    assert.equal(result.itemsWritten, 1);
+    const item = memory.db.prepare("SELECT text, category, origin FROM memory_items").get() as {
+      text: string;
+      category: string;
+      origin: string;
+    };
+    assert.equal(item.origin, "rule");
+    assert.equal(item.category, "constraint");
+    assert.match(item.text, /^Never use dependency X/);
+    const summary = memory.db.prepare("SELECT text FROM summaries WHERE covers_from = 'cp-rules'").get() as { text: string };
+    assert.match(summary.text, /^Objective: never use dependency X/);
+    const calls = memory.db.prepare("SELECT COUNT(*) AS n FROM llm_calls").get() as { n: number };
+    assert.equal(calls.n, 0, "the default path must not spend provider tokens");
+  } finally {
+    memory.close();
+  }
+});
+
+test("a queued checkpoint finishes on the rules tier once no LLM tier is configured", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedCheckpoint(memory, "cp-was-queued");
+    await consolidateCheckpoint(memory, runnerReturning([{ runId: "r", ok: false, attempts: [] }]), "cp-was-queued", memoryConfig);
+    const drained = await drainConsolidationQueue(memory, undefined, memoryConfig);
+    assert.equal(drained[0]?.status, "done");
+    const depth = memory.db.prepare("SELECT COUNT(*) AS n FROM consolidation_queue").get() as { n: number };
+    assert.equal(depth.n, 0);
+  } finally {
+    memory.close();
+  }
+});
+
+test("rules backfill distills pending checkpoints, and --all re-mines without duplicating", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedCheckpoint(memory, "cp-a");
+    seedCheckpoint(memory, "cp-b");
+    const first = distillWithRulesBackfill(memory);
+    assert.equal(first.checkpoints, 2);
+    // Both checkpoints carry the same statement: one row, reinforced once.
+    assert.equal(first.itemsWritten, 1);
+    assert.equal(first.itemsReinforced, 1);
+    const statuses = memory.db.prepare("SELECT DISTINCT consolidation_status AS s FROM checkpoints").all() as Array<{ s: string }>;
+    assert.deepEqual(statuses.map((row) => row.s), ["done"]);
+
+    assert.equal(distillWithRulesBackfill(memory).checkpoints, 0, "nothing pending any more");
+    const again = distillWithRulesBackfill(memory, { all: true });
+    assert.equal(again.checkpoints, 2);
+    assert.equal(again.itemsWritten, 0);
+    const rows = memory.db.prepare("SELECT COUNT(*) AS n FROM memory_items").get() as { n: number };
+    assert.equal(rows.n, 1);
   } finally {
     memory.close();
   }

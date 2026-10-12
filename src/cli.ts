@@ -31,6 +31,7 @@ import {
 } from "./handoff/switcher.js";
 import { handleMemoryCommand } from "./memory/cli-commands.js";
 import { consolidateBestEffort } from "./memory/consolidate.js";
+import { selectDistillRunner } from "./memory/distill/runner.js";
 import { openMemoryDb } from "./memory/db.js";
 import { recordGatewayAttempts } from "./memory/ledger.js";
 import { runMcpServer } from "./memory/mcp-server.js";
@@ -61,6 +62,7 @@ interface CliOptions {
   subcommand?: string;
   positional: string[];
   rebuild: boolean;
+  all: boolean;
   embed: boolean;
   includeSuperseded: boolean;
   limit?: number;
@@ -109,6 +111,8 @@ Persistent memory:
   mixai memory spend [--group-by purpose|provider|day]
   mixai memory savings [--json]     Exact, measured token/char savings from mixai's own compression
                                    (compaction, preview disclosure, prompt caps) — not a "vs no mixai" estimate
+  mixai memory distill [--all]      Turn checkpoints into memory with local rules (zero provider tokens);
+                                   --all also re-mines already-consolidated checkpoints
   mixai memory compact
   mixai memory reindex [--rebuild] [--embed]
   mixai mcp [--cwd PATH] [--provider P]   Serve memory + handoff tools over MCP stdio (requires Node >= 22.5)
@@ -199,6 +203,7 @@ export function parseArgs(argv: string[]): CliOptions {
     prompt: "",
     positional: [],
     rebuild: false,
+    all: false,
     embed: false,
     includeSuperseded: false,
     full: false,
@@ -223,6 +228,9 @@ export function parseArgs(argv: string[]): CliOptions {
       args.splice(index, 1);
     } else if (arg === "--rebuild") {
       options.rebuild = true;
+      args.splice(index, 1);
+    } else if (arg === "--all") {
+      options.all = true;
       args.splice(index, 1);
     } else if (arg === "--embed") {
       options.embed = true;
@@ -404,10 +412,10 @@ async function maybeConsolidate(
 ): Promise<void> {
   try {
     if (!config.memory.enabled) return;
-    const orchestrator = new GatewayOrchestrator(config, createAdapters(config, runner));
-    const result = await consolidateBestEffort(workspace, orchestrator, checkpointId, config.memory);
+    const distillRunner = await selectDistillRunner(config.memory, () => new GatewayOrchestrator(config, createAdapters(config, runner)));
+    const result = await consolidateBestEffort(workspace, distillRunner, checkpointId, config.memory);
     if (result.status === "done") {
-      process.stderr.write(`[mixai] memory: consolidated ${result.itemsWritten} item(s)\n`);
+      process.stderr.write(`[mixai] memory: distilled ${result.itemsWritten} new item(s)\n`);
     } else if (result.status === "queued") {
       process.stderr.write(`[mixai] memory: consolidation queued (${result.detail ?? "provider unavailable"})\n`);
     }
@@ -729,7 +737,15 @@ async function main(): Promise<void> {
       ...(options.since !== undefined ? { since: options.since } : {}),
       ...(options.until !== undefined ? { until: options.until } : {}),
       ...(options.groupBy !== undefined ? { groupBy: options.groupBy } : {}),
-      orchestrator: new GatewayOrchestrator(memoryConfig, createAdapters(memoryConfig, runner)),
+      all: options.all,
+      ...(options.subcommand === "compact" || options.subcommand === "consolidate-checkpoint"
+        ? {
+            distillRunner: await selectDistillRunner(
+              memoryConfig.memory,
+              () => new GatewayOrchestrator(memoryConfig, createAdapters(memoryConfig, runner)),
+            ),
+          }
+        : {}),
       memoryConfig: memoryConfig.memory,
     });
   }

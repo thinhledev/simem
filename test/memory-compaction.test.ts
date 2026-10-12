@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CONFIG, type MemoryConfig } from "../src/config.js";
-import { runCompaction } from "../src/memory/compaction.js";
+import { extractiveDigest, runCompaction } from "../src/memory/compaction.js";
 import type { ConsolidationRunner } from "../src/memory/consolidate.js";
 import { loadSqlite, openMemoryDb, type MemoryDb } from "../src/memory/db.js";
 import type { GatewayRunResult, RunRequest } from "../src/types.js";
@@ -240,4 +240,58 @@ test("does not create an epoch digest below the threshold", withSqlite, async ()
   } finally {
     memory.close();
   }
+});
+
+test("with no LLM tier, rollups use the extractive digest and spend nothing", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    for (let i = 1; i <= 5; i += 1) {
+      seedCheckpointWithSummary(
+        memory,
+        `cp-${i}`,
+        `2026-07-0${i}T00:00:00Z`,
+        i === 1 ? "Never use dependency X." : undefined,
+        `Objective: task ${i}.\nOutcome: finished task ${i}.`,
+        i === 2,
+      );
+    }
+    const result = await runCompaction(memory, undefined, smallConfig);
+    assert.equal(result.epochDigests, 1);
+    const digest = memory.db.prepare("SELECT text FROM summaries WHERE level = 2").get() as { text: string };
+    assert.match(digest.text, /^- Objective: task 1\. Outcome: finished task 1\./);
+    assert.match(digest.text, /- \[MILESTONE\] Objective: task 2\./);
+    assert.match(digest.text, /Standing constraints:\n- Never use dependency X\./);
+    const calls = memory.db.prepare("SELECT COUNT(*) AS n FROM llm_calls").get() as { n: number };
+    assert.equal(calls.n, 0);
+  } finally {
+    memory.close();
+  }
+});
+
+test("a failing LLM tier falls back to the extractive digest instead of stalling compaction", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    for (let i = 1; i <= 5; i += 1) seedCheckpointWithSummary(memory, `cp-${i}`, `2026-07-0${i}T00:00:00Z`);
+    const failing: ConsolidationRunner = { run: async () => ({ runId: "r", ok: false, attempts: [] }) };
+    const result = await runCompaction(memory, failing, smallConfig);
+    assert.equal(result.epochDigests, 1);
+    assert.equal(result.detail, undefined);
+  } finally {
+    memory.close();
+  }
+});
+
+test("extractiveDigest stays within the digest budget for long inputs", () => {
+  const summaries = Array.from({ length: 40 }, (_, index) => ({
+    id: index,
+    text: `Objective: ${"long detail ".repeat(60)}`,
+    covers_from: `cp-${index}`,
+    covers_to: `cp-${index}`,
+    checkpoint_count: 1,
+    milestone: 0,
+  }));
+  const digest = extractiveDigest("epoch", summaries, [], 1_200);
+  assert.ok(digest.length <= 250 * 8 + 1);
 });

@@ -12,6 +12,7 @@ import { findReferences } from "../codemap/references.js";
 import { showRecord } from "./cli-commands.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
+import { upsertMemoryItem } from "./items.js";
 import { toPreview } from "./preview.js";
 import { search } from "./retrieval.js";
 import { recordSavings } from "./savings.js";
@@ -246,14 +247,17 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
       ? (args.category as (typeof MEMORY_CATEGORIES)[number])
       : undefined;
     const state = await readGatewayState(cwd);
-    const now = new Date().toISOString();
-    const result = memory.db
-      .prepare(
-        `INSERT INTO memory_items (kind, category, text, importance, status, source_checkpoint_id, created_at, last_reinforced_at)
-         VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
-      )
-      .run(kind, category ?? null, text, importance, resolveSourceCheckpointId(memory, state.currentCheckpointId), now, now);
-    return toolResult({ id: Number(result.lastInsertRowid) });
+    // Agent-authored (tier 1): the agent already has the context, so this is
+    // the cheapest high-quality path. Restating a known fact reinforces it.
+    const saved = upsertMemoryItem(memory, {
+      kind,
+      ...(category ? { category } : {}),
+      text,
+      importance,
+      origin: "agent",
+      sourceCheckpointId: resolveSourceCheckpointId(memory, state.currentCheckpointId),
+    });
+    return toolResult(saved.reinforced ? { id: saved.id, reinforced: true } : { id: saved.id });
   }
   throw new Error(`Unknown tool: ${name}`);
 }

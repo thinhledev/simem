@@ -63,7 +63,7 @@ test("upgrades an existing v1 database (no llm_calls table) to v2 transparently"
   const upgraded = await openMemoryDb(root, { path: join(root, "memory.db") });
   assert.ok(upgraded);
   try {
-    assert.equal(upgraded.schemaVersion, 4);
+    assert.equal(upgraded.schemaVersion, CURRENT_SCHEMA_VERSION);
     const tables = upgraded.db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('llm_calls', 'savings_events')")
       .all();
@@ -103,7 +103,7 @@ test("upgrades an existing v2 database (no summaries.milestone column) to v3+ tr
   const upgraded = await openMemoryDb(root, { path: join(root, "memory.db") });
   assert.ok(upgraded);
   try {
-    assert.equal(upgraded.schemaVersion, 4);
+    assert.equal(upgraded.schemaVersion, CURRENT_SCHEMA_VERSION);
     const columns = upgraded.db.prepare("PRAGMA table_info(summaries)").all() as Array<{ name: string }>;
     assert.ok(columns.some((column) => column.name === "milestone"));
     const tables = upgraded.db
@@ -126,7 +126,7 @@ test("upgrades an existing v3 database (no savings_events table) to v4 transpare
   const upgraded = await openMemoryDb(root, { path: join(root, "memory.db") });
   assert.ok(upgraded);
   try {
-    assert.equal(upgraded.schemaVersion, 4);
+    assert.equal(upgraded.schemaVersion, CURRENT_SCHEMA_VERSION);
     const tables = upgraded.db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='savings_events'")
       .all();
@@ -204,5 +204,36 @@ test("reopening an existing database is idempotent and preserves rows", withSqli
     assert.equal(row?.id, "cp-keep");
   } finally {
     second.close();
+  }
+});
+
+test("upgrades a v4 database to v5: adds origin/content_hash and backfills hashes for existing items", withSqlite, async () => {
+  const root = await mkdtemp(join(tmpdir(), "mixai-memory-db-v4-"));
+  const v4 = await openMemoryDb(root, { path: join(root, "memory.db") });
+  assert.ok(v4);
+  // Rewind to the v4 shape: memory_items without the v5 columns.
+  v4.db.exec("DROP INDEX IF EXISTS idx_memory_items_content_hash");
+  v4.db.exec("ALTER TABLE memory_items DROP COLUMN content_hash");
+  v4.db.exec("ALTER TABLE memory_items DROP COLUMN origin");
+  v4.db
+    .prepare(
+      "INSERT INTO memory_items (kind, text, importance, created_at, last_reinforced_at) VALUES ('semantic', 'Never use dependency X.', 9, 't', 't')",
+    )
+    .run();
+  v4.db.prepare("UPDATE meta SET value = '4' WHERE key = 'schema_version'").run();
+  v4.close();
+
+  const upgraded = await openMemoryDb(root, { path: join(root, "memory.db") });
+  assert.ok(upgraded);
+  try {
+    assert.equal(upgraded.schemaVersion, CURRENT_SCHEMA_VERSION);
+    const row = upgraded.db.prepare("SELECT origin, content_hash FROM memory_items").get() as {
+      origin: string | null;
+      content_hash: string | null;
+    };
+    assert.equal(row.origin, null, "pre-v5 items have unknown provenance");
+    assert.match(row.content_hash ?? "", /^[0-9a-f]{32}$/);
+  } finally {
+    upgraded.close();
   }
 });

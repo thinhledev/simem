@@ -53,6 +53,15 @@ export interface MemoryHooksConfig {
   taskCompletionSavings: boolean;
 }
 
+// Who turns raw checkpoints into memory items and summaries. Deterministic
+// rules always run; the LLM tiers below are optional extras on top of them.
+export interface MemoryDistillConfig {
+  /** Also send checkpoints to a remote agent CLI (codex/claude). Spends provider tokens; off by default. */
+  remote: boolean;
+  /** Also use this Ollama chat model (e.g. "qwen2.5:3b") when it is pulled. Empty disables the local tier. */
+  ollamaModel: string;
+}
+
 export interface MemoryConfig {
   enabled: boolean;
   verbatimCheckpoints: number;
@@ -69,6 +78,7 @@ export interface MemoryConfig {
   scoring: MemoryScoringConfig;
   embeddings: MemoryEmbeddingsConfig;
   hooks: MemoryHooksConfig;
+  distill: MemoryDistillConfig;
 }
 
 export interface GatewayConfig {
@@ -131,6 +141,10 @@ export const DEFAULT_CONFIG: GatewayConfig = {
       sessionStartBrief: true,
       briefMaxChars: 4_000,
       taskCompletionSavings: true,
+    },
+    distill: {
+      remote: false,
+      ollamaModel: "",
     },
   },
 };

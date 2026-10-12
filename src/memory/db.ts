@@ -1,7 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { CURRENT_SCHEMA_VERSION, SCHEMA_CORE, SCHEMA_FTS, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4 } from "./schema.js";
+import { contentHash } from "./items.js";
+import { CURRENT_SCHEMA_VERSION, SCHEMA_CORE, SCHEMA_FTS, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5_COLUMNS, SCHEMA_V5_INDEX } from "./schema.js";
 
 export interface SqliteModule {
   DatabaseSync: new (path: string) => DatabaseSync;
@@ -80,6 +81,18 @@ const MIGRATIONS: Array<(db: DatabaseSync, fts: boolean) => void> = [
   },
   (db) => {
     db.exec(SCHEMA_V4);
+  },
+  (db) => {
+    const existing = new Set(
+      (db.prepare("PRAGMA table_info(memory_items)").all() as Array<{ name: string }>).map((column) => column.name),
+    );
+    for (const [column, type] of Object.entries(SCHEMA_V5_COLUMNS)) {
+      if (!existing.has(column)) db.exec(`ALTER TABLE memory_items ADD COLUMN ${column} ${type}`);
+    }
+    db.exec(SCHEMA_V5_INDEX);
+    const rows = db.prepare("SELECT id, text FROM memory_items").all() as Array<{ id: number; text: string }>;
+    const update = db.prepare("UPDATE memory_items SET content_hash = ? WHERE id = ?");
+    for (const row of rows) update.run(contentHash(row.text), row.id);
   },
 ];
 

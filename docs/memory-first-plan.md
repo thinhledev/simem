@@ -335,6 +335,22 @@ Each phase ships on its own. Every acceptance check is run **in the Claude Code 
 ### Phase 2: local-first distillation
 - T0 rules, T0.5 app summaries, dedupe/reinforce, global scope, optional T2 Ollama, remote consolidation behind opt-in.
 - **Done when:** default config shows 0 mixai provider calls; on a labelled corpus, rules recall ≥70% of decisions, constraints, and preferences at ≥85% precision; duplicates reinforce.
+- **Status (branch `phase-2/local-distillation`): done except the parts that depend on Phase 1.**
+  - **Delivered:**
+    - T0 rules: `src/memory/distill/rules.ts`, covering user constraints, preferences, decisions, corrections, and TODOs, plus a template summary.
+    - Dedupe and reinforce with schema v5 (`origin`, `content_hash`), through `src/memory/items.ts`.
+    - The optional T2 tier through `memory.distill.ollamaModel`, and the T3 remote tier behind `memory.distill.remote` (default false).
+    - Extractive rollups whenever no LLM tier is configured or the configured one fails.
+    - `memory_save` reinforces instead of duplicating.
+    - The `mixai memory distill [--all]` backfill.
+  - **Measured:**
+    - The labelled corpus (32 statements) passes at recall 1.00 and precision 1.00. It was written together with the rules, so treat that as an upper bound.
+    - On this repo's real database, 34 of 38 checkpoints had never been distilled. The backfill distilled them with 0 provider calls: 10 new items and 88 restatements reinforced. A second `--all` pass added 0 new items.
+    - Natural questions now inject those items.
+  - **Deferred to after Phase 1:**
+    - T0.5 app summaries (needs the Phase 1 sources).
+    - Global/user scope with promote and demote (needs `global.db`).
+    - Procedural memory from successful build/test commands (needs Phase 1 tool events; transcripts are only read as text today).
 
 ### Phase 3: built-in vector layer, primer, sanitization
 The keyword fix already shipped in 1.0.6. Phase 3 adds:
