@@ -87,7 +87,25 @@ Homebrew brings its own Node.js, so this works without Node.js installed. Homebr
 
 ## The two problems it solves
 
-**1. Agents burn tokens re-learning your project — and pay for it again on every turn.** A new session starts by listing folders, reading the README, grepping, and reading whole files. Everything that lands in the context is sent again (as cached input) on every later turn until the conversation is compacted. On the maintainer's own machine, this repository's 8 Claude app sessions re-sent **about 1 billion cached tokens**, and the biggest things filling the context were **command output (~1.1M tokens over 1,530 calls)** and **file reads (~430k tokens)** — measured from the session transcripts with `simem stats`. *(One person's numbers, shown to make the mechanism concrete — not a promise of what you'll see.)*
+**1. Agents pay for the same text again and again.** On every turn, your agent sends the whole conversation to the model again. So anything that lands in it — a 500-line test log, a whole file it read — is paid for again on every later turn, until the conversation is compacted. Re-sent text is billed as cheaper "cached" input, but it still counts toward your usage limits.
+
+A real example: this repository, measured from the agents' own session files with `simem stats`.
+
+| | |
+|---|---|
+| Sessions | 32 (Claude Code app, Codex app and CLI) |
+| Tokens re-sent as cached input | **1.23 billion** |
+| Biggest thing filling the conversation | command output: ~1.2M tokens from 1,743 commands |
+| Second biggest | file reads: ~430k tokens from 447 reads |
+
+**How much simem cuts.** We took the real output of about 1,700 of those commands and ran it through simem's output filter (`node scripts/replay-filters.mjs`, which you can run on your own projects):
+
+| Command output | Before | With simem | Saved |
+|---|---|---|---|
+| All commands, if run through `simem exec` | ~1.16M tokens | ~0.90M tokens | **22%** |
+| Test runs (shortened automatically in Claude Code) | ~26k tokens | ~14k tokens | **46%** |
+
+Every token saved there is also not re-sent on the turns after it. This repository is a conservative case: the agent had already trimmed much of its output with `tail` and `head`. On a full, untrimmed log the filters cut far more — **81–99%** for jest, vitest, pytest, go test, and npm install (see the table below). *These are one repository's numbers, shown to explain the mechanism; your savings depend on the commands you run.*
 
 **2. Memory is stuck in one app, one account, one folder.** Switch from Claude Code account A to account B, from Claude Code to Codex, open a new worktree, or re-clone the repo — and the agent starts from zero. simem's memory belongs to the **project**, not to an app or a login.
 
