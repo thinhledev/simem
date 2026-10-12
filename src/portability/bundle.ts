@@ -5,7 +5,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import type { MemoryDb } from "../memory/db.js";
 import { upsertMemoryItem, type MemoryOrigin } from "../memory/items.js";
 import type { MemoryCategory, MemoryKind } from "../memory/types.js";
-import { ensurePrivateDir, mixaiHome } from "../store/home.js";
+import { ensurePrivateDir, simemHome } from "../store/home.js";
 import type { ProjectRef } from "../store/project.js";
 
 // A portable, versioned memory bundle (gzipped JSONL, optionally encrypted):
@@ -16,7 +16,7 @@ import type { ProjectRef } from "../store/project.js";
 export const BUNDLE_VERSION = 1;
 
 interface BundleHeader {
-  type: "mixai-bundle";
+  type: "simem-bundle";
   version: number;
   project: { id: string; name: string };
   machine: string;
@@ -31,7 +31,7 @@ type Line =
   | { kind: "message"; checkpointId: string; seq: number; role: string; text: string; timestamp: string | null };
 
 export function machineId(): string {
-  const path = join(ensurePrivateDir(mixaiHome()), "machine-id");
+  const path = join(ensurePrivateDir(simemHome()), "machine-id");
   try {
     return readFileSync(path, "utf8").trim();
   } catch {
@@ -43,7 +43,7 @@ export function machineId(): string {
 
 export function exportBundle(memory: MemoryDb, project: Pick<ProjectRef, "id" | "name">, options: { transcripts?: boolean } = {}): string {
   const lines: Line[] = [
-    { kind: "header", type: "mixai-bundle", version: BUNDLE_VERSION, project: { id: project.id, name: project.name }, machine: machineId(), exportedAt: new Date().toISOString() },
+    { kind: "header", type: "simem-bundle", version: BUNDLE_VERSION, project: { id: project.id, name: project.name }, machine: machineId(), exportedAt: new Date().toISOString() },
   ];
   const items = memory.db
     .prepare("SELECT kind, category, text, importance, status, origin, created_at, last_reinforced_at FROM memory_items WHERE status IN ('active', 'archived') ORDER BY id")
@@ -88,8 +88,8 @@ export function importBundle(memory: MemoryDb, jsonl: string): ImportSummary {
   const summary: ImportSummary = { items: 0, reinforced: 0, summaries: 0, sessions: 0, messages: 0 };
   const lines = jsonl.split("\n").filter(Boolean).map((line) => JSON.parse(line) as Line);
   const header = lines[0];
-  if (!header || header.kind !== "header" || header.type !== "mixai-bundle") throw new Error("Not a mixai memory bundle");
-  if (header.version > BUNDLE_VERSION) throw new Error(`Bundle version ${header.version} is newer than this mixai supports (${BUNDLE_VERSION}); update mixai`);
+  if (!header || header.kind !== "header" || header.type !== "simem-bundle") throw new Error("Not a simem memory bundle");
+  if (header.version > BUNDLE_VERSION) throw new Error(`Bundle version ${header.version} is newer than this simem supports (${BUNDLE_VERSION}); update simem`);
   memory.db.exec("BEGIN");
   try {
     for (const line of lines.slice(1)) {
@@ -145,8 +145,8 @@ export function importBundle(memory: MemoryDb, jsonl: string): ImportSummary {
 }
 
 // File encoding: gzip, then (with a passphrase) AES-256-GCM with a scrypt-
-// derived key. Layout: "MIXAIENC1" | salt(16) | iv(12) | tag(16) | ciphertext.
-const ENCRYPTED_MAGIC = Buffer.from("MIXAIENC1");
+// derived key. Layout: "SIMEMENC1" | salt(16) | iv(12) | tag(16) | ciphertext.
+const ENCRYPTED_MAGIC = Buffer.from("SIMEMENC1");
 
 export function encodeBundle(jsonl: string, passphrase?: string): Buffer {
   const packed = gzipSync(Buffer.from(jsonl));
@@ -161,7 +161,7 @@ export function encodeBundle(jsonl: string, passphrase?: string): Buffer {
 
 export function decodeBundle(data: Buffer, passphrase?: string): string {
   if (data.subarray(0, ENCRYPTED_MAGIC.length).equals(ENCRYPTED_MAGIC)) {
-    if (!passphrase) throw new Error("This bundle is encrypted; set MIXAI_SYNC_PASSPHRASE");
+    if (!passphrase) throw new Error("This bundle is encrypted; set SIMEM_SYNC_PASSPHRASE");
     let offset = ENCRYPTED_MAGIC.length;
     const salt = data.subarray(offset, (offset += 16));
     const iv = data.subarray(offset, (offset += 12));
@@ -171,7 +171,7 @@ export function decodeBundle(data: Buffer, passphrase?: string): string {
     try {
       return gunzipSync(Buffer.concat([decipher.update(data.subarray(offset)), decipher.final()])).toString("utf8");
     } catch {
-      throw new Error("Could not decrypt the bundle (wrong MIXAI_SYNC_PASSPHRASE?)");
+      throw new Error("Could not decrypt the bundle (wrong SIMEM_SYNC_PASSPHRASE?)");
     }
   }
   if (data[0] === 0x1f && data[1] === 0x8b) return gunzipSync(data).toString("utf8");
@@ -189,12 +189,12 @@ export interface SyncDirResult {
 export function syncThroughDir(memory: MemoryDb, project: Pick<ProjectRef, "id" | "name">, dir: string, passphrase?: string): SyncDirResult {
   ensurePrivateDir(dir);
   const me = machineId();
-  const suffix = passphrase ? ".mixai.enc" : ".mixai.gz";
+  const suffix = passphrase ? ".simem.enc" : ".simem.gz";
   const mine = join(dir, `${project.id}.${me}${suffix}`);
   const result: SyncDirResult = { wrote: mine, imported: [] };
   for (const name of readdirSync(dir)) {
     if (!name.startsWith(`${project.id}.`) || name.startsWith(`${project.id}.${me}.`)) continue;
-    if (!name.endsWith(".mixai.enc") && !name.endsWith(".mixai.gz")) continue;
+    if (!name.endsWith(".simem.enc") && !name.endsWith(".simem.gz")) continue;
     const summary = importBundle(memory, decodeBundle(readFileSync(join(dir, name)), passphrase));
     result.imported.push({ file: name, ...summary });
   }

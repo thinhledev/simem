@@ -49,7 +49,7 @@ async function seedCheckpoint(workspace: string): Promise<void> {
 }
 
 test("brief carries checkpoint objective/outcome from manifest.summary plus live git state", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-brief-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-brief-"));
   await seedCheckpoint(workspace);
   const brief = await buildBrief(new GitRunner(), {
     cwd: workspace,
@@ -64,7 +64,7 @@ test("brief carries checkpoint objective/outcome from manifest.summary plus live
 });
 
 test("brief works with no checkpoint at all — live git state only, objective unknown", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-brief-empty-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-brief-empty-"));
   const brief = await buildBrief(new GitRunner(), {
     cwd: workspace,
     memoryConfig: { ...DEFAULT_CONFIG.memory, enabled: false },
@@ -77,8 +77,8 @@ test("brief works with no checkpoint at all — live git state only, objective u
 });
 
 test("brief falls back to parsing HANDOFF.md when manifest.summary is absent (pre-Phase-4 checkpoints)", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-brief-legacy-"));
-  const current = join(workspace, ".mixai", "current");
+  const workspace = await mkdtemp(join(tmpdir(), "simem-brief-legacy-"));
+  const current = join(workspace, ".simem", "current");
   await mkdir(current, { recursive: true });
   await writeFile(
     join(current, "manifest.json"),
@@ -97,7 +97,7 @@ test("brief falls back to parsing HANDOFF.md when manifest.summary is absent (pr
 });
 
 test("brief includes a Project memory section when the database has durable items", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-brief-memory-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-brief-memory-"));
   await seedCheckpoint(workspace);
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
@@ -119,7 +119,7 @@ test("brief includes a Project memory section when the database has durable item
 });
 
 test("brief respects maxChars and reports truncation", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-brief-cap-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-brief-cap-"));
   await seedCheckpoint(workspace);
   const brief = await buildBrief(new GitRunner(), {
     cwd: workspace,
@@ -131,7 +131,7 @@ test("brief respects maxChars and reports truncation", async () => {
 });
 
 test("brief --objective overrides the checkpoint objective", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-brief-objective-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-brief-objective-"));
   await seedCheckpoint(workspace);
   const brief = await buildBrief(new GitRunner(), {
     cwd: workspace,

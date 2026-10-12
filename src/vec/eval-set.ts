@@ -1,4 +1,4 @@
-// Labelled retrieval set used by `mixai eval` (and CI) to measure the
+// Labelled retrieval set used by `simem eval` (and CI) to measure the
 // automatic-injection gate and calibrate the vector cutoffs per model.
 // Memories are realistic project facts; each query names the memory it should
 // surface, or null when nothing should be injected. "kind" separates exact
@@ -27,7 +27,7 @@ export const EVAL_MEMORIES: EvalMemory[] = [
   { key: "auth", text: "Authentication uses OAuth2 with short-lived access tokens and rotating refresh tokens." },
   { key: "deploy", text: "Deploys run only from CI on a merge to main; manual deploys from laptops are forbidden." },
   { key: "codex-trust", text: "Codex asks the user to trust each hook once; trust is tied to the hook's content hash." },
-  { key: "node-version", text: "mixai requires Node.js 22.5 or newer because memory uses the built-in node:sqlite module." },
+  { key: "node-version", text: "simem requires Node.js 22.5 or newer because memory uses the built-in node:sqlite module." },
   { key: "rate-limit", text: "The public API is rate limited to 100 requests per minute per API key with a token bucket." },
   { key: "dates", text: "All timestamps are stored in UTC as ISO 8601 strings and converted to local time only in the UI." },
   { key: "flaky-upload", text: "The flaky upload test was fixed by awaiting the stream before asserting on the file size." },
@@ -47,7 +47,7 @@ export const EVAL_QUERIES: EvalQuery[] = [
   { query: "should I install packages with npm or pnpm here", expect: "pnpm", kind: "exact" },
   { query: "can I commit directly to master", expect: "no-master", kind: "exact" },
   { query: "how is the API rate limited", expect: "rate-limit", kind: "exact" },
-  { query: "which Node.js version does mixai require", expect: "node-version", kind: "exact" },
+  { query: "which Node.js version does simem require", expect: "node-version", kind: "exact" },
   { query: "how are Codex hooks trusted", expect: "codex-trust", kind: "exact" },
   { query: "how long are product pages cached in Redis", expect: "cache", kind: "exact" },
   { query: "does Antigravity support lifecycle hooks", expect: "antigravity", kind: "exact" },

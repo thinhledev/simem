@@ -10,7 +10,7 @@ import { makeHealth, probeVersion } from "./shared.js";
 
 // Antigravity has no non-interactive execution surface today: `agy` is a
 // full terminal agent with no `--auth status`-style probe, so readiness here
-// only confirms the CLI is installed and runnable, the same bar `mixai switch
+// only confirms the CLI is installed and runnable, the same bar `simem switch
 // --surface interactive` already uses. `run()` always fails cleanly so a
 // misconfigured `--provider antigravity` degrades instead of crashing.
 export class AntigravityAdapter extends BaseAdapter {
@@ -45,7 +45,7 @@ export class AntigravityAdapter extends BaseAdapter {
       durationMs: 0,
       exitCode: null,
       failure: "unavailable",
-      error: "Antigravity is not wired into `mixai run` yet; use `mixai switch antigravity --surface interactive` instead.",
+      error: "Antigravity is not wired into `simem run` yet; use `simem switch antigravity --surface interactive` instead.",
     };
   }
 }

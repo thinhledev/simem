@@ -10,7 +10,7 @@ const SQLITE_EXPERIMENTAL_WARNING_SNIPPET = "SQLite is an experimental feature";
 
 // node:sqlite unconditionally emits a process-wide ExperimentalWarning the
 // first time it's imported, with no stable alternative to switch to — every
-// `mixai` invocation would otherwise print it on every run. Suppress only this
+// `simem` invocation would otherwise print it on every run. Suppress only this
 // exact warning (never warnings in general) by intercepting process.emitWarning
 // for the duration of the import. Synchronous (require of a builtin) so path
 // resolution — which needs the project registry — can stay synchronous.

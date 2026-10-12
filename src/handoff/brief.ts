@@ -103,7 +103,7 @@ export async function buildBrief(runner: CommandRunner, options: BriefOptions): 
   const outcomeBlock = summary.outcome ? capText(summary.outcome, SUMMARY_SECTION_CAP) : undefined;
 
   const parts: string[] = [
-    `## Context brief (mixai local memory)`,
+    `## Context brief (simem local memory)`,
     manifest
       ? `Checkpoint: ${manifest.id} (${manifest.createdAt}, from ${manifest.source.provider})\nWorkspace: ${cwd}`
       : `Checkpoint: none yet\nWorkspace: ${cwd}`,

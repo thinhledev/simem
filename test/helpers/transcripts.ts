@@ -5,13 +5,13 @@ import { join } from "node:path";
 // Synthetic agent homes and transcripts in the real on-disk shapes.
 
 export function claudeHome(): string {
-  const dir = mkdtempSync(join(tmpdir(), "mixai-claude-home-"));
+  const dir = mkdtempSync(join(tmpdir(), "simem-claude-home-"));
   mkdirSync(join(dir, "projects"), { recursive: true });
   return dir;
 }
 
 export function codexHome(): string {
-  const dir = mkdtempSync(join(tmpdir(), "mixai-codex-home-"));
+  const dir = mkdtempSync(join(tmpdir(), "simem-codex-home-"));
   mkdirSync(join(dir, "sessions", "2026", "10", "12"), { recursive: true });
   return dir;
 }

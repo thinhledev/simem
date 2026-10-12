@@ -17,7 +17,7 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 function makeRepo(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "mixai-store-repo-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "simem-store-repo-")));
   git(dir, "init", "-q");
   // Unique content: root commits are content-addressed, so two repos with an
   // identical first commit (same tree, author, message, and second) really
@@ -29,16 +29,16 @@ function makeRepo(): string {
 }
 
 async function inGlobalMode<T>(fn: () => Promise<T> | T): Promise<T> {
-  const previous = process.env.MIXAI_STORAGE;
-  const previousHome = process.env.MIXAI_HOME;
-  process.env.MIXAI_STORAGE = "global";
-  process.env.MIXAI_HOME = mkdtempSync(join(tmpdir(), "mixai-store-home-"));
+  const previous = process.env.SIMEM_STORAGE;
+  const previousHome = process.env.SIMEM_HOME;
+  process.env.SIMEM_STORAGE = "global";
+  process.env.SIMEM_HOME = mkdtempSync(join(tmpdir(), "simem-store-home-"));
   clearProjectCache();
   try {
     return await fn();
   } finally {
-    process.env.MIXAI_STORAGE = previous;
-    process.env.MIXAI_HOME = previousHome;
+    process.env.SIMEM_STORAGE = previous;
+    process.env.SIMEM_HOME = previousHome;
     clearProjectCache();
   }
 }
@@ -55,14 +55,14 @@ test("a worktree and a clone of the same repository share one global store", wit
     const main = resolveProject(repo);
     assert.equal(main.mode, "global");
     assert.equal(main.identifiedBy, "root");
-    assert.equal(main.storeDir, join(process.env.MIXAI_HOME!, "projects", main.id));
+    assert.equal(main.storeDir, join(process.env.SIMEM_HOME!, "projects", main.id));
 
-    const worktree = join(realpathSync(mkdtempSync(join(tmpdir(), "mixai-store-wt-"))), "wt");
+    const worktree = join(realpathSync(mkdtempSync(join(tmpdir(), "simem-store-wt-"))), "wt");
     git(repo, "worktree", "add", "-q", worktree);
     assert.equal(resolveProject(worktree).id, main.id);
     assert.equal(resolveProject(join(worktree)).root, worktree);
 
-    const clone = join(realpathSync(mkdtempSync(join(tmpdir(), "mixai-store-clone-"))), "c");
+    const clone = join(realpathSync(mkdtempSync(join(tmpdir(), "simem-store-clone-"))), "c");
     execFileSync("git", ["clone", "-q", repo, clone]);
     assert.equal(resolveProject(clone).id, main.id);
 
@@ -74,7 +74,7 @@ test("a worktree and a clone of the same repository share one global store", wit
 
 test("a non-git directory gets its own path-keyed project; unrelated repos never collide", withSqlite, async () => {
   await inGlobalMode(() => {
-    const plain = realpathSync(mkdtempSync(join(tmpdir(), "mixai-store-plain-")));
+    const plain = realpathSync(mkdtempSync(join(tmpdir(), "simem-store-plain-")));
     const ref = resolveProject(plain);
     assert.equal(ref.identifiedBy, "path");
     assert.notEqual(resolveProject(makeRepo()).id, resolveProject(makeRepo()).id);
@@ -85,7 +85,7 @@ test("a non-git directory gets its own path-keyed project; unrelated repos never
 test("unlink splits a fork into its own project; link merges it back", withSqlite, async () => {
   await inGlobalMode(() => {
     const upstream = makeRepo();
-    const fork = join(realpathSync(mkdtempSync(join(tmpdir(), "mixai-store-fork-"))), "f");
+    const fork = join(realpathSync(mkdtempSync(join(tmpdir(), "simem-store-fork-"))), "f");
     execFileSync("git", ["clone", "-q", upstream, fork]);
     const shared = resolveProject(upstream).id;
     assert.equal(resolveProject(fork).id, shared);
@@ -104,8 +104,9 @@ test("unlink splits a fork into its own project; link merges it back", withSqlit
 
 test("a 1.x in-repo store migrates into the global store once, and migrates back on request", withSqlite, async () => {
   const repo = makeRepo();
-  // Build a 1.x store in project mode.
-  const legacy = await openMemoryDb(repo, { quiet: true });
+  // Build a mixai 1.x store where 1.x kept it: <repo>/.mixai/memory.db.
+  mkdirSync(join(repo, ".mixai"), { recursive: true });
+  const legacy = await openMemoryDb(repo, { path: join(repo, ".mixai", "memory.db"), quiet: true });
   assert.ok(legacy);
   legacy.db
     .prepare(
@@ -142,14 +143,14 @@ test("a 1.x in-repo store migrates into the global store once, and migrates back
     again.close();
 
     const back = migrateToProject(ref);
-    assert.equal(back, join(repo, ".mixai", "memory.db"));
+    assert.equal(back, join(repo, ".simem", "memory.db"));
     clearProjectCache();
     const local = resolveProject(repo);
     assert.equal(local.mode, "project", "the project-local marker opts this repo out of the global store");
     const reopened = await openMemoryDb(repo, { quiet: true });
     assert.ok(reopened);
     try {
-      assert.equal(reopened.path, join(repo, ".mixai", "memory.db"));
+      assert.equal(reopened.path, join(repo, ".simem", "memory.db"));
       const count = reopened.db.prepare("SELECT COUNT(*) AS n FROM memory_items").get() as { n: number };
       assert.equal(count.n, 1);
     } finally {

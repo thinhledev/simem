@@ -1,4 +1,4 @@
-# Builds the standalone mixai binaries (no Node.js needed on the user's
+# Builds the standalone simem binaries (no Node.js needed on the user's
 # machine) for each platform and attaches them, with SHA256SUMS, to the
 # GitHub release. A single-executable binary only runs on the OS/CPU it was
 # built on, hence the matrix.
@@ -34,8 +34,8 @@ jobs:
       - run: node scripts/build-standalone.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: mixai-${{ matrix.os }}
-          path: build/standalone/mixai-*
+          name: simem-${{ matrix.os }}
+          path: build/standalone/simem-*
           if-no-files-found: error
 
   release:
@@ -49,7 +49,7 @@ jobs:
           path: dist-binaries
           merge-multiple: true
       - name: Checksums
-        run: cd dist-binaries && sha256sum mixai-* > SHA256SUMS && cat SHA256SUMS
+        run: cd dist-binaries && sha256sum simem-* > SHA256SUMS && cat SHA256SUMS
       - name: Attach to release
         env:
           GH_TOKEN: ${{ github.token }}

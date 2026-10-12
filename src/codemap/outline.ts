@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 
-// Dependency-free structural outline. mixai ships zero runtime dependencies and
+// Dependency-free structural outline. simem ships zero runtime dependencies and
 // must run on any Node >= 20 with no build step, so this uses line-scan
 // heuristics rather than a native/WASM parser (tree-sitter) — the outline is
 // approximate but free of install/compile risk, which is the priority for a

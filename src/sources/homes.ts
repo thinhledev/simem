@@ -52,10 +52,10 @@ export interface DiscoverOptions {
 }
 
 // Every agent home on this machine, across accounts. With
-// MIXAI_HOME_DISCOVERY=env (tests), only homes named by CLAUDE_CONFIG_DIR /
+// SIMEM_HOME_DISCOVERY=env (tests), only homes named by CLAUDE_CONFIG_DIR /
 // CODEX_HOME / CURSOR_CONFIG_DIR are used.
 export function discoverHomes(options: DiscoverOptions = {}): AgentHome[] {
-  const envOnly = process.env.MIXAI_HOME_DISCOVERY === "env";
+  const envOnly = process.env.SIMEM_HOME_DISCOVERY === "env";
   const home = homedir();
   const candidates: Array<{ agent: SourceAgent; dir: string }> = [];
   const add = (agent: SourceAgent, dir: string | undefined) => {

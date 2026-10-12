@@ -14,17 +14,17 @@ import {
   type IntegrationPlan,
 } from "../handoff/integrate.js";
 import { discoverHomes, type AgentHome } from "../sources/homes.js";
-import { ensurePrivateDir, mixaiHome } from "../store/home.js";
+import { ensurePrivateDir, simemHome } from "../store/home.js";
 import type { ProviderId } from "../types.js";
 import { launcherPath } from "./launcher.js";
 
 // User-level install: one set of hooks, one MCP server, and one instruction
 // block per agent account home, covering every project and worktree on the
 // machine. Entries are byte-stable (a fixed dispatcher command per event), so
-// the Codex app's per-hook trust hashes stay valid across mixai upgrades —
-// behaviour changes come from mixai's config, never from rewriting hooks.
+// the Codex app's per-hook trust hashes stay valid across simem upgrades —
+// behaviour changes come from simem's config, never from rewriting hooks.
 
-export const MCP_SERVER_NAME = "mixai";
+export const MCP_SERVER_NAME = "simem";
 
 type HookEventName = "SessionStart" | "UserPromptSubmit" | "PreToolUse" | "PreCompact" | "Stop" | "SessionEnd";
 
@@ -38,12 +38,12 @@ const HOOK_ARG: Record<HookEventName, string> = {
 };
 
 const STATUS: Record<HookEventName, string> = {
-  SessionStart: "mixai: project primer",
-  UserPromptSubmit: "mixai: relevant project memory",
-  PreToolUse: "mixai: output compression and read guards",
-  PreCompact: "mixai: save context before compaction",
-  Stop: "mixai: capture this turn into memory",
-  SessionEnd: "mixai: capture the session into memory",
+  SessionStart: "simem: project primer",
+  UserPromptSubmit: "simem: relevant project memory",
+  PreToolUse: "simem: output compression and read guards",
+  PreCompact: "simem: save context before compaction",
+  Stop: "simem: capture this turn into memory",
+  SessionEnd: "simem: capture the session into memory",
 };
 
 // Codex can only rewrite a tool call by also auto-approving it, and has no
@@ -66,7 +66,7 @@ export function withUserHooks(settings: Record<string, unknown>, provider: "clau
   const hooks = isRecord(clone.hooks) ? clone.hooks : {};
   for (const event of Object.keys(HOOK_ARG) as HookEventName[]) {
     const groups = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
-    // Drop any previous mixai user-scope entry for this event, then add the
+    // Drop any previous simem user-scope entry for this event, then add the
     // current one: converges stale entries (e.g. an old launcher path).
     const kept = groups
       .map((group) => {
@@ -116,7 +116,7 @@ async function installClaudeHome(home: AgentHome, options: IntegrateOptions, lau
   if (existsSync(userConfig)) {
     await applyFile(plan, userConfig, jsonTransform(userConfig, (existing) => withUserMcp(existing, "claude", remove, launcher)), options);
   } else if (!remove) {
-    plan.notes.push(`${home.label}: no ${basename(userConfig)} yet (open Claude Code once with this account, then re-run mixai init) — MCP tools not registered`);
+    plan.notes.push(`${home.label}: no ${basename(userConfig)} yet (open Claude Code once with this account, then re-run simem init) — MCP tools not registered`);
   }
   const memory = join(home.dir, "CLAUDE.md");
   await applyFile(plan, memory, (original) => (remove ? stripBlock(original) : upsertBlock(original, instructionBlock())), options);
@@ -141,7 +141,7 @@ async function installCursorHome(home: AgentHome, options: IntegrateOptions, lau
   const plan: IntegrationPlan = { provider: "cursor", files: [], notes: [] };
   const mcp = join(home.dir, "mcp.json");
   await applyFile(plan, mcp, jsonTransform(mcp, (existing) => withUserMcp(existing, "cursor", Boolean(options.remove), launcher)), options);
-  if (!options.remove) plan.notes.push(`${home.label}: Cursor gets the MCP tools; for hooks run \`mixai integrate --provider cursor\` in a project`);
+  if (!options.remove) plan.notes.push(`${home.label}: Cursor gets the MCP tools; for hooks run \`simem integrate --provider cursor\` in a project`);
   return plan;
 }
 
@@ -154,7 +154,7 @@ export interface InstallRecord {
 }
 
 export function installRecordPath(): string {
-  return join(mixaiHome(), "installed.json");
+  return join(simemHome(), "installed.json");
 }
 
 export function readInstallRecord(): InstallRecord | undefined {

@@ -6,6 +6,7 @@ import { DEFAULT_CONFIG, type MemoryConfig } from "../config.js";
 import { assembleContext } from "../memory/budget.js";
 import { openMemoryDb } from "../memory/db.js";
 import { indexCheckpointBestEffort } from "../memory/index-checkpoint.js";
+import { LEGACY_DIR } from "../legacy.js";
 import { projectStoreDir, resolveProject } from "../store/project.js";
 import { isInternalMemoryPrompt } from "../memory/internal-prompt.js";
 import { capText } from "../memory/text-cap.js";
@@ -24,23 +25,23 @@ import { captureWorkspace } from "./workspace.js";
 const EMPTY_STATE: GatewayState = { version: 1, checkpoints: {}, sessions: {} };
 
 // Bounds manifest.summary so one tool-output-heavy final message can't bloat
-// every manifest.json; `mixai brief` re-caps to its own budget on read anyway.
+// every manifest.json; `simem brief` re-caps to its own budget on read anyway.
 const MANIFEST_SUMMARY_CAP = 2_000;
 
-// The project's store directory: global (~/.mixai/projects/<id>) by default,
-// shared by every worktree, clone, agent, and account; the repo's .mixai in
+// The project's store directory: global (~/.simem/projects/<id>) by default,
+// shared by every worktree, clone, agent, and account; the repo's .simem in
 // project mode.
 function gatewayDirectory(cwd: string): string {
   return projectStoreDir(cwd);
 }
 
-// 1.x integrations @import <repo>/.mixai/current/BRIEF.md from CLAUDE.local.md.
-// While such a directory exists, keep it current so the import never goes stale.
-function legacyCurrentMirror(cwd: string): string | undefined {
+// Per-project integrations @import <repo>/.simem/current/BRIEF.md (mixai 1.x:
+// .mixai/current) from CLAUDE.local.md. While such a directory exists, keep it
+// current so the import never goes stale.
+function currentMirrors(cwd: string): string[] {
   const ref = resolveProject(cwd);
-  if (ref.mode !== "global") return undefined;
-  const dir = join(ref.root, ".mixai", "current");
-  return existsSync(dir) ? dir : undefined;
+  if (ref.mode !== "global") return [];
+  return [join(ref.root, ".simem", "current"), join(ref.root, LEGACY_DIR, "current")].filter((dir) => existsSync(dir));
 }
 
 export async function readGatewayState(cwd: string): Promise<GatewayState> {
@@ -100,7 +101,7 @@ function latestText(messages: TranscriptMessage[], role: TranscriptMessage["role
 // CLAUDE.local.md, which the host agent re-sends to the model on EVERY turn
 // (an @import is persistent system-prompt context, not a one-time session-start
 // injection). So BRIEF.md must stay tiny — the full objective/transcript/memory
-// live in HANDOFF.md and `mixai brief`.
+// live in HANDOFF.md and `simem brief`.
 const BRIEF_OBJECTIVE_CAP = 600;
 
 
@@ -112,13 +113,13 @@ function formatBrief(input: { id: string; branch?: string; head?: string; object
   const objective = isInternalMemoryPrompt(input.objective)
     ? "See HANDOFF.md — the last checkpoint captured an internal memory step, not a user objective."
     : capText(input.objective, BRIEF_OBJECTIVE_CAP).text || "Not captured.";
-  return `# Mixai continuity brief
+  return `# simem continuity brief
 
 Latest objective (checkpoint ${input.id}): ${objective}
 
 Workspace: ${input.branch ?? "unborn or detached"} @ ${input.head ?? "no commit"}
 
-This compact brief is injected on every turn — it is intentionally minimal. When the user asks to continue, inspect the live repository and git state first, then resume the latest unfinished objective without redoing completed work. For the full prior-agent handoff (recent transcript, workspace patch, durable decisions) read \`.mixai/current/HANDOFF.md\`, or run \`mixai brief\` / the \`context_brief\` MCP tool for a fresh objective + live git + relevant memory. Project memory relevant to each prompt is injected automatically.
+This compact brief is injected on every turn — it is intentionally minimal. When the user asks to continue, inspect the live repository and git state first, then resume the latest unfinished objective without redoing completed work. For the full prior-agent handoff (recent transcript, workspace patch, durable decisions) read \`.simem/current/HANDOFF.md\`, or run \`simem brief\` / the \`context_brief\` MCP tool for a fresh objective + live git + relevant memory. Project memory relevant to each prompt is injected automatically.
 `;
 }
 
@@ -334,8 +335,7 @@ export async function createCheckpoint(
     writeFile(join(currentDirectory, statusName), status, "utf8"),
     writeFile(join(currentDirectory, "manifest.json"), manifestJson, "utf8"),
   ]);
-  const mirror = legacyCurrentMirror(cwd);
-  if (mirror) {
+  for (const mirror of currentMirrors(cwd)) {
     await Promise.all([writeFile(join(mirror, handoffName), handoff, "utf8"), writeFile(join(mirror, briefName), brief, "utf8")]);
   }
 

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { loadSqliteSync } from "./sqlite.js";
-import { ensurePrivateDir, mixaiHome } from "./home.js";
+import { ensurePrivateDir, simemHome } from "./home.js";
 
 // The cross-project registry: which project every path, root commit, and
 // remote belongs to, plus memory that applies to all of a user's projects.
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS global_items (
 `;
 
 export function globalDbPath(): string {
-  return join(mixaiHome(), "global.db");
+  return join(simemHome(), "global.db");
 }
 
 // Opened per call and closed by the caller; undefined when node:sqlite is
@@ -53,7 +53,7 @@ export function globalDbPath(): string {
 export function openGlobalDb(): DatabaseSync | undefined {
   const sqlite = loadSqliteSync();
   if (!sqlite) return undefined;
-  ensurePrivateDir(mixaiHome());
+  ensurePrivateDir(simemHome());
   const db = new sqlite.DatabaseSync(globalDbPath());
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 3000");

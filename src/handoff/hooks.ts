@@ -110,10 +110,10 @@ export async function readHookInput(stdin: NodeJS.ReadableStream & { isTTY?: boo
 const REVIVAL_SOURCES = new Set(["compact", "resume", "clear"]);
 
 // Emits the revival brief for context-loss session starts. For Claude Code,
-// plain resume is suppressed: mixai's CLAUDE.local.md block already @imports
-// the lean .mixai/current/BRIEF.md (objective + pointer) as persistent context,
+// plain resume is suppressed: simem's CLAUDE.local.md block already @imports
+// the lean .simem/current/BRIEF.md (objective + pointer) as persistent context,
 // which is enough to re-orient a resume; the fuller brief (live git + memory)
-// stays one `mixai brief` away. "compact"/"clear" still get the full brief here
+// stays one `simem brief` away. "compact"/"clear" still get the full brief here
 // because those lose more context and its live state isn't in the import.
 export async function handleSessionStart(
   input: RawHookInput,
@@ -180,7 +180,7 @@ async function sessionFromTranscriptPath(
 
 export type ConsolidationSpawner = (cwd: string, checkpointId: string, configPath?: string) => void;
 
-// Fire-and-forget: a completely normal `mixai memory consolidate-checkpoint`
+// Fire-and-forget: a completely normal `simem memory consolidate-checkpoint`
 // invocation, detached and unref'd so the hook (and the host agent's
 // compaction) never waits on the LLM call. The child self-bounds via
 // consolidationTimeoutMs inside consolidateBestEffort.
@@ -231,7 +231,7 @@ export async function handlePreCompact(
 }
 
 // Cumulative measured savings so far (compaction, disclosure, prompt caps) —
-// the same numbers `mixai memory savings` reports, computed fresh each call so
+// the same numbers `simem memory savings` reports, computed fresh each call so
 // it's never stale. Empty when disabled, nothing has been measured yet, or
 // the runtime lacks node:sqlite — never noise, matching every other hook.
 export async function taskCompletionSavingsLine(cwd: string, config: GatewayConfig): Promise<string> {
@@ -243,8 +243,8 @@ export async function taskCompletionSavingsLine(cwd: string, config: GatewayConf
       const totals = savingsTotals(memory);
       if (totals.events === 0) return "";
       return (
-        `[mixai] measured savings so far: ~${totals.estimatedTokensSaved} tokens ` +
-        `(${totals.charsSaved} chars) across ${totals.events} event(s). Run \`mixai memory savings\` for a breakdown.`
+        `[simem] measured savings so far: ~${totals.estimatedTokensSaved} tokens ` +
+        `(${totals.charsSaved} chars) across ${totals.events} event(s). Run \`simem memory savings\` for a breakdown.`
       );
     } finally {
       memory.close();
@@ -256,7 +256,7 @@ export async function taskCompletionSavingsLine(cwd: string, config: GatewayConf
 
 // Claude Code / Codex "Stop" (task-completion) hook: reports cumulative
 // measured savings so it's visible without the user remembering to run
-// `mixai memory savings`. Side-effect-free — pure read of already-recorded data.
+// `simem memory savings`. Side-effect-free — pure read of already-recorded data.
 export async function handleStop(cwd: string, config: GatewayConfig): Promise<string> {
   const line = await taskCompletionSavingsLine(cwd, config);
   return line ? `${line}\n` : "";
@@ -271,7 +271,7 @@ export interface MemoryContextBlock {
 
 // Deterministic per-prompt retrieval: top memory previews matched to the
 // submitted prompt, capped hard. Shared by the UserPromptSubmit hook (below)
-// and `mixai run` (cli.ts), which both want the same "search once, format
+// and `simem run` (cli.ts), which both want the same "search once, format
 // once" behavior but attribute the ledger row differently. Empty result
 // (not noise) when disabled, when nothing matches, or on runtimes without
 // node:sqlite. Searches memory_items/summaries only (excludeMessages) — raw
@@ -279,7 +279,7 @@ export interface MemoryContextBlock {
 // noisy for something injected unattended into every prompt (e.g. a new
 // prompt can literally match an earlier, near-identical question verbatim,
 // echoing the user's own words back as "relevant context"). A deliberate
-// `mixai memory search` still searches messages too.
+// `simem memory search` still searches messages too.
 export async function buildMemoryContextBlock(
   cwd: string,
   prompt: string,
@@ -314,7 +314,7 @@ export async function buildMemoryContextBlock(
         const preview = toPreview(hit);
         return `- [${preview.source} ${preview.id}] ${preview.preview}`;
       });
-      const header = "Relevant project memory (drill in with `mixai memory show <id>` or the MCP memory_get tool):";
+      const header = "Relevant project memory (drill in with `simem memory show <id>` or the MCP memory_get tool):";
       // capText can emit maxChars + 1 (ellipsis appended after the slice) and
       // we add a trailing newline, so leave 2 chars of headroom to keep the
       // whole injection within the configured cap.
@@ -383,7 +383,7 @@ export type IngestSpawner = (path: string, agent: SourceAgent, configPath?: stri
 export function spawnDetachedIngest(path: string, agent: SourceAgent, configPath?: string): void {
   const [command, ...prefix] = selfCommand();
   const args = [...prefix, "sync", "--path", path, "--provider", agent, "--quiet", ...(configPath ? ["--config", configPath] : [])];
-  const child = spawn(command!, args, { detached: true, stdio: "ignore", env: { ...process.env, MIXAI_INTERNAL: "1" } });
+  const child = spawn(command!, args, { detached: true, stdio: "ignore", env: { ...process.env, SIMEM_INTERNAL: "1" } });
   child.unref();
 }
 
@@ -426,23 +426,23 @@ export async function handlePreToolUse(input: RawHookInput, cwd: string, provide
 
 // SessionEnd: refresh the sync-folder bundle in the background, if configured.
 export function spawnDetachedSync(cwd: string, config: GatewayConfig): void {
-  if (!config.memory.syncDir || process.env.MIXAI_NO_BACKGROUND === "1") return;
+  if (!config.memory.syncDir || process.env.SIMEM_NO_BACKGROUND === "1") return;
   try {
     const [command, ...prefix] = selfCommand();
-    spawn(command!, [...prefix, "sync", "--quiet", "--cwd", cwd], { detached: true, stdio: "ignore", env: { ...process.env, MIXAI_INTERNAL: "1" } }).unref();
+    spawn(command!, [...prefix, "sync", "--quiet", "--cwd", cwd], { detached: true, stdio: "ignore", env: { ...process.env, SIMEM_INTERNAL: "1" } }).unref();
   } catch {
     // Best-effort.
   }
 }
 
 export function spawnDetachedIndex(cwd: string): void {
-  if (process.env.MIXAI_NO_BACKGROUND === "1") return;
+  if (process.env.SIMEM_NO_BACKGROUND === "1") return;
   try {
     const [command, ...prefix] = selfCommand();
     const child = spawn(command!, [...prefix, "index", "--quiet", "--cwd", cwd], {
       detached: true,
       stdio: "ignore",
-      env: { ...process.env, MIXAI_INTERNAL: "1" },
+      env: { ...process.env, SIMEM_INTERNAL: "1" },
     });
     child.unref();
   } catch {
@@ -466,7 +466,7 @@ function existingLayout(cwd: string): string {
   }
 }
 
-// Below this, a "mixai saved…" notice is noise.
+// Below this, a "simem saved…" notice is noise.
 const NOTICE_MIN_TOKENS = 1_000;
 
 // Claude Code's Stop hook can show the user a line (`systemMessage`); plain
@@ -487,7 +487,7 @@ export async function handleStopNotice(input: RawHookInput, cwd: string, provide
       if (savedTokens < NOTICE_MIN_TOKENS) return "";
       memory.db.prepare("INSERT OR IGNORE INTO hook_runs (key, ts) VALUES (?, ?)").run(key, new Date().toISOString());
       const rounded = savedTokens >= 10_000 ? `${Math.round(savedTokens / 1000)}k` : `${(savedTokens / 1000).toFixed(1)}k`;
-      return `${JSON.stringify({ systemMessage: `mixai kept ~${rounded} tokens out of context in this project today. Ask "how much did mixai save?" for details.` })}\n`;
+      return `${JSON.stringify({ systemMessage: `simem kept ~${rounded} tokens out of context in this project today. Ask "how much did simem save?" for details.` })}\n`;
     } finally {
       memory.close();
     }

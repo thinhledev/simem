@@ -30,9 +30,9 @@ export async function runProject(sub: string | undefined, args: string[], option
   }
   if (sub === "link") {
     const target = args[0];
-    if (!target) throw new Error("mixai project link <project-id> (see `mixai project list`)");
+    if (!target) throw new Error("simem project link <project-id> (see `simem project list`)");
     const ref = linkProject(options.cwd, target);
-    print(options, `This checkout now uses project ${ref.id}. Earlier memory under the old id stays in its store; move it with mixai memory export/import.`, ref);
+    print(options, `This checkout now uses project ${ref.id}. Earlier memory under the old id stays in its store; move it with simem memory export/import.`, ref);
     return;
   }
   if (sub === "unlink") {
@@ -59,17 +59,17 @@ export async function runMigrate(to: string | undefined, options: Output & { cwd
       unlinkSync(marker);
       clearProjectCache();
     }
-    if (storageMode() !== "global") throw new Error("Global storage is disabled (MIXAI_STORAGE or memory.storage is \"project\").");
+    if (storageMode() !== "global") throw new Error("Global storage is disabled (SIMEM_STORAGE or memory.storage is \"project\").");
     const fresh = resolveProject(options.cwd);
-    const legacy = join(fresh.root, ".mixai", "memory.db");
+    const legacy = join(fresh.root, ".simem", "memory.db");
     if (existsSync(join(fresh.storeDir, "memory.db")) && existsSync(legacy)) {
       throw new Error(
-        `Both ${displayPath(legacy)} and the global store exist. Move one with \`mixai memory export\` / \`mixai memory import\` to merge them.`,
+        `Both ${displayPath(legacy)} and the global store exist. Move one with \`simem memory export\` / \`simem memory import\` to merge them.`,
       );
     }
     const outcome = migrateLegacyStore(fresh);
     print(options, outcome === "migrated" ? `Moved memory to ${displayPath(fresh.storeDir)}.` : "Nothing to migrate.", { outcome });
     return;
   }
-  throw new Error("mixai migrate --to global|project");
+  throw new Error("simem migrate --to global|project");
 }

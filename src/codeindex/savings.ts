@@ -7,7 +7,7 @@ function fileBytes(index: CodeIndexDb, path: string): number {
   return (index.db.prepare("SELECT bytes FROM files WHERE path = ?").get(path) as { bytes: number } | undefined)?.bytes ?? 0;
 }
 
-// code_search: an estimate, labelled as such in `mixai stats` — the
+// code_search: an estimate, labelled as such in `simem stats` — the
 // alternative is reading the files behind the top hits; what was sent is the
 // hit list itself.
 export function recordCodeSavings(memory: MemoryDb | undefined, index: CodeIndexDb, hits: CodeHit[]): void {

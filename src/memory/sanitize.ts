@@ -1,7 +1,7 @@
 // Redacts credentials before anything is stored in memory, injected into a
 // prompt, or shown from compressed command output. Patterns favour precision:
 // a false redaction only hides a string, but each one is counted so the user
-// can see that it happened (`mixai stats`).
+// can see that it happened (`simem stats`).
 
 interface Pattern {
   kind: string;

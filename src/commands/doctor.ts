@@ -5,6 +5,7 @@ import { claudeUserConfigPath, hookCommand, MCP_SERVER_NAME, readInstallRecord }
 import { openMemoryDb } from "../memory/db.js";
 import { discoverHomes } from "../sources/homes.js";
 import { resolveProject } from "../store/project.js";
+import { LEGACY_DIR } from "../legacy.js";
 import { displayPath, print, type Output } from "./common.js";
 
 export type CheckLevel = "ok" | "warn" | "fail" | "info";
@@ -38,9 +39,9 @@ export async function collectChecks(cwd: string, extra: ExtraChecks[] = []): Pro
   const launcher = readLauncher();
   const record = readInstallRecord();
   if (!launcher.exists) {
-    checks.push({ level: "fail", area: "install", message: "Not installed for the desktop apps yet. Run `mixai init` once." });
+    checks.push({ level: "fail", area: "install", message: "Not installed for the desktop apps yet. Run `simem init` once." });
   } else if (!launcher.nodeOk || !launcher.cliOk) {
-    checks.push({ level: "fail", area: "install", message: `Launcher points at a missing ${!launcher.nodeOk ? "Node.js" : "mixai"} (${launcher.node ?? "?"}). Re-run \`mixai init\`.` });
+    checks.push({ level: "fail", area: "install", message: `Launcher points at a missing ${!launcher.nodeOk ? "Node.js" : "simem"} (${launcher.node ?? "?"}). Re-run \`simem init\`.` });
   } else {
     checks.push({ level: "ok", area: "install", message: `Launcher ${displayPath(launcher.path)} → Node ${launcher.node ? displayPath(launcher.node) : "?"}` });
   }
@@ -54,7 +55,7 @@ export async function collectChecks(cwd: string, extra: ExtraChecks[] = []): Pro
       checks.push({
         level: hooksOk && mcpOk ? "ok" : record ? "warn" : "info",
         area: home.label,
-        message: `hooks ${hooksOk ? "installed" : "missing"}, MCP tools ${mcpOk ? "registered" : "missing"}${hooksOk && mcpOk ? "" : " — run `mixai init`"}`,
+        message: `hooks ${hooksOk ? "installed" : "missing"}, MCP tools ${mcpOk ? "registered" : "missing"}${hooksOk && mcpOk ? "" : " — run `simem init`"}`,
       });
     } else if (home.agent === "codex") {
       const hooksOk = contains(join(home.dir, "hooks.json"), "--scope user");
@@ -72,18 +73,18 @@ export async function collectChecks(cwd: string, extra: ExtraChecks[] = []): Pro
 
   const project = resolveProject(cwd);
   checks.push({ level: "info", area: "project", message: `${project.name} (${project.id}) → ${displayPath(project.storeDir)} [${project.mode}, by ${project.identifiedBy}]` });
-  const legacyDb = join(project.root, ".mixai", "memory.db");
-  const marker = join(project.root, ".mixai", "MIGRATED.txt");
+  const legacyDb = join(project.root, LEGACY_DIR, "memory.db");
+  const marker = join(project.root, LEGACY_DIR, "MIGRATED.txt");
   if (project.mode === "global" && existsSync(legacyDb) && existsSync(marker)) {
     if (statSync(legacyDb).mtimeMs > statSync(marker).mtimeMs + 60_000) {
       checks.push({
         level: "warn",
         area: "project",
-        message: `${displayPath(legacyDb, cwd)} changed after it was copied to the global store — an old mixai 1.x is still writing there. Update it (npm i -g mixai-cli) and re-run mixai init.`,
+        message: `${displayPath(legacyDb, cwd)} changed after it was copied to the global store — an old mixai 1.x is still writing there. Remove it (npm uninstall -g mixai-cli) and re-run simem init.`,
       });
     }
   } else if (project.mode === "global" && existsSync(legacyDb) && existsSync(join(project.storeDir, "memory.db"))) {
-    checks.push({ level: "warn", area: "project", message: `An unmerged 1.x database remains at ${displayPath(legacyDb, cwd)}; merge it with mixai memory export/import.` });
+    checks.push({ level: "warn", area: "project", message: `An unmerged mixai 1.x database remains at ${displayPath(legacyDb, cwd)}; merge it with simem memory export/import.` });
   }
   const memory = await openMemoryDb(cwd, { quiet: true });
   if (!memory) {
@@ -99,7 +100,7 @@ export async function collectChecks(cwd: string, extra: ExtraChecks[] = []): Pro
         level: sessions > 0 ? "ok" : "warn",
         area: "memory",
         message: `${sessions} session(s), ${items} active item(s), ${(size / 1_048_576).toFixed(1)} MB` +
-          (latest.at ? `, last capture ${latest.at.slice(0, 16).replace("T", " ")}` : " — nothing captured yet; run `mixai sync`"),
+          (latest.at ? `, last capture ${latest.at.slice(0, 16).replace("T", " ")}` : " — nothing captured yet; run `simem sync`"),
       });
     } finally {
       memory.close();

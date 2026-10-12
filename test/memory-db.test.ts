@@ -33,7 +33,7 @@ test("creates the schema and reports FTS5 support", withSqlite, async () => {
 });
 
 test("upgrades an existing v1 database (no llm_calls table) to v2 transparently", withSqlite, async () => {
-  const root = await mkdtemp(join(tmpdir(), "mixai-memory-db-v1-"));
+  const root = await mkdtemp(join(tmpdir(), "simem-memory-db-v1-"));
   // Simulate a database left behind by the pre-ledger schema: apply only the
   // v1 DDL and stamp schema_version=1, bypassing the migration runner.
   const v1 = await openMemoryDb(root, { path: join(root, "memory.db") });
@@ -76,7 +76,7 @@ test("upgrades an existing v1 database (no llm_calls table) to v2 transparently"
 });
 
 test("upgrades an existing v2 database (no summaries.milestone column) to v3+ transparently", withSqlite, async () => {
-  const root = await mkdtemp(join(tmpdir(), "mixai-memory-db-v2-"));
+  const root = await mkdtemp(join(tmpdir(), "simem-memory-db-v2-"));
   const v2 = await openMemoryDb(root, { path: join(root, "memory.db") });
   assert.ok(v2);
   // Simulate a pre-milestone database: recreate `summaries` without the
@@ -116,7 +116,7 @@ test("upgrades an existing v2 database (no summaries.milestone column) to v3+ tr
 });
 
 test("upgrades an existing v3 database (no savings_events table) to v4 transparently", withSqlite, async () => {
-  const root = await mkdtemp(join(tmpdir(), "mixai-memory-db-v3-"));
+  const root = await mkdtemp(join(tmpdir(), "simem-memory-db-v3-"));
   const v3 = await openMemoryDb(root, { path: join(root, "memory.db") });
   assert.ok(v3);
   v3.db.exec("DROP TABLE IF EXISTS savings_events");
@@ -182,7 +182,7 @@ test("keeps FTS index rows in sync through triggers", withSqlite, async () => {
 });
 
 test("reopening an existing database is idempotent and preserves rows", withSqlite, async () => {
-  const root = await mkdtemp(join(tmpdir(), "mixai-memory-db-"));
+  const root = await mkdtemp(join(tmpdir(), "simem-memory-db-"));
   const first = await openMemoryDb(root);
   assert.ok(first);
   assert.equal(first.path, memoryDbPath(root));
@@ -208,7 +208,7 @@ test("reopening an existing database is idempotent and preserves rows", withSqli
 });
 
 test("upgrades a v4 database to v5: adds origin/content_hash and backfills hashes for existing items", withSqlite, async () => {
-  const root = await mkdtemp(join(tmpdir(), "mixai-memory-db-v4-"));
+  const root = await mkdtemp(join(tmpdir(), "simem-memory-db-v4-"));
   const v4 = await openMemoryDb(root, { path: join(root, "memory.db") });
   assert.ok(v4);
   // Rewind to the v4 shape: memory_items without the v5 columns.

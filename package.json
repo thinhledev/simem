@@ -1,17 +1,17 @@
 {
-  "name": "mixai-cli",
+  "name": "simem",
   "version": "2.0.0",
   "description": "Local memory and context compression for AI coding agents: spend fewer tokens in the Claude Code and Codex apps, and keep project memory across every account, agent, and worktree.",
   "type": "module",
   "license": "MIT",
   "author": "Thinh Le",
-  "homepage": "https://github.com/thinhledev/mixai#readme",
+  "homepage": "https://github.com/thinhledev/simem#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thinhledev/mixai.git"
+    "url": "git+https://github.com/thinhledev/simem.git"
   },
   "bugs": {
-    "url": "https://github.com/thinhledev/mixai/issues"
+    "url": "https://github.com/thinhledev/simem/issues"
   },
   "keywords": [
     "ai",
@@ -33,7 +33,7 @@
     "llm"
   ],
   "bin": {
-    "mixai": "./dist/cli.js"
+    "simem": "./dist/cli.js"
   },
   "files": [
     "dist"

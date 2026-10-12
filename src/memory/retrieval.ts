@@ -73,7 +73,7 @@ export interface InjectionGate {
 export const AUTOMATIC_INJECTION_GATE: InjectionGate = { minCoverage: 0.5, minMatchedTerms: 2 };
 
 // The automatic gate for a config: keywords always; the vector path only when
-// cutoffs were set (calibrated per model with `mixai eval`).
+// cutoffs were set (calibrated per model with `simem eval`).
 export function automaticGate(embeddings: { minSimilarity: number; strongSimilarity: number }): InjectionGate {
   return {
     ...AUTOMATIC_INJECTION_GATE,

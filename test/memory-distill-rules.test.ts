@@ -20,7 +20,7 @@ const CORPUS: Array<[string, MemoryCategory | null]> = [
   ["I'd rather keep the CLI output short and plain.", "preference"],
   ["Please use British spelling in the docs.", "preference"],
   ["I want the README to explain benefits before technical details.", "preference"],
-  ["Let's use the name mixai for the repo, the package, and the CLI.", "decision"],
+  ["Let's use the name simem for the repo, the package, and the CLI.", "decision"],
   ["We decided to store vectors inside memory.db instead of a separate engine.", "decision"],
   ["Going forward, release notes live in CHANGELOG.md.", "decision"],
   ["Let's switch the embedding model to potion-base-8M.", "decision"],

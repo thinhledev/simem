@@ -140,7 +140,7 @@ function writeChunk(memory: MemoryDb, file: TranscriptFile, key: string, externa
 // Ingests the new part of one transcript into its project's store (the
 // project is resolved from the session's own cwd, so a sync can cover every
 // project on the machine). Cursors live in global.db; re-running is a no-op.
-// mixai's own headless consolidation runs are recognised and skipped.
+// simem's own headless consolidation runs are recognised and skipped.
 export async function ingestTranscript(
   file: TranscriptFile,
   options: { memoryConfig?: MemoryConfig; distill?: boolean; onlyProjectId?: string } = {},
@@ -187,7 +187,7 @@ export async function ingestTranscript(
     );
     if (ignored) {
       saveCursor.run(file.path, file.agent, info.ino, info.size, externalId, cwd, project.id, 1, now);
-      return { ...empty, status: "skipped", reason: "mixai internal run" };
+      return { ...empty, status: "skipped", reason: "simem internal run" };
     }
     const key = sessionKey(file.agent, externalId);
     const memory = await openMemoryDb(cwd, { quiet: true });

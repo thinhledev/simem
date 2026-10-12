@@ -4,7 +4,7 @@ import { basename, join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { gitIdentity, type GitIdentity } from "./git.js";
 import { openGlobalDb } from "./global-db.js";
-import { ensurePrivateDir, mixaiHome, storageMode, type StorageMode } from "./home.js";
+import { ensurePrivateDir, simemHome, storageMode, type StorageMode } from "./home.js";
 
 export interface ProjectRef {
   id: string;
@@ -42,20 +42,20 @@ function idFor(key: string): string {
   return createHash("sha256").update(key).digest("hex").slice(0, 16);
 }
 
-// An explicit pin (`<root>/.mixai/project.json` with { "projectId": "…" })
-// beats everything; `mixai project link` writes it for the main checkout.
+// An explicit pin (`<root>/.simem/project.json` with { "projectId": "…" })
+// beats everything; `simem project link` writes it for the main checkout.
 function pinnedId(root: string): string | undefined {
   try {
-    const pin = JSON.parse(readFileSync(join(root, ".mixai", "project.json"), "utf8")) as { projectId?: unknown };
+    const pin = JSON.parse(readFileSync(join(root, ".simem", "project.json"), "utf8")) as { projectId?: unknown };
     return typeof pin.projectId === "string" && /^[\w-]{4,64}$/.test(pin.projectId) ? pin.projectId : undefined;
   } catch {
     return undefined;
   }
 }
 
-// A per-project opt-out of the global store (`mixai migrate --to project`).
+// A per-project opt-out of the global store (`simem migrate --to project`).
 export function projectLocalMarker(root: string): string {
-  return join(root, ".mixai", "project-local");
+  return join(root, ".simem", "project-local");
 }
 
 function lookupOrRegister(
@@ -108,7 +108,7 @@ export function resolveProject(cwd: string): ProjectRef {
       id: idFor(`path:${realpath(absolute)}`),
       name: basename(absolute),
       root: absolute,
-      storeDir: join(absolute, ".mixai"),
+      storeDir: join(absolute, ".simem"),
       mode,
       identifiedBy: "path",
     };
@@ -123,7 +123,7 @@ export function resolveProject(cwd: string): ProjectRef {
       id: idFor(`path:${root}`),
       name: basename(root),
       root,
-      storeDir: join(root, ".mixai"),
+      storeDir: join(root, ".simem"),
       mode: "project",
       identifiedBy: "path",
       ...(identity ? { git: identity } : {}),
@@ -156,7 +156,7 @@ export function resolveProject(cwd: string): ProjectRef {
     id,
     name: basename(root),
     root,
-    storeDir: join(mixaiHome(), "projects", id),
+    storeDir: join(simemHome(), "projects", id),
     mode,
     identifiedBy,
     ...(identity ? { git: identity } : {}),
@@ -199,13 +199,13 @@ export function listProjects(): ProjectListing[] {
 
 // Points this checkout's identity keys at another project's id, merging the
 // two identities going forward (e.g. a re-initialized repository). Existing
-// memory in the old store is not moved; `mixai memory export/import` does that.
+// memory in the old store is not moved; `simem memory export/import` does that.
 export function linkProject(cwd: string, targetId: string): ProjectRef {
   const db = openGlobalDb();
   if (!db) throw new Error("Linking projects requires node:sqlite (Node.js >= 22.5)");
   try {
     const target = db.prepare("SELECT id FROM projects WHERE id = ?").get(targetId);
-    if (!target) throw new Error(`No project with id ${targetId}; see \`mixai project list\``);
+    if (!target) throw new Error(`No project with id ${targetId}; see \`simem project list\``);
     const identity = gitIdentity(cwd);
     const root = identity ? realpath(identity.toplevel) : realpath(cwd);
     const now = new Date().toISOString();
@@ -255,11 +255,11 @@ export function unlinkProject(cwd: string): ProjectRef {
 }
 
 function writePin(root: string, projectId: string): void {
-  writeFileSync(join(ensurePrivateDir(join(root, ".mixai")), "project.json"), `${JSON.stringify({ projectId }, null, 2)}\n`, "utf8");
+  writeFileSync(join(ensurePrivateDir(join(root, ".simem")), "project.json"), `${JSON.stringify({ projectId }, null, 2)}\n`, "utf8");
 }
 
 export function projectsRoot(): string {
-  return join(mixaiHome(), "projects");
+  return join(simemHome(), "projects");
 }
 
 export function storeDirFor(projectId: string): string {

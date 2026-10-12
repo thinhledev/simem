@@ -8,3 +8,4 @@ gateway.config.json
 
 CLAUDE.local.md
 build/
+.simem/

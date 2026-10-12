@@ -1,7 +1,7 @@
 export const CURRENT_SCHEMA_VERSION = 6;
 
 // Core relational tables. Raw checkpoint files on disk stay canonical; every
-// row here is derivable by re-running `mixai memory reindex`.
+// row here is derivable by re-running `simem memory reindex`.
 export const SCHEMA_CORE = `
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
@@ -165,11 +165,11 @@ export const SCHEMA_V3 = `
 ALTER TABLE summaries ADD COLUMN milestone INTEGER NOT NULL DEFAULT 0;
 `;
 
-// v4: records exact, mechanism-attributed token/char savings from mixai's own
+// v4: records exact, mechanism-attributed token/char savings from simem's own
 // compression — recursive compaction, preview-vs-full disclosure, and the
 // consolidation/rollup prompt caps. Deliberately does NOT attempt a "vs not
-// using mixai at all" figure: that requires knowing what a from-scratch agent
-// would have spent re-exploring the repo, which mixai cannot observe. Every row
+// using simem at all" figure: that requires knowing what a from-scratch agent
+// would have spent re-exploring the repo, which simem cannot observe. Every row
 // here is a real chars_full - chars_sent delta measured at the moment the
 // saving happened, forward-looking only from whenever this shipped.
 export const SCHEMA_V4 = `

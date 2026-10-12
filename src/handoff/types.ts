@@ -56,7 +56,7 @@ export interface CheckpointManifest {
   };
   /**
    * Capped copies of the transcript's last user/assistant messages, stored so
-   * `mixai brief` can rebuild a revival context without scraping HANDOFF.md.
+   * `simem brief` can rebuild a revival context without scraping HANDOFF.md.
    * Absent on checkpoints created before Phase 4.
    */
   summary?: {

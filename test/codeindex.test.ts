@@ -13,7 +13,7 @@ const sqlite = await loadSqlite();
 const withSqlite = { skip: sqlite ? false : "node:sqlite unavailable on this Node runtime" };
 
 function repo(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "mixai-code-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "simem-code-")));
   mkdirSync(join(dir, "src", "billing"), { recursive: true });
   mkdirSync(join(dir, "node_modules", "dep"), { recursive: true });
   writeFileSync(
@@ -65,8 +65,8 @@ test("skips lockfiles, dependencies, build output, and binaries", () => {
 
 test("indexes incrementally and answers code_search / code_read / repo_map without whole files", withSqlite, async () => {
   const dir = repo();
-  const previous = process.env.MIXAI_STORAGE;
-  process.env.MIXAI_STORAGE = "project";
+  const previous = process.env.SIMEM_STORAGE;
+  process.env.SIMEM_STORAGE = "project";
   const index = openCodeIndex(dir);
   assert.ok(index);
   try {
@@ -98,6 +98,6 @@ test("indexes incrementally and answers code_search / code_read / repo_map witho
     assert.equal(third.changed, 1, "only the edited file is re-indexed");
   } finally {
     index.close();
-    process.env.MIXAI_STORAGE = previous;
+    process.env.SIMEM_STORAGE = previous;
   }
 });

@@ -86,9 +86,9 @@ Second paragraph survives.`;
 });
 
 test("reindex backfills a checkpoint tree and --rebuild stays idempotent", withSqlite, async () => {
-  const root = await mkdtemp(join(tmpdir(), "mixai-memory-reindex-"));
-  const first = join(root, ".mixai", "checkpoints", "2026-07-01T00-00-00-000Z-aaaa1111");
-  const second = join(root, ".mixai", "checkpoints", "2026-07-02T00-00-00-000Z-bbbb2222");
+  const root = await mkdtemp(join(tmpdir(), "simem-memory-reindex-"));
+  const first = join(root, ".simem", "checkpoints", "2026-07-01T00-00-00-000Z-aaaa1111");
+  const second = join(root, ".simem", "checkpoints", "2026-07-02T00-00-00-000Z-bbbb2222");
   await mkdir(first, { recursive: true });
   await mkdir(second, { recursive: true });
   await writeFile(
@@ -105,7 +105,7 @@ test("reindex backfills a checkpoint tree and --rebuild stays idempotent", withS
   );
   await writeFile(join(second, "TRANSCRIPT.md"), "# Extracted codex conversation\n\n## User\n\nNow add SSO");
   // A malformed directory must be skipped without failing the whole reindex.
-  const broken = join(root, ".mixai", "checkpoints", "broken");
+  const broken = join(root, ".simem", "checkpoints", "broken");
   await mkdir(broken, { recursive: true });
   await writeFile(join(broken, "manifest.json"), "not json");
 

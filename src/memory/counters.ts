@@ -1,7 +1,7 @@
 import type { MemoryDb } from "./db.js";
 
 // Small monotonic counters (redactions by kind, guard firings, ...) for
-// `mixai stats`. Best-effort: never let accounting break the caller.
+// `simem stats`. Best-effort: never let accounting break the caller.
 export function incrementCounter(memory: MemoryDb, key: string, by = 1): void {
   if (by <= 0) return;
   try {

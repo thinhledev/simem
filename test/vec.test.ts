@@ -54,7 +54,7 @@ test("the static model averages token rows, drops [UNK], and L2-normalizes", () 
 test("installModel verifies checksums and refuses a tampered file", async () => {
   const good = Buffer.from("model bytes");
   const spec: ModelSpec = { name: "fake", baseUrl: "https://example.invalid/rev", files: { "model.safetensors": createHash("sha256").update(good).digest("hex") }, megabytes: 1 };
-  const dir = mkdtempSync(join(tmpdir(), "mixai-model-"));
+  const dir = mkdtempSync(join(tmpdir(), "simem-model-"));
   const tampered = await installModel(spec, dir, (async () => new Response("evil bytes")) as typeof fetch);
   assert.equal(tampered.status, "failed");
   assert.equal(modelInstalled(spec, dir), false);

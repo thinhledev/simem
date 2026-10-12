@@ -30,7 +30,7 @@ async function readBundleVersion(runner: CommandRunner, appPath: string): Promis
 
 // macOS-only: checks the standard Applications directories for the
 // provider's desktop app and reads its bundle version. Shared by the
-// switch-desktop-surface preflight check below and by `mixai status`'s
+// switch-desktop-surface preflight check below and by `simem status`'s
 // "ready"/"version" columns (see cli.ts), which treat "the app is installed"
 // as the readiness bar rather than requiring a separately authenticated
 // CLI/API key.

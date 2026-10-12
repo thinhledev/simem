@@ -14,7 +14,7 @@ const sqlite = await loadSqlite();
 const withSqlite = { skip: sqlite ? false : "node:sqlite unavailable on this Node runtime" };
 
 function makeRepo(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "mixai-ingest-repo-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "simem-ingest-repo-")));
   execFileSync("git", ["init", "-q"], { cwd: dir });
   writeFileSync(join(dir, "README.md"), `repo ${dir}\n`);
   execFileSync("git", ["-c", "user.email=t@e.com", "-c", "user.name=t", "add", "."], { cwd: dir });
@@ -40,7 +40,7 @@ async function withEnv<T>(env: Record<string, string | undefined>, fn: () => Pro
   }
 }
 
-const globalEnv = () => ({ MIXAI_STORAGE: "global", MIXAI_HOME: mkdtempSync(join(tmpdir(), "mixai-ingest-home-")) });
+const globalEnv = () => ({ SIMEM_STORAGE: "global", SIMEM_HOME: mkdtempSync(join(tmpdir(), "simem-ingest-home-")) });
 
 test("a Claude app transcript is ingested incrementally: messages, deduped usage, tool events, title, rules", withSqlite, async () => {
   await withEnv(globalEnv(), async () => {
@@ -88,7 +88,7 @@ test("a Claude app transcript is ingested incrementally: messages, deduped usage
   });
 });
 
-test("Codex rollouts: app sessions are ingested with usage and command exit codes; mixai's own exec runs are skipped", withSqlite, async () => {
+test("Codex rollouts: app sessions are ingested with usage and command exit codes; simem's own exec runs are skipped", withSqlite, async () => {
   await withEnv(globalEnv(), async () => {
     const repo = makeRepo();
     const home = codexHome();
@@ -98,7 +98,7 @@ test("Codex rollouts: app sessions are ingested with usage and command exit code
     const internal = writeCodexSession(home, repo, "c-2", [{ user: "You are updating a persistent project memory store for a coding-agent handoff system." }], "codex_exec");
     assert.equal((await ingestTranscript({ agent: "codex", path: app })).status, "ingested");
     const skipped = await ingestTranscript({ agent: "codex", path: internal });
-    assert.equal(skipped.reason, "mixai internal run");
+    assert.equal(skipped.reason, "simem internal run");
 
     const memory = await openMemoryDb(repo, { quiet: true });
     assert.ok(memory);
@@ -129,7 +129,7 @@ test("memory is shared across accounts and agents: Claude account A, Claude acco
 
     // Switch "accounts": a session under account B, in a worktree, reads the same memory.
     process.env.CLAUDE_CONFIG_DIR = accountB;
-    const worktree = join(realpathSync(mkdtempSync(join(tmpdir(), "mixai-ingest-wt-"))), "wt");
+    const worktree = join(realpathSync(mkdtempSync(join(tmpdir(), "simem-ingest-wt-"))), "wt");
     execFileSync("git", ["worktree", "add", "-q", worktree], { cwd: repo });
     clearProjectCache();
     const memory = await openMemoryDb(worktree, { quiet: true });

@@ -40,6 +40,7 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 const SKIP_DIRS = new Set([
   "node_modules",
   ".git",
+  ".simem",
   ".mixai",
   "dist",
   "build",

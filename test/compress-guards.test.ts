@@ -14,7 +14,7 @@ const withSqlite = { skip: sqlite ? false : "node:sqlite unavailable on this Nod
 const config: GatewayConfig = { ...DEFAULT_CONFIG, compression: { ...DEFAULT_CONFIG.compression, rtk: "ignore" } };
 
 function workspace(allow: string[] = [], deny: string[] = []): string {
-  const dir = mkdtempSync(join(tmpdir(), "mixai-guard-"));
+  const dir = mkdtempSync(join(tmpdir(), "simem-guard-"));
   mkdirSync(join(dir, ".claude"), { recursive: true });
   writeFileSync(join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow, deny } }));
   return dir;
@@ -31,13 +31,13 @@ test("Claude permission rule matching: exact, prefix (:*), and glob forms", () =
 
 test("Bash is rewritten only when the user's settings already auto-approve the command", withSqlite, async () => {
   const previous = process.env.CLAUDE_CONFIG_DIR;
-  process.env.CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), "mixai-guard-home-"));
+  process.env.CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), "simem-guard-home-"));
   try {
     const allowed = workspace(["Bash(npm test:*)"]);
     const rewrite = await decidePreToolUse({ toolName: "Bash", toolInput: { command: "npm test", description: "Run tests" }, permissionMode: "default", sessionId: "s" }, allowed, "claude", config);
     const output = rewrite?.hookSpecificOutput as { permissionDecision: string; updatedInput: { command: string; description: string } };
     assert.equal(output.permissionDecision, "allow");
-    assert.match(output.updatedInput.command, /mixai" exec -- 'npm test'$/);
+    assert.match(output.updatedInput.command, /simem" exec -- 'npm test'$/);
     assert.equal(output.updatedInput.description, "Run tests", "other tool input fields are preserved");
 
     const ask = (dir: string, command: string, mode = "default") =>
@@ -87,7 +87,7 @@ test("read guards: a large full read gets an outline once; an unchanged re-read 
   memory.close();
 });
 
-test("mixai exec keeps the exit code, passes small output through, filters and stores large output", withSqlite, async () => {
+test("simem exec keeps the exit code, passes small output through, filters and stores large output", withSqlite, async () => {
   const dir = workspace();
   const quiet = await execCompressed(["printf 'hello\\n'; exit 3"], dir);
   assert.equal(quiet.exitCode, 3);
@@ -99,7 +99,7 @@ test("mixai exec keeps the exit code, passes small output through, filters and s
   assert.equal(noisy.exitCode, 1);
   assert.match(noisy.text, /✖ breaks on empty input/);
   assert.match(noisy.text, /AssertionError: expected 1/);
-  assert.match(noisy.text, /\[mixai: [\d,]+ → [\d,]+ chars · full output: mixai out [0-9a-f]{6}\]$/);
+  assert.match(noisy.text, /\[simem: [\d,]+ → [\d,]+ chars · full output: simem out [0-9a-f]{6}\]$/);
   assert.ok(noisy.text.length < noisy.raw.length / 3);
   const memory = await openMemoryDb(dir, { quiet: true });
   assert.ok(memory);

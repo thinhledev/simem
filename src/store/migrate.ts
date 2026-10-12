@@ -1,5 +1,6 @@
 import { closeSync, cpSync, existsSync, openSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { LEGACY_DIR } from "../legacy.js";
 import { ensurePrivateDir } from "./home.js";
 import type { ProjectRef } from "./project.js";
 import { loadSqliteSync } from "./sqlite.js";
@@ -36,19 +37,19 @@ function acquireLock(path: string): boolean {
 }
 
 export function migratedMarker(root: string): string {
-  return join(root, ".mixai", "MIGRATED.txt");
+  return join(root, LEGACY_DIR, "MIGRATED.txt");
 }
 
 // One-time copy of a 1.x in-repo store (<repo>/.mixai/memory.db, checkpoints/,
 // current/, state.json) into the global per-project store. The database is
 // copied with VACUUM INTO (consistent even with a live WAL) and renamed into
 // place atomically. The old files are left exactly as they were — only
-// MIGRATED.txt is added — so a 1.x mixai that is still installed somewhere
-// keeps working against them instead of starting an empty database; `mixai
+// MIGRATED.txt is added — so a 1.x simem that is still installed somewhere
+// keeps working against them instead of starting an empty database; `simem
 // doctor` warns if that file keeps changing. Concurrent callers wait on a lock.
 export function migrateLegacyStore(ref: ProjectRef): MigrationOutcome {
   if (ref.mode !== "global") return "none";
-  const legacyDir = join(ref.root, ".mixai");
+  const legacyDir = join(ref.root, LEGACY_DIR);
   const legacyDb = join(legacyDir, "memory.db");
   const target = join(ref.storeDir, "memory.db");
   if (!existsSync(legacyDb) || existsSync(target) || existsSync(migratedMarker(ref.root))) return "none";
@@ -84,9 +85,9 @@ export function migrateLegacyStore(ref: ProjectRef): MigrationOutcome {
     renameSync(staging, target);
     writeFileSync(
       migratedMarker(ref.root),
-      `mixai 2.0 copied this project's memory to ${ref.storeDir} on ${new Date().toISOString()}.\n` +
-        "The files here are left untouched (and no longer read by mixai 2.0). Delete this folder once you no longer need\n" +
-        "mixai 1.x, or run `mixai migrate --to project` to keep using an in-repo store.\n",
+      `simem 2.0 (formerly mixai) copied this project's memory to ${ref.storeDir} on ${new Date().toISOString()}.\n` +
+        "The files here are left untouched (and no longer read by simem). Delete this folder once you no longer need\n" +
+        "mixai 1.x, or run `simem migrate --to project` to keep using an in-repo store.\n",
       "utf8",
     );
     return "migrated";
@@ -99,12 +100,12 @@ export function migrateLegacyStore(ref: ProjectRef): MigrationOutcome {
   }
 }
 
-// Reverse migration: copies the global store back into <repo>/.mixai and
+// Reverse migration: copies the global store back into <repo>/.simem and
 // marks the project as repo-local, so this project uses the 1.x layout again.
 export function migrateToProject(ref: ProjectRef): string {
   const sqlite = loadSqliteSync();
   if (!sqlite) throw new Error("Migration requires node:sqlite (Node.js >= 22.5)");
-  const legacyDir = ensurePrivateDir(join(ref.root, ".mixai"));
+  const legacyDir = ensurePrivateDir(join(ref.root, ".simem"));
   const source = join(ref.storeDir, "memory.db");
   const target = join(legacyDir, "memory.db");
   if (!existsSync(source)) throw new Error(`No global store for this project at ${ref.storeDir}`);
@@ -128,7 +129,7 @@ export function migrateToProject(ref: ProjectRef): string {
   } finally {
     copied.close();
   }
-  writeFileSync(join(legacyDir, "project-local"), "This project keeps its mixai memory in this directory.\n", "utf8");
+  writeFileSync(join(legacyDir, "project-local"), "This project keeps its simem memory in this directory.\n", "utf8");
   try {
     unlinkSync(migratedMarker(ref.root));
   } catch {

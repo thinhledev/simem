@@ -45,7 +45,7 @@ function storeOutput(memory: MemoryDb, command: string, raw: string, sentChars: 
   const id = randomBytes(3).toString("hex");
   memory.db
     .prepare("INSERT INTO outputs (id, session_id, command, raw_gz, raw_chars, sent_chars, exit_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .run(id, process.env.MIXAI_SESSION_ID ?? null, command.slice(0, 500), gzipSync(Buffer.from(raw)), raw.length, sentChars, exitCode, new Date().toISOString());
+    .run(id, process.env.SIMEM_SESSION_ID ?? null, command.slice(0, 500), gzipSync(Buffer.from(raw)), raw.length, sentChars, exitCode, new Date().toISOString());
   const cutoff = new Date(Date.now() - OUTPUT_RETENTION_DAYS * 86_400_000).toISOString();
   memory.db.prepare("DELETE FROM outputs WHERE created_at < ?").run(cutoff);
   memory.db
@@ -79,8 +79,8 @@ export async function execCompressed(argv: string[], cwd: string): Promise<ExecR
     // Without storage, still print the filtered text — but say so.
   }
   const footer = outputId
-    ? `\n[mixai: ${raw.length.toLocaleString("en-US")} → ${text.length.toLocaleString("en-US")} chars · full output: mixai out ${outputId}]`
-    : `\n[mixai: output filtered from ${raw.length.toLocaleString("en-US")} chars]`;
+    ? `\n[simem: ${raw.length.toLocaleString("en-US")} → ${text.length.toLocaleString("en-US")} chars · full output: simem out ${outputId}]`
+    : `\n[simem: output filtered from ${raw.length.toLocaleString("en-US")} chars]`;
   return { exitCode, raw, text: `${text}${footer}`, ...(outputId ? { outputId } : {}) };
 }
 

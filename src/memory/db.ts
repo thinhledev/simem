@@ -30,8 +30,8 @@ export const SQLITE_REQUIREMENT_MESSAGE =
   `Persistent memory requires Node.js >= 22.5 (built-in node:sqlite); this runtime is ${process.version}. ` +
   "Core handoff commands keep working without it.";
 
-// The project's store (global ~/.mixai/projects/<id> by default, or the
-// repo's .mixai in project mode); a 1.x in-repo database is migrated into the
+// The project's store (global ~/.simem/projects/<id> by default, or the
+// repo's .simem in project mode); a 1.x in-repo database is migrated into the
 // global store the first time it is opened there.
 export function memoryDbPath(cwd: string): string {
   const ref = resolveProject(cwd);
@@ -39,7 +39,7 @@ export function memoryDbPath(cwd: string): string {
     const outcome = migrateLegacyStore(ref);
     // Another process holds the migration lock past the wait: read the
     // not-yet-copied legacy database rather than create an empty global one.
-    if (outcome === "busy") return join(ref.root, ".mixai", "memory.db");
+    if (outcome === "busy") return join(ref.root, ".simem", "memory.db");
   }
   return join(projectStoreDir(cwd), "memory.db");
 }
@@ -145,7 +145,7 @@ export async function openMemoryDb(
 ): Promise<MemoryDb | undefined> {
   const sqlite = options.sqlite === undefined ? await loadSqlite() : options.sqlite ?? undefined;
   if (!sqlite) {
-    if (!options.quiet) process.stderr.write(`[mixai] ${SQLITE_REQUIREMENT_MESSAGE}\n`);
+    if (!options.quiet) process.stderr.write(`[simem] ${SQLITE_REQUIREMENT_MESSAGE}\n`);
     return undefined;
   }
   const path = options.path ?? memoryDbPath(cwd);
@@ -173,7 +173,7 @@ export async function openMemoryDb(
   } catch (error) {
     if (!options.quiet) {
       const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`[mixai] Could not open memory database at ${path}: ${message}\n`);
+      process.stderr.write(`[simem] Could not open memory database at ${path}: ${message}\n`);
     }
     return undefined;
   }

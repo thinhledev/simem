@@ -17,7 +17,7 @@ export interface EvalMetrics {
 
 async function seed(embeddings?: EmbeddingClient): Promise<{ memory: MemoryDb; ids: Map<number, string> }> {
   const memory = await openMemoryDb(process.cwd(), { path: ":memory:", quiet: true });
-  if (!memory) throw new Error("mixai eval requires node:sqlite (Node.js >= 22.5)");
+  if (!memory) throw new Error("simem eval requires node:sqlite (Node.js >= 22.5)");
   const ids = new Map<number, string>();
   const insert = memory.db.prepare(
     "INSERT INTO memory_items (kind, category, text, importance, created_at, last_reinforced_at, embedding, embedding_model) VALUES ('semantic', 'fact', ?, 7, ?, ?, ?, ?)",

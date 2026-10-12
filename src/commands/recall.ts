@@ -9,10 +9,10 @@ import { AUTOMATIC_INJECTION_GATE, automaticGate } from "../memory/retrieval.js"
 import { calibrate, evaluateGate } from "../vec/eval.js";
 import { print, type Output } from "./common.js";
 
-// `mixai recall "<question>"`: what does memory know about this? Deterministic,
+// `simem recall "<question>"`: what does memory know about this? Deterministic,
 // local, and the same search the agent's `recall` tool runs.
 export async function runRecall(question: string, options: Output & { cwd: string; config: GatewayConfig; limit?: number }): Promise<void> {
-  if (!question.trim()) throw new Error('mixai recall "<question>"');
+  if (!question.trim()) throw new Error('simem recall "<question>"');
   const memory = await openMemoryDb(options.cwd, { quiet: true });
   if (!memory) throw new Error(`Memory requires Node.js >= 22.5; this is ${process.version}`);
   try {
@@ -28,14 +28,14 @@ export async function runRecall(question: string, options: Output & { cwd: strin
     if (hits.length === 0 && global.length === 0) return print(options, "Nothing in memory matches that yet.");
     const lines = hits.map((hit) => `- [${hit.source} ${hit.id}] ${toPreview(hit, 220).preview}`);
     for (const item of global) lines.push(`- [you, all projects] ${item.text}`);
-    lines.push("", `Full text: mixai memory show <id>${embeddings ? "" : "   (keyword search only — run `mixai init` to add the local embedding model)"}`);
+    lines.push("", `Full text: simem memory show <id>${embeddings ? "" : "   (keyword search only — run `simem init` to add the local embedding model)"}`);
     print(options, lines.join("\n"));
   } finally {
     memory.close();
   }
 }
 
-// `mixai eval`: measures the automatic-injection gate on the labelled set,
+// `simem eval`: measures the automatic-injection gate on the labelled set,
 // keyword-only vs with the configured embeddings, and (with --all) searches
 // for vector cutoffs to put in config.
 export async function runEval(options: Output & { config: GatewayConfig; calibrate: boolean }): Promise<void> {
@@ -55,13 +55,13 @@ export async function runEval(options: Output & { config: GatewayConfig; calibra
   lines.push(`Deliberate search, top 3 (keyword): exact ${pct(deliberateKeyword.exactRecall)}, reworded ${pct(deliberateKeyword.rewordedRecall)}`);
   if (deliberateHybrid) lines.push(`Deliberate search, top 3 (with ${embeddings!.model}): exact ${pct(deliberateHybrid.exactRecall)}, reworded ${pct(deliberateHybrid.rewordedRecall)}`);
   if (options.calibrate) {
-    if (!embeddings) throw new Error("No embedding model available to calibrate; run `mixai init` or configure Ollama.");
+    if (!embeddings) throw new Error("No embedding model available to calibrate; run `simem init` or configure Ollama.");
     const best = await calibrate(embeddings);
     result.calibration = best ?? null;
     lines.push(
       best
         ? `Suggested cutoffs for ${embeddings.model}: "minSimilarity": ${best.minSimilarity}, "strongSimilarity": ${best.strongSimilarity} ` +
-            `(reworded ${pct(best.metrics.rewordedRecall)} at precision ${pct(best.metrics.precision)}). Set them under memory.embeddings in ~/.mixai/config.json only if the margin looks comfortable.`
+            `(reworded ${pct(best.metrics.rewordedRecall)} at precision ${pct(best.metrics.precision)}). Set them under memory.embeddings in ~/.simem/config.json only if the margin looks comfortable.`
         : `No cutoff for ${embeddings.model} reaches 90% precision without false injections; keep the vector gate off.`,
     );
   }

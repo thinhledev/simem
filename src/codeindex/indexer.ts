@@ -11,7 +11,7 @@ const MAX_CHUNK_LINES = 120;
 const PLAIN_CHUNK_LINES = 80;
 const MAX_PLAIN_CHUNKS = 3;
 
-const SKIP_DIRS = /(^|\/)(node_modules|dist|build|out|coverage|vendor|\.git|\.next|\.nuxt|target|__pycache__|\.venv|venv|\.mixai|\.turbo|\.cache)(\/|$)/;
+const SKIP_DIRS = /(^|\/)(node_modules|dist|build|out|coverage|vendor|\.git|\.next|\.nuxt|target|__pycache__|\.venv|venv|\.simem|\.mixai|\.turbo|\.cache)(\/|$)/;
 const SKIP_FILES = new Set(["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "Cargo.lock", "poetry.lock", "go.sum", "composer.lock", "Gemfile.lock", "bun.lockb"]);
 const BINARY_EXT = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".gz", ".tgz", ".woff", ".woff2", ".ttf", ".otf", ".eot",

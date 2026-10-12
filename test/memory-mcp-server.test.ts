@@ -12,7 +12,7 @@ const sqlite = await loadSqlite();
 const withSqlite = { skip: sqlite ? false : "node:sqlite unavailable on this Node runtime" };
 
 async function withMemory(run: (memory: MemoryDb, cwd: string) => Promise<void>): Promise<void> {
-  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-"));
+  const cwd = await mkdtemp(join(tmpdir(), "simem-mcp-"));
   const memory = await openMemoryDb(cwd);
   if (!memory) throw new Error("expected node:sqlite to be available for this test");
   try {
@@ -54,17 +54,17 @@ test("tools/list advertises memory tools, context_brief, and the handoff tools",
       "memory_save",
       "memory_search",
       "memory_stats",
-      "mixai_doctor",
       "output_get",
       "recall",
       "repo_map",
+      "simem_doctor",
       "switch_to_provider",
     ]);
   });
 });
 
 test("tools/call context_brief returns a brief and works even without a memory database", withSqlite, async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-brief-"));
+  const cwd = await mkdtemp(join(tmpdir(), "simem-mcp-brief-"));
   const fakeRunner = {
     async run() {
       return { exitCode: 0, stdout: "main\n", stderr: "", durationMs: 1, timedOut: false };
@@ -107,7 +107,7 @@ function fakeReadiness(readyProviders: Set<string>, readySurface: "desktop" | "i
 }
 
 test("tools/call list_handoff_targets excludes the calling agent and reports readiness for the rest", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-targets-"));
+  const cwd = await mkdtemp(join(tmpdir(), "simem-mcp-targets-"));
   const deps = {
     runner: { async run() { return { exitCode: 0, stdout: "", stderr: "", durationMs: 1, timedOut: false }; } },
     memoryConfig: DEFAULT_CONFIG.memory,
@@ -134,7 +134,7 @@ test("tools/call list_handoff_targets excludes the calling agent and reports rea
 });
 
 test("tools/call list_handoff_targets lists all four providers when selfProvider is unknown", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-targets-noself-"));
+  const cwd = await mkdtemp(join(tmpdir(), "simem-mcp-targets-noself-"));
   const deps = {
     runner: { async run() { return { exitCode: 0, stdout: "", stderr: "", durationMs: 1, timedOut: false }; } },
     memoryConfig: DEFAULT_CONFIG.memory,
@@ -153,7 +153,7 @@ test("tools/call list_handoff_targets lists all four providers when selfProvider
 });
 
 test("tools/call switch_to_provider rejects targeting the calling agent itself", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-switch-self-"));
+  const cwd = await mkdtemp(join(tmpdir(), "simem-mcp-switch-self-"));
   const deps = {
     runner: { async run() { return { exitCode: 0, stdout: "", stderr: "", durationMs: 1, timedOut: false }; } },
     memoryConfig: DEFAULT_CONFIG.memory,
@@ -199,7 +199,7 @@ test("tools/call switch_to_provider returns not_ready without launching anything
 });
 
 test("tools/call switch_to_provider checkpoints and returns a manual command on interactive surface (no unsafe auto-spawn)", withSqlite, async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-switch-interactive-"));
+  const cwd = await mkdtemp(join(tmpdir(), "simem-mcp-switch-interactive-"));
   await mkdir(join(cwd, "src"), { recursive: true });
   const sessionPath = join(cwd, "session.jsonl");
   await writeFile(
@@ -276,7 +276,7 @@ test("tools/call switch_to_provider checkpoints and returns a manual command on 
 });
 
 test("tools/call switch_to_provider launches on desktop surface via the injected launcher", withSqlite, async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-switch-desktop-"));
+  const cwd = await mkdtemp(join(tmpdir(), "simem-mcp-switch-desktop-"));
   const claudeProjects = join(cwd, ".claude-home", "projects", "p");
   await mkdir(claudeProjects, { recursive: true });
   await writeFile(
@@ -393,9 +393,9 @@ test("tools/call memory_save survives a state.json pointing at an unindexed chec
     // A checkpoint whose files exist on disk but whose row never made it into
     // the database (indexCheckpointBestEffort failed silently). The foreign key
     // on memory_items.source_checkpoint_id used to reject every save.
-    await mkdir(join(cwd, ".mixai"), { recursive: true });
+    await mkdir(join(cwd, ".simem"), { recursive: true });
     await writeFile(
-      join(cwd, ".mixai", "state.json"),
+      join(cwd, ".simem", "state.json"),
       JSON.stringify({ version: 1, checkpoints: {}, sessions: {}, currentCheckpointId: "2026-07-09T05-04-45-416Z-f99ce6b7" }),
       "utf8",
     );
@@ -430,10 +430,10 @@ test("tools/call memory_save keeps provenance when the checkpoint is indexed", w
           "(id, created_at, workspace, source_provider, source_session_id, lineage_mode, directory, manifest_json) " +
           "VALUES (?, '2026-07-09T05:04:45Z', ?, 'claude', 'session-1', 'fresh', ?, '{}')",
       )
-      .run("2026-07-09T05-04-45-416Z-f99ce6b7", cwd, join(cwd, ".mixai", "checkpoints", "cp"));
-    await mkdir(join(cwd, ".mixai"), { recursive: true });
+      .run("2026-07-09T05-04-45-416Z-f99ce6b7", cwd, join(cwd, ".simem", "checkpoints", "cp"));
+    await mkdir(join(cwd, ".simem"), { recursive: true });
     await writeFile(
-      join(cwd, ".mixai", "state.json"),
+      join(cwd, ".simem", "state.json"),
       JSON.stringify({ version: 1, checkpoints: {}, sessions: {}, currentCheckpointId: "2026-07-09T05-04-45-416Z-f99ce6b7" }),
       "utf8",
     );
@@ -579,8 +579,8 @@ test("malformed JSON and unknown methods produce JSON-RPC error codes without th
 });
 
 test("runMcpServer streams newline-delimited JSON-RPC responses over stdio", withSqlite, async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "mixai-mcp-stdio-"));
-  await mkdir(join(cwd, ".mixai"), { recursive: true });
+  const cwd = await mkdtemp(join(tmpdir(), "simem-mcp-stdio-"));
+  await mkdir(join(cwd, ".simem"), { recursive: true });
   const input = new PassThrough();
   const output = new PassThrough();
   const chunks: string[] = [];

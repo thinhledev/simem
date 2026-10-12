@@ -126,7 +126,7 @@ async function importAutoMemory(cwd: string, summary: NativeImportSummary): Prom
 
 function claudeDesktopRoot(): string | undefined {
   if (process.env.CLAUDE_DESKTOP_DATA_DIR) return process.env.CLAUDE_DESKTOP_DATA_DIR;
-  if (process.env.MIXAI_HOME_DISCOVERY === "env") return undefined;
+  if (process.env.SIMEM_HOME_DISCOVERY === "env") return undefined;
   if (process.platform !== "darwin") return undefined;
   return join(homedir(), "Library", "Application Support", "Claude");
 }

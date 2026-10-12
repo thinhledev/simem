@@ -43,7 +43,7 @@ function bashRewrite(input: RawHookInput, cwd: string, config: GatewayConfig): P
   if (config.compression.bashRewrite !== "auto") return undefined;
   const command = typeof input.toolInput?.command === "string" ? input.toolInput.command.trim() : "";
   if (!command || !isNoisyCommand(command)) return undefined;
-  if (/^(?:rtk|mixai)\b/.test(command) || command.includes("/.mixai/bin/mixai")) return undefined;
+  if (/^(?:rtk|simem)\b/.test(command) || command.includes("/.simem/bin/simem")) return undefined;
   if (config.compression.rtk === "defer" && rtkInstalled()) return undefined;
   if (!wouldAutoApprove(command, input.permissionMode, cwd)) return undefined;
   return {
@@ -51,7 +51,7 @@ function bashRewrite(input: RawHookInput, cwd: string, config: GatewayConfig): P
       hookEventName: "PreToolUse",
       // Allowed only because the original command already was (see wouldAutoApprove).
       permissionDecision: "allow",
-      permissionDecisionReason: "mixai: same command, output filtered (your settings already allow it)",
+      permissionDecisionReason: "simem: same command, output filtered (your settings already allow it)",
       updatedInput: { ...input.toolInput, command: `"${launcherPath()}" exec -- ${shellQuote(command)}` },
     },
   };
@@ -107,7 +107,7 @@ function readGuards(input: RawHookInput, cwd: string, config: GatewayConfig, mem
     if (previous?.full && previous.size === size && previous.mtime_ms === mtimeMs) {
       const key = `reread:${session}:${absolute}`;
       if (config.compression.rereadGuard === "enforce" || firstTime(memory, key)) {
-        const reason = `mixai: ${display} has not changed since you read it in full earlier in this session, so its content is already in your context. Re-read only if you lost it (call Read again to get it anyway).`;
+        const reason = `simem: ${display} has not changed since you read it in full earlier in this session, so its content is already in your context. Re-read only if you lost it (call Read again to get it anyway).`;
         recordGuardSaving(memory, key, "reread-guard", size, reason.length);
         incrementCounter(memory, "guard:reread-guard");
         return deny(reason);
@@ -132,7 +132,7 @@ function readGuards(input: RawHookInput, cwd: string, config: GatewayConfig, mem
           ? symbols.map((symbol) => `  ${symbol.start}-${symbol.end}  ${symbol.kind} ${symbol.name}`).join("\n")
           : "  (no symbols recognised)";
         const reason =
-          `mixai: ${display} has ${lines} lines (~${Math.round(size / 3.6 / 1000)}k tokens). Outline:\n${outline}\n` +
+          `simem: ${display} has ${lines} lines (~${Math.round(size / 3.6 / 1000)}k tokens). Outline:\n${outline}\n` +
           "Read just the part you need with offset/limit (or the code_read tool)." +
           (config.compression.readGuard === "enforce" ? "" : " Call Read again without offset/limit if you really need the whole file.");
         recordGuardSaving(memory, key, "read-guard", size, reason.length);

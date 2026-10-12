@@ -16,7 +16,7 @@ export interface SyncCommandOptions extends Output {
   config: GatewayConfig;
 }
 
-// `mixai sync`: zero-token backfill of every agent session on this machine,
+// `simem sync`: zero-token backfill of every agent session on this machine,
 // across all account homes, into each session's project store; then imports
 // the agents' own memories. Default scope is the current project.
 export async function runSync(options: SyncCommandOptions): Promise<void> {
@@ -47,7 +47,7 @@ export async function runSync(options: SyncCommandOptions): Promise<void> {
     const memory = await openMemoryDb(options.cwd, { quiet: true });
     if (memory) {
       try {
-        const result = syncThroughDir(memory, resolveProject(options.cwd), syncDir, process.env.MIXAI_SYNC_PASSPHRASE || undefined);
+        const result = syncThroughDir(memory, resolveProject(options.cwd), syncDir, process.env.SIMEM_SYNC_PASSPHRASE || undefined);
         const imported = result.imported.reduce((sum, entry) => sum + entry.items, 0);
         syncDirLine = `\nSync folder: wrote this machine's bundle; imported ${imported} item(s) from ${result.imported.length} other machine(s).`;
       } finally {

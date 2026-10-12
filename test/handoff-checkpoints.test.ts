@@ -27,7 +27,7 @@ class GitRunner implements CommandRunner {
 }
 
 test("creates a self-contained checkpoint and chains the next export to it", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-checkpoint-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-checkpoint-"));
   const sessionPath = join(workspace, "session.jsonl");
   await mkdir(join(workspace, "src"));
   await writeFile(
@@ -53,15 +53,15 @@ test("creates a self-contained checkpoint and chains the next export to it", asy
   assert.match(await readFile(first.handoffPath, "utf8"), /Latest user objective\n\nBuild it/);
   assert.match(await readFile(first.transcriptPath, "utf8"), /Half complete/);
   assert.match(await readFile(first.patchPath, "utf8"), /staged patch[\s\S]*working patch/);
-  assert.match(await readFile(join(workspace, ".mixai", "current", "HANDOFF.md"), "utf8"), /Build it/);
-  assert.match(await readFile(join(workspace, ".mixai", "current", "TRANSCRIPT.md"), "utf8"), /Half complete/);
+  assert.match(await readFile(join(workspace, ".simem", "current", "HANDOFF.md"), "utf8"), /Build it/);
+  assert.match(await readFile(join(workspace, ".simem", "current", "TRANSCRIPT.md"), "utf8"), /Half complete/);
   const state = await readGatewayState(workspace);
   assert.equal(state.currentCheckpointId, second.manifest.id);
   assert.equal(state.sessions.codex, "codex-1");
 });
 
 test("HANDOFF.md stays free of a Project memory section when memory has nothing to say", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-checkpoint-nomemory-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-checkpoint-nomemory-"));
   const sessionPath = join(workspace, "session.jsonl");
   await writeFile(
     sessionPath,
@@ -80,7 +80,7 @@ test("HANDOFF.md stays free of a Project memory section when memory has nothing 
 });
 
 test("HANDOFF.md gains an additive Project memory section only when memory is enabled and populated", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-checkpoint-memory-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-checkpoint-memory-"));
   const sessionPath = join(workspace, "session.jsonl");
   await writeFile(
     sessionPath,
@@ -120,7 +120,7 @@ test("HANDOFF.md gains an additive Project memory section only when memory is en
 });
 
 test("BRIEF.md is a lean per-turn import: objective + pointer, not the full transcript", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-checkpoint-brief-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-checkpoint-brief-"));
   const sessionPath = join(workspace, "session.jsonl");
   const bigOutcome = "OUTCOMEBODY".repeat(2_000);
   await writeFile(
@@ -141,8 +141,8 @@ test("BRIEF.md is a lean per-turn import: objective + pointer, not the full tran
   };
 
   await createCheckpoint(new GitRunner(), session, { mode: "export" });
-  const brief = await readFile(join(workspace, ".mixai", "current", "BRIEF.md"), "utf8");
-  const handoff = await readFile(join(workspace, ".mixai", "current", "HANDOFF.md"), "utf8");
+  const brief = await readFile(join(workspace, ".simem", "current", "BRIEF.md"), "utf8");
+  const handoff = await readFile(join(workspace, ".simem", "current", "HANDOFF.md"), "utf8");
 
   // Carries the objective and a pointer to the full handoff…
   assert.match(brief, /Add a tooltip to the button/);
@@ -155,7 +155,7 @@ test("BRIEF.md is a lean per-turn import: objective + pointer, not the full tran
 });
 
 test("BRIEF.md never surfaces the internal memory-consolidation prompt as the objective", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-checkpoint-brief-mem-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-checkpoint-brief-mem-"));
   const sessionPath = join(workspace, "session.jsonl");
   await writeFile(
     sessionPath,
@@ -175,13 +175,13 @@ test("BRIEF.md never surfaces the internal memory-consolidation prompt as the ob
     modifiedAt: new Date().toISOString(),
   };
   await createCheckpoint(new GitRunner(), session, { mode: "export" });
-  const brief = await readFile(join(workspace, ".mixai", "current", "BRIEF.md"), "utf8");
+  const brief = await readFile(join(workspace, ".simem", "current", "BRIEF.md"), "utf8");
   assert.doesNotMatch(brief, /persistent project memory store/);
   assert.match(brief, /internal memory step/);
 });
 
 test("recent conversation context is capped only when memory is enabled; fully uncapped (Phase 1) when disabled", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-checkpoint-verbatim-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-checkpoint-verbatim-"));
   const sessionPath = join(workspace, "session.jsonl");
   const hugeMessage = "x".repeat(20_000);
   await writeFile(

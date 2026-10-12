@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Builds a standalone `mixai` executable (no Node.js needed on the target
+// Builds a standalone `simem` executable (no Node.js needed on the target
 // machine) with Node's single-executable-application support:
 //   1. esbuild bundles src/cli.ts into one CommonJS file
 //   2. node --experimental-sea-config turns it into a blob
 //   3. postject injects the blob into a copy of this Node binary
-// Output: build/standalone/mixai-<platform>-<arch>. Build on each target
+// Output: build/standalone/simem-<platform>-<arch>. Build on each target
 // platform (see .github/workflows/standalone.yml); a binary only runs on the
 // OS and CPU it was built on.
 import { execFileSync } from "node:child_process";
@@ -15,9 +15,9 @@ import { join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const out = join(root, "build", "standalone");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-const bundle = join(out, "mixai.cjs");
-const blob = join(out, "mixai.blob");
-const binary = join(out, `mixai-${process.platform}-${process.arch}${process.platform === "win32" ? ".exe" : ""}`);
+const bundle = join(out, "simem.cjs");
+const blob = join(out, "simem.blob");
+const binary = join(out, `simem-${process.platform}-${process.arch}${process.platform === "win32" ? ".exe" : ""}`);
 const bundleOnly = process.argv.includes("--bundle-only");
 
 rmSync(out, { recursive: true, force: true });
@@ -32,7 +32,7 @@ await esbuild.build({
   format: "cjs",
   target: "node22",
   outfile: bundle,
-  define: { __MIXAI_VERSION__: JSON.stringify(pkg.version) },
+  define: { __SIMEM_VERSION__: JSON.stringify(pkg.version) },
   logLevel: "warning",
   // runtime.ts only reads import.meta when not bundled; in the bundle it is unused.
   logOverride: { "empty-import-meta": "silent" },
@@ -73,4 +73,4 @@ execFileSync(
 if (process.platform === "darwin") execFileSync("codesign", ["--sign", "-", binary], { stdio: "inherit" });
 const version = execFileSync(binary, ["--version"], { encoding: "utf8" }).trim();
 if (version !== pkg.version) throw new Error(`built binary reports ${version}, expected ${pkg.version}`);
-console.log(`binary: ${binary} (mixai ${version})`);
+console.log(`binary: ${binary} (simem ${version})`);

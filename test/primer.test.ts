@@ -27,10 +27,10 @@ const config: GatewayConfig = {
 };
 
 async function project(): Promise<string> {
-  process.env.MIXAI_STORAGE = "global";
-  process.env.MIXAI_HOME = mkdtempSync(join(tmpdir(), "mixai-primer-home-"));
+  process.env.SIMEM_STORAGE = "global";
+  process.env.SIMEM_HOME = mkdtempSync(join(tmpdir(), "simem-primer-home-"));
   clearProjectCache();
-  const repo = realpathSync(mkdtempSync(join(tmpdir(), "mixai-primer-repo-")));
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "simem-primer-repo-")));
   execFileSync("git", ["init", "-q"], { cwd: repo });
   writeFileSync(join(repo, "a.txt"), `x ${repo}\n`);
   execFileSync("git", ["-c", "user.email=t@e.com", "-c", "user.name=t", "add", "."], { cwd: repo });
@@ -46,7 +46,7 @@ async function project(): Promise<string> {
 }
 
 test("a new Codex session starts with Claude's latest work, standing rules, and known commands — byte-stable", withSqlite, async () => {
-  const previous = { storage: process.env.MIXAI_STORAGE, home: process.env.MIXAI_HOME };
+  const previous = { storage: process.env.SIMEM_STORAGE, home: process.env.SIMEM_HOME };
   try {
     const repo = await project();
     const primer = await handleSessionStart({ source: "startup", sessionId: "codex-new" }, repo, "codex", config, runner);
@@ -59,14 +59,14 @@ test("a new Codex session starts with Claude's latest work, standing rules, and 
     const again = await handleSessionStart({ source: "startup", sessionId: "codex-new-2" }, repo, "codex", config, runner);
     assert.equal(again, primer, "same memory, same bytes (prompt-cache friendly)");
   } finally {
-    process.env.MIXAI_STORAGE = previous.storage;
-    process.env.MIXAI_HOME = previous.home;
+    process.env.SIMEM_STORAGE = previous.storage;
+    process.env.SIMEM_HOME = previous.home;
     clearProjectCache();
   }
 });
 
 test("per-prompt injection skips what the primer already showed, until the context is compacted", withSqlite, async () => {
-  const previous = { storage: process.env.MIXAI_STORAGE, home: process.env.MIXAI_HOME };
+  const previous = { storage: process.env.SIMEM_STORAGE, home: process.env.SIMEM_HOME };
   try {
     const repo = await project();
     const prompt = { prompt: "can I commit directly to master or do I need a pull request?", sessionId: "s-dedupe" };
@@ -77,8 +77,8 @@ test("per-prompt injection skips what the primer already showed, until the conte
     await handleSessionStart({ source: "compact", sessionId: "other" }, repo, "claude", config, runner);
     assert.match(await handleUserPromptSubmit({ ...prompt, sessionId: "other" }, repo, "claude", config), /Never commit directly to master/, "compaction emptied the context");
   } finally {
-    process.env.MIXAI_STORAGE = previous.storage;
-    process.env.MIXAI_HOME = previous.home;
+    process.env.SIMEM_STORAGE = previous.storage;
+    process.env.SIMEM_HOME = previous.home;
     clearProjectCache();
   }
 });

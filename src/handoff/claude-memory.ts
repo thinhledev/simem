@@ -1,19 +1,20 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { LEGACY_HANDOFF_END, LEGACY_HANDOFF_START, stripMarkedBlock } from "../legacy.js";
 import { briefFromHandoff } from "./checkpoints.js";
 
-const START = "<!-- mixai:handoff:start -->";
-const END = "<!-- mixai:handoff:end -->";
+const START = "<!-- simem:handoff:start -->";
+const END = "<!-- simem:handoff:end -->";
 // Imports the LEAN brief, not the full HANDOFF.md. An @import is persistent
 // system-prompt context re-sent on every turn, so importing the full handoff
 // (recent transcript + memory, often tens of KB) taxes every message. BRIEF.md
 // carries just the objective + a pointer; the full handoff is one Read away.
 const BLOCK = `${START}
-## Mixai cross-agent handoff
+## simem cross-agent handoff
 
-The brief below is compact continuity context from another coding agent. When the user asks to continue, inspect the live repository state and resume the latest unfinished objective without asking them to repeat completed work. For the full prior-agent handoff, read \`.mixai/current/HANDOFF.md\`.
+The brief below is compact continuity context from another coding agent. When the user asks to continue, inspect the live repository state and resume the latest unfinished objective without asking them to repeat completed work. For the full prior-agent handoff, read \`.simem/current/HANDOFF.md\`.
 
-@.mixai/current/BRIEF.md
+@.simem/current/BRIEF.md
 ${END}`;
 
 async function readOptional(path: string): Promise<string> {
@@ -46,7 +47,7 @@ export interface ClaudeMemoryIntegration {
 // the block point at BRIEF.md now — so derive one from the existing HANDOFF.md
 // (best-effort) to avoid a dangling @import until the next checkpoint writes it.
 async function ensureBriefFile(cwd: string): Promise<void> {
-  const currentDir = join(cwd, ".mixai", "current");
+  const currentDir = join(cwd, ".simem", "current");
   const briefPath = join(currentDir, "BRIEF.md");
   if (await readOptional(briefPath)) return;
   const handoff = await readOptional(join(currentDir, "HANDOFF.md"));
@@ -61,7 +62,9 @@ export async function ensureClaudeHandoffMemory(cwd: string): Promise<ClaudeMemo
   const gitignorePath = join(root, ".gitignore");
   const worktreeIncludePath = join(root, ".worktreeinclude");
   await ensureBriefFile(root);
-  const original = await readOptional(memoryPath);
+  // mixai 1.x's import block is replaced by this one.
+  const raw = await readOptional(memoryPath);
+  const original = stripMarkedBlock(raw, LEGACY_HANDOFF_START, LEGACY_HANDOFF_END);
   const start = original.indexOf(START);
   const end = original.indexOf(END);
   let memory = original;
@@ -71,21 +74,21 @@ export async function ensureClaudeHandoffMemory(cwd: string): Promise<ClaudeMemo
     const prefix = original && !original.endsWith("\n") ? `${original}\n` : original;
     memory = `${prefix}${prefix ? "\n" : ""}${BLOCK}\n`;
   }
-  const memoryChanged = memory !== original;
+  const memoryChanged = memory !== raw;
   if (memoryChanged) await writeFile(memoryPath, memory, "utf8");
 
-  const gitignoreChanged = await ensureLines(gitignorePath, [".mixai/", "CLAUDE.local.md"]);
+  const gitignoreChanged = await ensureLines(gitignorePath, [".simem/", "CLAUDE.local.md"]);
   const worktreeOriginal = await readOptional(worktreeIncludePath);
   const worktreeMigrated = worktreeOriginal
     .split(/\r?\n/)
-    .filter((line) => line.trim() !== ".mixai/CURRENT.md")
+    .filter((line) => line.trim() !== ".simem/CURRENT.md")
     .join("\n")
     .replace(/^\n+|\n+$/g, "");
   const worktreeMigrationChanged = worktreeMigrated !== worktreeOriginal.trim();
   if (worktreeMigrationChanged) {
     await writeFile(worktreeIncludePath, worktreeMigrated ? `${worktreeMigrated}\n` : "", "utf8");
   }
-  const worktreeChanged = await ensureLines(worktreeIncludePath, [".mixai/current/", "CLAUDE.local.md"]);
+  const worktreeChanged = await ensureLines(worktreeIncludePath, [".simem/current/", "CLAUDE.local.md"]);
   return {
     memoryPath,
     gitignorePath,

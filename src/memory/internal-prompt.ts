@@ -1,4 +1,4 @@
-// mixai's own consolidation and rollup prompts can land in a transcript as a
+// simem's own consolidation and rollup prompts can land in a transcript as a
 // "user" message (a headless `codex exec` / `claude -p` run is still a
 // session). They must never be surfaced as the human's objective or mined for
 // the human's decisions.

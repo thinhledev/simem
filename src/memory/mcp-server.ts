@@ -33,7 +33,7 @@ import { MEMORY_CATEGORIES, MEMORY_KINDS, type MemoryCategory } from "./types.js
 // alongside per-hit preview truncation, in case a high `limit` still adds up.
 const MAX_PREVIEW_RESPONSE_CHARS = 8_000;
 
-export const SERVER_INFO = { name: "mixai-memory", version: "2.0.0" };
+export const SERVER_INFO = { name: "simem-memory", version: "2.0.0" };
 export const PROTOCOL_VERSION = "2024-11-05";
 
 interface JsonRpcRequest {
@@ -80,7 +80,7 @@ export const TOOL_GROUPS: Record<string, string> = {
   code_find_references: "code",
   repo_map: "code",
   output_get: "compression",
-  mixai_doctor: "setup",
+  simem_doctor: "setup",
   list_handoff_targets: "handoff",
   switch_to_provider: "handoff",
 };
@@ -104,12 +104,12 @@ const TOOLS = [
   },
   {
     name: "memory_stats",
-    description: "Token usage of this project's agent sessions and what mixai saved (measured vs estimated), for when the user asks.",
+    description: "Token usage of this project's agent sessions and what simem saved (measured vs estimated), for when the user asks.",
     inputSchema: { type: "object", properties: { since: { type: "string", description: "e.g. 7d, 24h, or an ISO date" } } },
   },
   {
-    name: "mixai_doctor",
-    description: "Check mixai's setup for this machine and project (hooks, tools, memory, embeddings) and say what to fix.",
+    name: "simem_doctor",
+    description: "Check simem's setup for this machine and project (hooks, tools, memory, embeddings) and say what to fix.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -198,7 +198,7 @@ const TOOLS = [
   },
   {
     name: "output_get",
-    description: "Full, unfiltered output of a command that `mixai exec` shortened (the id is in its footer).",
+    description: "Full, unfiltered output of a command that `simem exec` shortened (the id is in its footer).",
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   },
   {
@@ -274,12 +274,12 @@ const TOOLS = [
   },
 ] as const;
 
-// `.mixai/state.json` can point at a checkpoint the memory database never
+// `.simem/state.json` can point at a checkpoint the memory database never
 // indexed: indexCheckpointBestEffort swallows failures by design, so the
 // checkpoint files land on disk while the `checkpoints` row does not.
 // memory_items.source_checkpoint_id carries a foreign key to checkpoints(id),
 // so inserting an unindexed id fails the whole save. Provenance is optional on
-// a memory item — drop it rather than lose the memory. `mixai memory reindex`
+// a memory item — drop it rather than lose the memory. `simem memory reindex`
 // backfills the missing checkpoint rows from the canonical files.
 function resolveSourceCheckpointId(memory: MemoryDb, checkpointId: string | undefined): string | null {
   if (!checkpointId) return null;
@@ -388,8 +388,8 @@ async function callTool(memory: MemoryDb, cwd: string, toolName: string, args: R
 
 // Dependencies for tools that reach outside the memory database (git state,
 // config-driven budgets, cross-agent handoff). Defaults are real
-// implementations; tests inject fakes. `selfProvider` is set from `mixai mcp
-// --provider X` at registration time (see mixai integrate) so handoff tools
+// implementations; tests inject fakes. `selfProvider` is set from `simem mcp
+// --provider X` at registration time (see simem integrate) so handoff tools
 // know which agent they're serving and can exclude it from targets.
 export interface McpDeps {
   runner: CommandRunner;
@@ -578,7 +578,7 @@ export async function handleRequest(
     }
     // Code-map tools need only the filesystem + git runner, not the memory DB,
     // so they run even on Node runtimes without node:sqlite.
-    if (params.name === "mixai_doctor") {
+    if (params.name === "simem_doctor") {
       try {
         const checks = await collectChecks(cwd);
         return { jsonrpc: "2.0", id, result: toolResult({ checks }) };

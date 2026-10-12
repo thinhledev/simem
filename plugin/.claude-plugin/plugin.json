@@ -1,11 +1,11 @@
 {
-  "name": "mixai",
-  "displayName": "mixai memory",
+  "name": "simem",
+  "displayName": "simem memory",
   "version": "2.0.0",
-  "description": "Local project memory shared across every agent and account, plus tools that keep context small. Requires the mixai-cli package (the setup skill installs it).",
+  "description": "Local project memory shared across every agent and account, plus tools that keep context small. Requires the simem package (the setup skill installs it).",
   "author": { "name": "Thinh Le", "url": "https://github.com/thinhledev" },
-  "homepage": "https://github.com/thinhledev/mixai#readme",
-  "repository": "https://github.com/thinhledev/mixai",
+  "homepage": "https://github.com/thinhledev/simem#readme",
+  "repository": "https://github.com/thinhledev/simem",
   "license": "MIT",
   "keywords": ["memory", "tokens", "context", "codex", "mcp"]
 }

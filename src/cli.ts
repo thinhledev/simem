@@ -30,7 +30,7 @@ import { runMigrate, runProject } from "./commands/project.js";
 import { runSources, runSync } from "./commands/sources.js";
 import { runEval, runRecall } from "./commands/recall.js";
 import { runIndex } from "./commands/index.js";
-import { isBundled, isStandalone, mixaiVersion } from "./runtime.js";
+import { isBundled, isStandalone, simemVersion } from "./runtime.js";
 import { runStats } from "./commands/stats.js";
 import { installStatusline, runStatusline } from "./commands/statusline.js";
 import { runDashboard } from "./commands/dashboard.js";
@@ -38,7 +38,7 @@ import { execCompressed, readOutput } from "./compress/exec.js";
 import { BUILTIN_MODEL_SPEC, installModel, modelInstalled } from "./vec/install.js";
 import { embedNewRows } from "./vec/client.js";
 
-// Subsystems contribute steps to `mixai init` and checks to `mixai doctor`.
+// Subsystems contribute steps to `simem init` and checks to `simem doctor`.
 function initSteps(): Array<(context: InitContext) => Promise<string | undefined>> {
   return [
     async (context) => {
@@ -51,7 +51,7 @@ function initSteps(): Array<(context: InitContext) => Promise<string | undefined
       if (context.remove || context.noModel || context.config.memory.embeddings.provider !== "builtin") return undefined;
       const outcome = await installModel();
       if (outcome.status === "failed") {
-        return `Embedding model: download failed (${outcome.reason}); search stays keyword-only. Re-run \`mixai init\` to retry.`;
+        return `Embedding model: download failed (${outcome.reason}); search stays keyword-only. Re-run \`simem init\` to retry.`;
       }
       const memory = await openMemoryDb(context.cwd, { quiet: true });
       if (memory) {
@@ -71,7 +71,7 @@ function doctorChecks(): ExtraChecks[] {
     async () => [
       modelInstalled()
         ? { level: "ok" as const, area: "embeddings", message: `${BUILTIN_MODEL_SPEC.name} installed; reworded questions are understood in searches` }
-        : { level: "warn" as const, area: "embeddings", message: "Embedding model not installed; search is keyword-only. Run `mixai init`." },
+        : { level: "warn" as const, area: "embeddings", message: "Embedding model not installed; search is keyword-only. Run `simem init`." },
     ],
   ];
 }
@@ -136,7 +136,7 @@ interface CliOptions {
   cwdExplicit: boolean;
   check: boolean;
   remove: boolean;
-  /** "user" marks hook/MCP entries written by `mixai init` (vs 1.x per-project ones). */
+  /** "user" marks hook/MCP entries written by `simem init` (vs 1.x per-project ones). */
   scope?: string;
   /** sync --path: ingest one transcript file. */
   path?: string;
@@ -158,55 +158,55 @@ interface CliOptions {
 }
 
 function readVersion(): string {
-  return mixaiVersion();
+  return simemVersion();
 }
 
-const HELP = `mixai — local memory and context compression for AI coding agents
+const HELP = `simem — local memory and context compression for AI coding agents
 Works inside the Claude Code and Codex apps (and their CLIs). Everything stays on this machine.
 
 Set up (once per machine; an agent can run this for you):
-  mixai init [--statusline] [--no-model]   Install hooks + tools for every Claude/Codex account, import history
-  mixai init --check | --remove            Show drift / uninstall (memory in ~/.mixai is kept)
-  mixai doctor                             Check the setup and say what to fix (alias: status)
+  simem init [--statusline] [--no-model]   Install hooks + tools for every Claude/Codex account, import history
+  simem init --check | --remove            Show drift / uninstall (memory in ~/.simem is kept)
+  simem doctor                             Check the setup and say what to fix (alias: status)
 
 Use memory:
-  mixai recall "<question>"                What does memory know about this? (also the agent's recall tool)
-  mixai stats [--since 7d] [--group-by agent|surface|day|session]
-                                           Real token usage from your agents and what mixai saved
-  mixai dashboard [--detach] [--open]      Private local web page: usage, savings, browse/edit/forget memory
-  mixai memory add "<fact>" | forget <id> | promote <id> | demote <id> | global
-  mixai memory search <query> | show <id> | export [--path F] [--all] | import <file>
-  mixai memory distill [--all] | compact | reindex [--rebuild] [--embed] | spend | savings
+  simem recall "<question>"                What does memory know about this? (also the agent's recall tool)
+  simem stats [--since 7d] [--group-by agent|surface|day|session]
+                                           Real token usage from your agents and what simem saved
+  simem dashboard [--detach] [--open]      Private local web page: usage, savings, browse/edit/forget memory
+  simem memory add "<fact>" | forget <id> | promote <id> | demote <id> | global
+  simem memory search <query> | show <id> | export [--path F] [--all] | import <file>
+  simem memory distill [--all] | compact | reindex [--rebuild] [--embed] | spend | savings
 
 Keep context small:
-  mixai exec -- <command>                  Run a noisy command; print only what matters (full output kept)
-  mixai out <id>                           Full output of a filtered command
-  mixai index [status | search <query>] [--rebuild]
+  simem exec -- <command>                  Run a noisy command; print only what matters (full output kept)
+  simem out <id>                           Full output of a filtered command
+  simem index [status | search <query>] [--rebuild]
                                            Local code index behind code_search / code_read / repo_map
 
 Sources and projects:
-  mixai sync [--all] [--since 90d]         Import sessions from every agent account (zero tokens)
-  mixai sources                            Agent homes found on this machine
-  mixai project show | list | link <id> | unlink
-  mixai migrate --to global|project        Where this project's memory lives
-  mixai eval [--all]                       Measure retrieval quality; --all suggests vector cutoffs
+  simem sync [--all] [--since 90d]         Import sessions from every agent account (zero tokens)
+  simem sources                            Agent homes found on this machine
+  simem project show | list | link <id> | unlink
+  simem migrate --to global|project        Where this project's memory lives
+  simem eval [--all]                       Measure retrieval quality; --all suggests vector cutoffs
 
 Hand off to another agent (optional):
-  mixai switch <target> [--from PROVIDER] [--session ID] [--to-session ID] [--surface desktop|interactive]
-  mixai fork <target> …                    Like switch, but keeps the original conversation
-  mixai export | sessions [codex|claude] | brief [--objective TEXT] [--max-chars N]
+  simem switch <target> [--from PROVIDER] [--session ID] [--to-session ID] [--surface desktop|interactive]
+  simem fork <target> …                    Like switch, but keeps the original conversation
+  simem export | sessions [codex|claude] | brief [--objective TEXT] [--max-chars N]
                                            <target>: codex, claude, cursor, or antigravity
 
 Integration (used by init; rarely needed by hand):
-  mixai hook <event> --provider P          Lifecycle hook entry (reads JSON on stdin; always exits 0)
-  mixai mcp [--provider P]                 MCP server (memory, code, compression, setup, handoff tools)
-  mixai integrate [--provider P] [--check] [--remove]   1.x per-project setup
-  mixai statusline                         Claude Code status line command
+  simem hook <event> --provider P          Lifecycle hook entry (reads JSON on stdin; always exits 0)
+  simem mcp [--provider P]                 MCP server (memory, code, compression, setup, handoff tools)
+  simem integrate [--provider P] [--check] [--remove]   1.x per-project setup
+  simem statusline                         Claude Code status line command
 
 Common options:
   --cwd PATH  --json  --quiet  --config PATH  --limit N  --since 7d|ISO  --category C  --min-importance N
 Deprecated:
-  mixai run "<task>"                       Removed in 3.0; mixai now works inside your agent apps
+  simem run "<task>"                       Removed in 3.0; simem now works inside your agent apps
 `;
 
 function provider(value: string, flag: string): ProviderId {
@@ -409,7 +409,7 @@ type StatusItem = ProviderHealth & { desktopInstalled: boolean; desktopVersion?:
 
 // "Ready" reflects whether the provider's desktop app is installed, not
 // whether its standalone CLI is separately authenticated (or an API key is
-// set) — since every provider here is primarily driven through `mixai switch`
+// set) — since every provider here is primarily driven through `simem switch`
 // launching the desktop app. "version" is the desktop app's own bundle
 // version, not the CLI's; "detail" reports all three readiness dimensions
 // (desktop app / CLI / credentials) so a "ready: yes" row that still can't
@@ -495,17 +495,17 @@ async function maybeConsolidate(
     const distillRunner = await selectDistillRunner(config.memory, () => new GatewayOrchestrator(config, createAdapters(config, runner)));
     const result = await consolidateBestEffort(workspace, distillRunner, checkpointId, config.memory);
     if (result.status === "done") {
-      process.stderr.write(`[mixai] memory: distilled ${result.itemsWritten} new item(s)\n`);
+      process.stderr.write(`[simem] memory: distilled ${result.itemsWritten} new item(s)\n`);
     } else if (result.status === "queued") {
-      process.stderr.write(`[mixai] memory: consolidation queued (${result.detail ?? "provider unavailable"})\n`);
+      process.stderr.write(`[simem] memory: consolidation queued (${result.detail ?? "provider unavailable"})\n`);
     }
   } catch {
     // Memory is additive; switch/export must never fail because of it.
   }
 }
 
-// Best-effort: records every attempt from a `mixai run` invocation in the token
-// ledger (purpose "run"), so `mixai memory spend` reflects real usage cost,
+// Best-effort: records every attempt from a `simem run` invocation in the token
+// ledger (purpose "run"), so `simem memory spend` reflects real usage cost,
 // not just internal consolidation/rollup calls. Never affects the command's
 // own success/failure or output.
 async function recordRunLedger(
@@ -524,11 +524,11 @@ async function recordRunLedger(
       memory.close();
     }
   } catch {
-    // Ledger is additive; `mixai run` must never fail because of it.
+    // Ledger is additive; `simem run` must never fail because of it.
   }
 }
 
-// When `mixai run` can't finish via any CLI-authenticated agent, a desktop
+// When `simem run` can't finish via any CLI-authenticated agent, a desktop
 // app may still work — desktop apps use their own separate login (often a
 // different account than the CLI's API key/session), so a CLI-side failure
 // doesn't mean the desktop app would fail too. Suggests continuing there
@@ -541,7 +541,7 @@ async function suggestDesktopFallback(runner: NodeCommandRunner, prompt: string)
   if (installed.length === 0) return;
   const names = installed.map((entry) => PROVIDER_APP_NAME[entry.provider]).join(", ");
   process.stderr.write(
-    `\n[mixai] No CLI-authenticated agent could finish this task. Desktop apps use their own separate login and ` +
+    `\n[simem] No CLI-authenticated agent could finish this task. Desktop apps use their own separate login and ` +
       `may work even when the CLI doesn't — installed: ${names}. Open one and paste this prompt to continue:\n\n${prompt}\n`,
   );
 }
@@ -562,7 +562,7 @@ async function typeOut(text: string): Promise<void> {
   }
 }
 
-// Renders a live-streamed `mixai run` response: each assistant.delta chunk
+// Renders a live-streamed `simem run` response: each assistant.delta chunk
 // plays out as a type-ahead reveal, queued strictly in arrival order so a
 // slow-to-render chunk can never interleave with the next one that arrives
 // while it's still typing. Consecutive chunks get a paragraph break between
@@ -601,7 +601,7 @@ const INTEGRATION_ACTION_MARKER: Record<string, string> = {
   failed: "!",
 };
 
-// Wires host agents to call mixai automatically: lifecycle hooks + MCP server
+// Wires host agents to call simem automatically: lifecycle hooks + MCP server
 // registration + standing instruction blocks, all idempotent file writes.
 // --check reports drift without writing (exit 1 on drift, for CI);
 // --remove strips exactly what integrate added and nothing else.
@@ -634,7 +634,7 @@ async function handleIntegrate(options: CliOptions): Promise<void> {
       (sum, plan) => sum + plan.files.filter((file) => file.action !== "unchanged").length,
       0,
     );
-    const verb = options.remove ? "Removed mixai from" : "Integrated";
+    const verb = options.remove ? "Removed simem from" : "Integrated";
     process.stdout.write(
       `${verb} ${integrations.length} provider(s) — ${changed}/${totalFiles} file(s) changed, ${totalFiles - changed} already up to date.\n\n`,
     );
@@ -649,7 +649,7 @@ async function handleIntegrate(options: CliOptions): Promise<void> {
       for (const note of plan.notes) process.stdout.write(`  → ${note}\n`);
       process.stdout.write("\n");
     }
-    process.stdout.write("Run `mixai integrate --check` anytime to verify these are still in place.\n");
+    process.stdout.write("Run `simem integrate --check` anytime to verify these are still in place.\n");
   }
   if (options.check && plans.some((plan) => "upToDate" in plan && !plan.upToDate)) process.exitCode = 1;
   const failed = plans.flatMap((plan) => ("files" in plan ? plan.files.filter((file) => file.action === "failed") : []));
@@ -658,17 +658,17 @@ async function handleIntegrate(options: CliOptions): Promise<void> {
 
 // Entry point for host-agent lifecycle hooks (Claude Code / Codex / Cursor).
 // Contract: ALWAYS exit 0 and never throw — a failing hook can abort the
-// host agent's turn or compaction, which is the single worst outcome mixai
+// host agent's turn or compaction, which is the single worst outcome simem
 // could cause. Errors go to stderr only.
 async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promise<void> {
   try {
     const event = options.positional[0];
     if (!event || !HOOK_EVENTS.includes(event as HookEvent)) {
-      throw new Error(`mixai hook requires an event: ${HOOK_EVENTS.join(", ")}`);
+      throw new Error(`simem hook requires an event: ${HOOK_EVENTS.join(", ")}`);
     }
     const provider = options.provider;
-    if (!provider) throw new Error("mixai hook requires --provider so ledger rows carry a real provider");
-    // A 1.x per-project hook stays silent once `mixai init` installed the
+    if (!provider) throw new Error("simem hook requires --provider so ledger rows carry a real provider");
+    // A 1.x per-project hook stays silent once `simem init` installed the
     // user-level one for this agent, so the work never runs twice.
     if (options.scope !== "user" && userLevelCovers(provider)) return;
     const config = await loadConfig(options.configPath);
@@ -693,7 +693,7 @@ async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promi
       process.stdout.write(await handleUserPromptSubmit(input, cwd, provider, config));
     }
   } catch (error) {
-    process.stderr.write(`[mixai] hook: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`[simem] hook: ${error instanceof Error ? error.message : String(error)}\n`);
   }
 }
 
@@ -782,9 +782,9 @@ async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Pro
   if (options.launch) {
     const readiness = await checkLaunchReadiness(runner, options.target, plan.surface);
     if (!readiness.ready) {
-      process.stderr.write(`[mixai] ${readiness.message ?? `${options.target} is not ready`}\n`);
-      if (readiness.loginCommand) process.stderr.write(`[mixai] Run: ${readiness.loginCommand}\n`);
-      process.stderr.write(`[mixai] Your checkpoint is safe. After authentication, rerun the same switch command.\n`);
+      process.stderr.write(`[simem] ${readiness.message ?? `${options.target} is not ready`}\n`);
+      if (readiness.loginCommand) process.stderr.write(`[simem] Run: ${readiness.loginCommand}\n`);
+      process.stderr.write(`[simem] Your checkpoint is safe. After authentication, rerun the same switch command.\n`);
       process.exitCode = 2;
       return;
     }
@@ -794,14 +794,14 @@ async function handleSwitch(options: CliOptions, runner: NodeCommandRunner): Pro
 }
 
 async function main(): Promise<void> {
-  // `mixai exec [--cwd DIR] -- <command…>`: everything after `--` belongs to
-  // the wrapped command, so it is never parsed as mixai flags.
+  // `simem exec [--cwd DIR] -- <command…>`: everything after `--` belongs to
+  // the wrapped command, so it is never parsed as simem flags.
   if (process.argv[2] === "exec") {
     const argv = process.argv.slice(3);
     const separator = argv.indexOf("--");
     const own = separator >= 0 ? argv.slice(0, separator) : [];
     const command = separator >= 0 ? argv.slice(separator + 1) : argv;
-    if (command.length === 0) throw new Error("mixai exec -- <command>");
+    if (command.length === 0) throw new Error("simem exec -- <command>");
     const cwdIndex = own.indexOf("--cwd");
     const cwd = cwdIndex >= 0 && own[cwdIndex + 1] ? resolve(own[cwdIndex + 1]!) : process.cwd();
     const result = await execCompressed(command, cwd);
@@ -847,7 +847,7 @@ async function main(): Promise<void> {
   if (options.command === "sources") return await runSources(out);
   if (options.command === "out") {
     const id = options.positional[0];
-    if (!id) throw new Error("mixai out <id>   (the id is printed in a filtered output's footer)");
+    if (!id) throw new Error("simem out <id>   (the id is printed in a filtered output's footer)");
     const memory = await openMemoryDb(options.cwd, { quiet: true });
     if (!memory) throw new Error(`Memory requires Node.js >= 22.5; this is ${process.version}`);
     try {
@@ -964,10 +964,10 @@ async function main(): Promise<void> {
     }
     return;
   }
-  if (!options.prompt) throw new Error("A prompt is required. Run `mixai --help` for usage.");
+  if (!options.prompt) throw new Error("A prompt is required. Run `simem --help` for usage.");
   if (!options.json) {
     process.stderr.write(
-      "[mixai] `mixai run` is deprecated and will be removed in mixai 3.0; mixai now focuses on memory and saving tokens inside your agent apps.\n",
+      "[simem] `simem run` is deprecated and will be removed in simem 3.0; simem now focuses on memory and saving tokens inside your agent apps.\n",
     );
   }
 
@@ -980,7 +980,7 @@ async function main(): Promise<void> {
   const memoryContextDurationMs = Date.now() - memoryContextStarted;
   if (memoryContext.hitCount > 0 && !options.json) {
     process.stderr.write(
-      `[mixai] Added ${memoryContext.hitCount} relevant memory item(s) to your prompt — context from earlier work the agent would otherwise have to ask about or miss.\n`,
+      `[simem] Added ${memoryContext.hitCount} relevant memory item(s) to your prompt — context from earlier work the agent would otherwise have to ask about or miss.\n`,
     );
   }
   const runPrompt = memoryContext.block ? `${memoryContext.block}\n${options.prompt}` : options.prompt;
@@ -1011,7 +1011,7 @@ async function main(): Promise<void> {
         ? (event: unknown) => process.stdout.write(`${JSON.stringify(event)}\n`)
         : (event: NormalizedEvent) => {
             if (event.type === "run.started") {
-              process.stderr.write(`[mixai] → ${event.provider}...\n`);
+              process.stderr.write(`[simem] → ${event.provider}...\n`);
             } else if (event.type === "assistant.delta" && event.text) {
               streamedText = true;
               printer.onDelta(event.text);
@@ -1036,16 +1036,16 @@ async function main(): Promise<void> {
     if (!streamedText) process.stdout.write(`${result.result.output}\n`);
     else if (!result.result.output.endsWith("\n")) process.stdout.write("\n");
     const credential = result.attempts.at(-1)?.credential;
-    process.stderr.write(`\n[mixai] ${result.result.provider} · ${credential?.tier ?? "unknown"} · session ${result.result.sessionId ?? "n/a"}\n`);
+    process.stderr.write(`\n[simem] ${result.result.provider} · ${credential?.tier ?? "unknown"} · session ${result.result.sessionId ?? "n/a"}\n`);
     const savingsLine = await taskCompletionSavingsLine(options.cwd, config);
     if (savingsLine) process.stderr.write(`${savingsLine}\n`);
   } else if (result.attempts.length === 0) {
-    process.stderr.write("[mixai] No configured provider is both installed and authenticated. Run `mixai status`.\n");
+    process.stderr.write("[simem] No configured provider is both installed and authenticated. Run `simem status`.\n");
     await suggestDesktopFallback(runner, runPrompt);
     process.exitCode = 2;
   } else {
     for (const attempt of result.attempts) {
-      process.stderr.write(`[mixai] ${attempt.provider}: ${attempt.result.failure ?? "failed"}: ${attempt.result.error ?? "unknown error"}\n`);
+      process.stderr.write(`[simem] ${attempt.provider}: ${attempt.result.failure ?? "failed"}: ${attempt.result.error ?? "unknown error"}\n`);
     }
     await suggestDesktopFallback(runner, runPrompt);
     process.exitCode = 1;
@@ -1066,7 +1066,7 @@ function isMainModule(): boolean {
 if (isMainModule()) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`[mixai] ${message}\n`);
+    process.stderr.write(`[simem] ${message}\n`);
     process.exitCode = 1;
   });
 }

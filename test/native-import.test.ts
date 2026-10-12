@@ -14,7 +14,7 @@ const sqlite = await loadSqlite();
 const withSqlite = { skip: sqlite ? false : "node:sqlite unavailable on this Node runtime" };
 
 function makeRepo(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "mixai-native-repo-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "simem-native-repo-")));
   execFileSync("git", ["init", "-q"], { cwd: dir });
   writeFileSync(join(dir, "README.md"), `repo ${dir}\n`);
   execFileSync("git", ["-c", "user.email=t@e.com", "-c", "user.name=t", "add", "."], { cwd: dir });
@@ -37,10 +37,10 @@ test("parseAutoMemory reads frontmatter fields, including a nested metadata.type
 test("imports Claude auto-memory, routes user memories to the global store, and attaches app/Codex summaries", withSqlite, async () => {
   const accountA = claudeHome();
   const codex = codexHome();
-  const desktop = mkdtempSync(join(tmpdir(), "mixai-claude-desktop-"));
+  const desktop = mkdtempSync(join(tmpdir(), "simem-claude-desktop-"));
   const env = {
-    MIXAI_STORAGE: "global",
-    MIXAI_HOME: mkdtempSync(join(tmpdir(), "mixai-native-home-")),
+    SIMEM_STORAGE: "global",
+    SIMEM_HOME: mkdtempSync(join(tmpdir(), "simem-native-home-")),
     CLAUDE_CONFIG_DIR: accountA,
     CODEX_HOME: codex,
     CLAUDE_DESKTOP_DATA_DIR: desktop,

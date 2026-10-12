@@ -169,7 +169,7 @@ export async function handleMemoryCommand(
               `[${preview.score.toFixed(3)}] ${preview.source}#${preview.id}${origin}\n  ${preview.preview}\n`,
             );
           }
-          process.stdout.write("Pass --full for complete text, or `mixai memory show <id>` to drill into one.\n");
+          process.stdout.write("Pass --full for complete text, or `simem memory show <id>` to drill into one.\n");
         }
       }
     } finally {
@@ -220,11 +220,11 @@ export async function handleMemoryCommand(
         process.stdout.write(`Consolidation queue: ${stats.queueDepth}\n`);
         process.stdout.write(
           `LLM calls: ${spend.calls} (${spend.estimatedCalls} estimated), ` +
-            `${spend.inputTokens}+${spend.outputTokens} tokens, $${spend.costUsd.toFixed(4)}. Run \`mixai memory spend\` for a breakdown.\n`,
+            `${spend.inputTokens}+${spend.outputTokens} tokens, $${spend.costUsd.toFixed(4)}. Run \`simem memory spend\` for a breakdown.\n`,
         );
         process.stdout.write(
           `Measured savings: ~${savings.estimatedTokensSaved} tokens across ${savings.events} event(s). ` +
-            `Run \`mixai memory savings\` for a breakdown.\n`,
+            `Run \`simem memory savings\` for a breakdown.\n`,
         );
       }
     } finally {
@@ -278,8 +278,8 @@ export async function handleMemoryCommand(
         }
         process.stdout.write(
           `Total: ~${totals.estimatedTokensSaved} tokens (${totals.charsSaved} chars) across ${totals.events} event(s).\n` +
-            "This counts only exact, measured deltas mixai can prove from its own compression (compaction, " +
-            "preview disclosure, prompt caps) — it does not estimate what re-exploring the repo without mixai would cost.\n",
+            "This counts only exact, measured deltas simem can prove from its own compression (compaction, " +
+            "preview disclosure, prompt caps) — it does not estimate what re-exploring the repo without simem would cost.\n",
         );
       }
     } finally {
@@ -301,7 +301,7 @@ export async function handleMemoryCommand(
     return;
   }
   if (sub === "compact") {
-    if (!options.memoryConfig) throw new Error("memory compact needs the memory configuration; run it via the mixai CLI");
+    if (!options.memoryConfig) throw new Error("memory compact needs the memory configuration; run it via the simem CLI");
     const memory = await requireMemory(options);
     try {
       const drained = await drainConsolidationQueue(memory, options.distillRunner, options.memoryConfig);
@@ -332,7 +332,7 @@ export async function handleMemoryCommand(
     const checkpointId = options.args[0];
     if (!checkpointId) throw new Error("memory consolidate-checkpoint requires a checkpoint id");
     if (!options.memoryConfig) {
-      throw new Error("memory consolidate-checkpoint needs the memory configuration; run it via the mixai CLI");
+      throw new Error("memory consolidate-checkpoint needs the memory configuration; run it via the simem CLI");
     }
     const result = await consolidateBestEffort(options.cwd, options.distillRunner, checkpointId, options.memoryConfig);
     if (options.json) process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -349,7 +349,7 @@ export async function handleMemoryCommand(
   // every project (promote) / stop doing so (demote).
   if (sub === "add") {
     const text = options.args.join(" ").trim();
-    if (!text) throw new Error('mixai memory add "<fact, decision, or preference>" [--category decision] [--min-importance 8]');
+    if (!text) throw new Error('simem memory add "<fact, decision, or preference>" [--category decision] [--min-importance 8]');
     const memory = await requireMemory(options);
     try {
       const category = MEMORY_CATEGORIES.includes(options.category as MemoryCategory) ? (options.category as MemoryCategory) : undefined;
@@ -369,7 +369,7 @@ export async function handleMemoryCommand(
   }
   if (sub === "forget") {
     const id = Number(options.args[0]);
-    if (!Number.isInteger(id)) throw new Error("mixai memory forget <item-id>");
+    if (!Number.isInteger(id)) throw new Error("simem memory forget <item-id>");
     const memory = await requireMemory(options);
     try {
       const changed = Number(memory.db.prepare("UPDATE memory_items SET status = 'archived' WHERE id = ? AND status = 'active'").run(id).changes) > 0;
@@ -381,7 +381,7 @@ export async function handleMemoryCommand(
   }
   if (sub === "promote") {
     const id = Number(options.args[0]);
-    if (!Number.isInteger(id)) throw new Error("mixai memory promote <item-id>");
+    if (!Number.isInteger(id)) throw new Error("simem memory promote <item-id>");
     const memory = await requireMemory(options);
     try {
       const row = memory.db.prepare("SELECT text, category, importance FROM memory_items WHERE id = ?").get(id) as
@@ -397,7 +397,7 @@ export async function handleMemoryCommand(
   }
   if (sub === "demote") {
     const id = Number(options.args[0]);
-    if (!Number.isInteger(id)) throw new Error("mixai memory demote <global-id>   (see mixai memory global)");
+    if (!Number.isInteger(id)) throw new Error("simem memory demote <global-id>   (see simem memory global)");
     const removed = demoteGlobal(id);
     process.stdout.write(options.json ? `${JSON.stringify({ removed })}\n` : removed ? `Removed global preference ${id}.\n` : `No global preference ${id}.\n`);
     return;
@@ -412,8 +412,8 @@ export async function handleMemoryCommand(
     const memory = await requireMemory(options);
     try {
       const project = resolveProject(options.cwd);
-      const passphrase = process.env.MIXAI_SYNC_PASSPHRASE || undefined;
-      const target = options.path ?? join(options.cwd, `${project.name}${passphrase ? ".mixai.enc" : ".mixai.gz"}`);
+      const passphrase = process.env.SIMEM_SYNC_PASSPHRASE || undefined;
+      const target = options.path ?? join(options.cwd, `${project.name}${passphrase ? ".simem.enc" : ".simem.gz"}`);
       writeFileSync(target, encodeBundle(exportBundle(memory, project, { transcripts: Boolean(options.all) }), passphrase), { mode: 0o600 });
       process.stdout.write(options.json ? `${JSON.stringify({ path: target })}\n` : `Exported ${project.name}'s memory to ${target}${passphrase ? " (encrypted)" : ""}.\n`);
     } finally {
@@ -423,10 +423,10 @@ export async function handleMemoryCommand(
   }
   if (sub === "import") {
     const file = options.args[0] ?? options.path;
-    if (!file) throw new Error("mixai memory import <bundle-file>");
+    if (!file) throw new Error("simem memory import <bundle-file>");
     const memory = await requireMemory(options);
     try {
-      const result = importBundle(memory, decodeBundle(readFileSync(file), process.env.MIXAI_SYNC_PASSPHRASE || undefined));
+      const result = importBundle(memory, decodeBundle(readFileSync(file), process.env.SIMEM_SYNC_PASSPHRASE || undefined));
       await embedNewRows(memory, options.memoryConfig);
       process.stdout.write(
         options.json

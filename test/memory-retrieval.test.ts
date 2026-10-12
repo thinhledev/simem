@@ -289,7 +289,7 @@ test("natural-language prompts retrieve the matching memory through the automati
   try {
     const handoff = seedItem(
       memory,
-      "Claude Desktop handoff loading is implemented through a managed `CLAUDE.local.md` import of `.mixai/current/HANDOFF.md`.",
+      "Claude Desktop handoff loading is implemented through a managed `CLAUDE.local.md` import of `.simem/current/HANDOFF.md`.",
       9,
     );
     const hookLabels = seedItem(

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EmbeddingClient } from "../memory/embeddings.js";
-import { mixaiHome } from "../store/home.js";
+import { simemHome } from "../store/home.js";
 import { WordPieceTokenizer } from "./wordpiece.js";
 
 // Model2Vec static embeddings: a token's vector is a row lookup; a text's
@@ -22,7 +22,7 @@ export interface StaticModel {
 const MAX_TOKENS = 1_024;
 
 export function modelDir(name = BUILTIN_MODEL): string {
-  return join(mixaiHome(), "models", name);
+  return join(simemHome(), "models", name);
 }
 
 export function readSafetensorsF32(buffer: Buffer, tensor: string): { data: Float32Array; shape: number[] } {

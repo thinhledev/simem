@@ -1,4 +1,4 @@
-// Output filters for `mixai exec`. Contract, enforced by golden tests:
+// Output filters for `simem exec`. Contract, enforced by golden tests:
 // failure information (failing test names, error lines, assertion diffs,
 // in-repo stack frames) is never dropped; only noise is — ANSI codes,
 // progress bars, passing-test lines, repeated lines, install chatter.

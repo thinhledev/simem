@@ -33,7 +33,7 @@ function call(url: string, options: { method?: string; host?: string; body?: unk
 }
 
 async function seededWorkspace(): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "mixai-dash-"));
+  const dir = mkdtempSync(join(tmpdir(), "simem-dash-"));
   const memory = await openMemoryDb(dir, { quiet: true });
   assert.ok(memory);
   memory.db.prepare("INSERT INTO checkpoints (id, created_at, workspace, source_provider, source_session_id, lineage_mode, directory, manifest_json) VALUES ('session:claude:s1', '2026-10-12T00:00:00Z', ?, 'claude', 's1', 'session', '', '{}')").run(dir);
@@ -85,7 +85,7 @@ test("dashboard: token and host are enforced; memory can be searched, edited, fo
     assert.equal((await call(`${base}/api/summary`, { host: "evil.example" })).status, 403, "DNS rebinding blocked");
     const page = await call(`${base}/`);
     assert.equal(page.status, 200);
-    assert.match(page.body, /<title>mixai memory<\/title>/);
+    assert.match(page.body, /<title>simem memory<\/title>/);
     const summary = JSON.parse((await call(`${base}/api/summary?days=0`)).body);
     assert.equal(summary.stats.usageTotal.input, 400);
     const items = JSON.parse((await call(`${base}/api/memory`)).body).items as Array<{ id: number; text: string }>;

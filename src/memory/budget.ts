@@ -110,8 +110,8 @@ export async function assembleContext(
 
   const truncated = durableSection.truncated || retrievedSection.truncated || digestSection.truncated;
   const footer = truncated
-    ? `For more: \`mixai memory search "<query>"\` or the MCP \`memory_search\` tool. (truncated — see \`mixai memory search\`)`
-    : `For more: \`mixai memory search "<query>"\` or the MCP \`memory_search\` tool.`;
+    ? `For more: \`simem memory search "<query>"\` or the MCP \`memory_search\` tool. (truncated — see \`simem memory search\`)`
+    : `For more: \`simem memory search "<query>"\` or the MCP \`memory_search\` tool.`;
 
   const body = [...sections, footer].join("\n\n");
   const capped = capText(body, budget.totalChars);

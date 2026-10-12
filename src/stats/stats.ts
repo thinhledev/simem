@@ -1,7 +1,7 @@
 import { readCounters } from "../memory/counters.js";
 import type { MemoryDb } from "../memory/db.js";
 
-// What `mixai stats`, the memory_stats tool, the dashboard, the status line,
+// What `simem stats`, the memory_stats tool, the dashboard, the status line,
 // and the Stop notice report. Every figure says whether it is measured or
 // estimated; tokens are estimated from characters only where the provider
 // did not report them.
@@ -91,7 +91,7 @@ export function collectStats(memory: MemoryDb, options: { since?: string; groupB
     n: number;
     calls: number;
   });
-  if (injectChars.calls > 0) xray.push({ type: "memory (mixai)", calls: injectChars.calls, tokens: estTokens(injectChars.n) });
+  if (injectChars.calls > 0) xray.push({ type: "memory (simem)", calls: injectChars.calls, tokens: estTokens(injectChars.n) });
   const savings = (
     memory.db
       .prepare(
@@ -131,7 +131,7 @@ export function collectStats(memory: MemoryDb, options: { since?: string; groupB
 }
 
 const MECHANISM_LABEL: Record<string, string> = {
-  exec: "command output filtered (mixai exec)",
+  exec: "command output filtered (simem exec)",
   "code-read": "code_read instead of whole files",
   "code-search": "code_search instead of reading files (estimate)",
   "read-guard": "outline instead of a large full read",
@@ -152,17 +152,17 @@ function n(value: number): string {
 }
 
 export function formatStats(stats: Stats, projectName: string): string {
-  const lines: string[] = [`mixai stats — ${projectName}${stats.since ? ` since ${stats.since.slice(0, 10)}` : ""}`, ""];
+  const lines: string[] = [`simem stats — ${projectName}${stats.since ? ` since ${stats.since.slice(0, 10)}` : ""}`, ""];
   const t = stats.usageTotal;
   lines.push("Provider usage (measured, from your agents' transcripts):");
-  if (stats.usage.length === 0) lines.push("  none captured yet — run `mixai sync`");
+  if (stats.usage.length === 0) lines.push("  none captured yet — run `simem sync`");
   for (const row of stats.usage) {
     lines.push(`  ${row.key.padEnd(28)} ${String(row.sessions).padStart(4)} sessions  in ${n(row.input).padStart(6)}  cache-read ${n(row.cacheRead).padStart(6)}  cache-write ${n(row.cacheWrite).padStart(6)}  out ${n(row.output).padStart(6)}`);
   }
   if (stats.usage.length > 1) lines.push(`  ${"total".padEnd(28)} ${String(t.sessions).padStart(4)} sessions  in ${n(t.input).padStart(6)}  cache-read ${n(t.cacheRead).padStart(6)}  cache-write ${n(t.cacheWrite).padStart(6)}  out ${n(t.output).padStart(6)}`);
   lines.push("", "What filled the context (estimated from tool result sizes):");
   for (const row of stats.xray.slice(0, 8)) lines.push(`  ${row.type.padEnd(16)} ${String(row.calls).padStart(6)} calls  ~${n(row.tokens)} tokens`);
-  lines.push("", "Saved by mixai:");
+  lines.push("", "Saved by simem:");
   if (stats.savings.length === 0) lines.push("  nothing measured yet");
   for (const row of stats.savings) lines.push(`  ~${n(row.tokens).padStart(6)} tokens  ${MECHANISM_LABEL[row.mechanism] ?? row.mechanism} (${row.events}×)`);
   if (stats.savedTokens > 0) {

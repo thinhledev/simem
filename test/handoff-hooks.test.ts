@@ -75,7 +75,7 @@ test("parseHookInput reads claude/codex snake_case fields and tolerates garbage"
 });
 
 test("session-start emits a brief on compact and clear, nothing on startup, and honors the config gate", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-start-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-start-"));
   const runner = new GitRunner();
   const compact = await handleSessionStart({ source: "compact" }, workspace, "codex", config(), runner);
   assert.match(compact, /## Context brief/);
@@ -90,7 +90,7 @@ test("session-start emits a brief on compact and clear, nothing on startup, and 
 });
 
 test("session-start on claude suppresses resume (CLAUDE.local.md import covers it) but still fires on compact", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-claude-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-claude-"));
   const runner = new GitRunner();
   assert.equal(await handleSessionStart({ source: "resume" }, workspace, "claude", config(), runner), "");
   assert.match(await handleSessionStart({ source: "compact" }, workspace, "claude", config(), runner), /## Context brief/);
@@ -99,7 +99,7 @@ test("session-start on claude suppresses resume (CLAUDE.local.md import covers i
 });
 
 test("pre-compact uses the hook-provided transcript path, writes a checkpoint, and spawns detached consolidation", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-precompact-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-precompact-"));
   const transcriptPath = await codexTranscriptFixture(workspace);
   const spawned: Array<{ cwd: string; checkpointId: string }> = [];
   await handlePreCompact(
@@ -113,12 +113,12 @@ test("pre-compact uses the hook-provided transcript path, writes a checkpoint, a
   assert.equal(spawned.length, 1);
   assert.equal(spawned[0]?.cwd, workspace);
   const { readFile } = await import("node:fs/promises");
-  const handoff = await readFile(join(workspace, ".mixai", "current", "HANDOFF.md"), "utf8");
+  const handoff = await readFile(join(workspace, ".simem", "current", "HANDOFF.md"), "utf8");
   assert.match(handoff, /Refactor the parser/);
 });
 
 test("pre-compact is a silent no-op when no session resolves, and skips consolidation when memory is disabled", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-nosession-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-nosession-"));
   const spawned: string[] = [];
   const previous = process.env.CODEX_HOME;
   process.env.CODEX_HOME = join(workspace, "empty-codex-home");
@@ -137,7 +137,7 @@ test("pre-compact is a silent no-op when no session resolves, and skips consolid
     );
     assert.deepEqual(spawned, [], "memory disabled: checkpoint yes, consolidation spawn no");
     const { readFile } = await import("node:fs/promises");
-    assert.match(await readFile(join(workspace, ".mixai", "current", "HANDOFF.md"), "utf8"), /Refactor the parser/);
+    assert.match(await readFile(join(workspace, ".simem", "current", "HANDOFF.md"), "utf8"), /Refactor the parser/);
   } finally {
     if (previous === undefined) delete process.env.CODEX_HOME;
     else process.env.CODEX_HOME = previous;
@@ -145,7 +145,7 @@ test("pre-compact is a silent no-op when no session resolves, and skips consolid
 });
 
 test("user-prompt-submit injects capped previews and records an inject ledger row", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-inject-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-inject-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   memory.db
@@ -174,7 +174,7 @@ test("user-prompt-submit injects capped previews and records an inject ledger ro
 });
 
 test("user-prompt-submit injects for a full natural-language question, not only keyword prompts", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-natural-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-natural-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   memory.db
@@ -196,7 +196,7 @@ test("user-prompt-submit injects for a full natural-language question, not only 
 });
 
 test("user-prompt-submit stays silent when disabled, when the prompt is empty, and when nothing matches", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-silent-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-silent-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   memory.close();
@@ -207,7 +207,7 @@ test("user-prompt-submit stays silent when disabled, when the prompt is empty, a
 });
 
 test("user-prompt-submit respects perPromptMaxChars", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-cap-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-cap-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   const insert = memory.db.prepare(
@@ -229,7 +229,7 @@ test("user-prompt-submit respects perPromptMaxChars", withSqlite, async () => {
 });
 
 test("stop reports cumulative measured savings when some exist, and stays silent when there are none", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-stop-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-stop-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   recordSavings(memory, { mechanism: "compaction", charsFull: 4000, charsSent: 400 });
@@ -238,9 +238,9 @@ test("stop reports cumulative measured savings when some exist, and stays silent
   const output = await handleStop(workspace, config());
   assert.match(output, /measured savings so far/);
   assert.match(output, /~900 tokens/);
-  assert.match(output, /mixai memory savings/);
+  assert.match(output, /simem memory savings/);
 
-  const emptyWorkspace = await mkdtemp(join(tmpdir(), "mixai-hook-stop-empty-"));
+  const emptyWorkspace = await mkdtemp(join(tmpdir(), "simem-hook-stop-empty-"));
   const emptyMemory = await openMemoryDb(emptyWorkspace);
   assert.ok(emptyMemory);
   emptyMemory.close();
@@ -248,7 +248,7 @@ test("stop reports cumulative measured savings when some exist, and stays silent
 });
 
 test("stop honors the taskCompletionSavings config gate", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-stop-gated-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-stop-gated-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   recordSavings(memory, { mechanism: "disclosure", charsFull: 1000, charsSent: 100 });
@@ -259,7 +259,7 @@ test("stop honors the taskCompletionSavings config gate", withSqlite, async () =
 });
 
 test("buildMemoryContextBlock returns real hits with a nonzero hitCount, and empty when nothing matches", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-context-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-context-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   memory.db
@@ -279,7 +279,7 @@ test("buildMemoryContextBlock returns real hits with a nonzero hitCount, and emp
 });
 
 test("buildMemoryContextBlock never surfaces raw checkpoint messages, only curated memory_items/summaries", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-context-nomsg-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-context-nomsg-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   memory.db
@@ -301,7 +301,7 @@ test("buildMemoryContextBlock never surfaces raw checkpoint messages, only curat
 });
 
 test("buildMemoryContextBlock honors the perPromptInjection gate and an empty prompt", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-context-gated-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-context-gated-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   memory.db
@@ -319,7 +319,7 @@ test("buildMemoryContextBlock honors the perPromptInjection gate and an empty pr
 });
 
 test("recordMemoryInjection writes an inject-purpose ledger row attributed to the given provider", withSqlite, async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-inject-ledger-"));
+  const workspace = await mkdtemp(join(tmpdir(), "simem-hook-inject-ledger-"));
   const memory = await openMemoryDb(workspace);
   assert.ok(memory);
   memory.close();

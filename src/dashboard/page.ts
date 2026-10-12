@@ -5,7 +5,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mixai memory</title>
+<title>simem memory</title>
 <style>
 :root {
   --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e4e4df;
@@ -60,7 +60,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 </head>
 <body>
 <header>
-  <h1>mixai <small id="project">loading…</small></h1>
+  <h1>simem <small id="project">loading…</small></h1>
   <div class="toolbar" style="margin:0">
     <select id="projectSelect" aria-label="Project"></select>
     <select id="range" aria-label="Period">
@@ -71,7 +71,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 <main>
   <section class="tiles" id="tiles"></section>
   <section class="grid2">
-    <div class="panel"><h2>Saved by mixai</h2><div id="savings"></div></div>
+    <div class="panel"><h2>Saved by simem</h2><div id="savings"></div></div>
     <div class="panel"><h2>What filled the context</h2><div id="xray"></div></div>
   </section>
   <section class="panel"><h2>Provider usage (from your agents' transcripts)</h2><div id="usage"></div></section>
@@ -123,7 +123,7 @@ async function loadSummary() {
   $("usage").innerHTML = stats.usage.length
     ? "<div class=scroll><table><tr><th>Agent</th><th>Sessions</th><th class=num>Input</th><th class=num>Cache read</th><th class=num>Cache write</th><th class=num>Output</th></tr>" +
       stats.usage.map((r) => "<tr><td>" + esc(r.key) + "</td><td>" + r.sessions + "</td><td class=num>" + fmt(r.input) + "</td><td class=num>" + fmt(r.cacheRead) + "</td><td class=num>" + fmt(r.cacheWrite) + "</td><td class=num>" + fmt(r.output) + "</td></tr>").join("") + "</table></div>"
-    : '<div class="empty">No sessions captured yet. Run <code>mixai sync</code>.</div>';
+    : '<div class="empty">No sessions captured yet. Run <code>simem sync</code>.</div>';
 }
 async function loadItems() {
   const q = $("q").value.trim();

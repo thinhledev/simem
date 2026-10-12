@@ -34,7 +34,7 @@ export interface MemoryScoringConfig {
 
 export interface MemoryEmbeddingsConfig {
   enabled: boolean;
-  /** "builtin": the bundled static model (downloaded by `mixai init`); "ollama": a local Ollama model. */
+  /** "builtin": the bundled static model (downloaded by `simem init`); "ollama": a local Ollama model. */
   provider: string;
   /** Built-in static model name. */
   builtinModel: string;
@@ -43,14 +43,14 @@ export interface MemoryEmbeddingsConfig {
   model: string;
   /**
    * Vector path of the automatic-injection gate (0 = off). Calibrate with
-   * `mixai eval`: with the default built-in model these stay off, because its
+   * `simem eval`: with the default built-in model these stay off, because its
    * similarity scores don't separate relevant from off-topic prompts reliably.
    */
   minSimilarity: number;
   strongSimilarity: number;
 }
 
-// Behavior of `mixai hook` when a host agent's lifecycle hooks call in.
+// Behavior of `simem hook` when a host agent's lifecycle hooks call in.
 // Everything here is about what gets INJECTED into the agent's context, so it
 // lives under `memory` rather than as a new top-level section.
 export interface MemoryHooksConfig {
@@ -62,7 +62,7 @@ export interface MemoryHooksConfig {
   sessionStartBrief: boolean;
   /** Character cap for the session-start revival brief. */
   briefMaxChars: number;
-  /** Report cumulative measured savings on `mixai hook stop` and after `mixai run` completes. */
+  /** Report cumulative measured savings on `simem hook stop` and after `simem run` completes. */
   taskCompletionSavings: boolean;
 }
 
@@ -77,12 +77,12 @@ export interface MemoryDistillConfig {
 
 export interface MemoryConfig {
   enabled: boolean;
-  /** "global" (default): ~/.mixai/projects/<id>, shared by every checkout and agent; "project": the repo's .mixai/. */
+  /** "global" (default): ~/.simem/projects/<id>, shared by every checkout and agent; "project": the repo's .simem/. */
   storage: string;
   /**
    * Optional folder you already sync between machines (iCloud, Dropbox, …):
    * each machine writes its bundle there and imports the others'. Encrypted
-   * when MIXAI_SYNC_PASSPHRASE is set. Empty = off.
+   * when SIMEM_SYNC_PASSPHRASE is set. Empty = off.
    */
   syncDir: string;
   verbatimCheckpoints: number;
@@ -102,13 +102,13 @@ export interface MemoryConfig {
   distill: MemoryDistillConfig;
 }
 
-// What `mixai exec` and the PreToolUse hook may do to keep tool output small.
+// What `simem exec` and the PreToolUse hook may do to keep tool output small.
 export interface CompressionConfig {
   /**
-   * "auto": wrap known-noisy Bash commands in `mixai exec`, only when the
+   * "auto": wrap known-noisy Bash commands in `simem exec`, only when the
    * command would be auto-approved anyway (your allow rules, or bypass mode)
    * — a rewrite must be approved by the hook, so it never widens permissions.
-   * "off": never rewrite; agents can still call `mixai exec` themselves.
+   * "off": never rewrite; agents can still call `simem exec` themselves.
    */
   bashRewrite: string;
   /** Full reads of files longer than largeReadLines: "suggest" (outline first, once per file), "enforce", or "off". */
@@ -151,10 +151,10 @@ export const DEFAULT_CONFIG: GatewayConfig = {
     codex: { enabled: true, command: "codex" },
     claude: { enabled: true, command: "claude" },
     cursor: { enabled: true },
-    // Enabled by default so `mixai status` reports readiness (installed + runnable
-    // `agy` CLI). `mixai run --provider antigravity` still fails cleanly: it has
+    // Enabled by default so `simem status` reports readiness (installed + runnable
+    // `agy` CLI). `simem run --provider antigravity` still fails cleanly: it has
     // no non-interactive execution surface and isn't in the default routing
-    // order, so it's never auto-selected. Use `mixai switch --surface interactive`.
+    // order, so it's never auto-selected. Use `simem switch --surface interactive`.
     antigravity: { enabled: true, command: "agy" },
   },
   memory: {
@@ -323,7 +323,7 @@ async function readPartial(path: string, required: boolean): Promise<PartialConf
   }
 }
 
-// Layers: defaults ← ~/.mixai/config.json (user-wide, what the desktop apps'
+// Layers: defaults ← ~/.simem/config.json (user-wide, what the desktop apps'
 // hooks see) ← --config PATH or ./gateway.config.json (1.x, per project).
 export async function loadConfig(path?: string): Promise<GatewayConfig> {
   const global = await readPartial(globalConfigPath(), false);

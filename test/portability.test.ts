@@ -44,31 +44,31 @@ test("export then import into a fresh store gives the same recall, and a second 
 
 test("encrypted bundles need the passphrase; a wrong one fails clearly", () => {
   const encoded = encodeBundle('{"kind":"header"}\n', "correct horse");
-  assert.equal(encoded.subarray(0, 9).toString(), "MIXAIENC1");
+  assert.equal(encoded.subarray(0, 9).toString(), "SIMEMENC1");
   assert.equal(decodeBundle(encoded, "correct horse"), '{"kind":"header"}\n');
-  assert.throws(() => decodeBundle(encoded), /encrypted; set MIXAI_SYNC_PASSPHRASE/);
-  assert.throws(() => decodeBundle(encoded, "wrong"), /wrong MIXAI_SYNC_PASSPHRASE/);
+  assert.throws(() => decodeBundle(encoded), /encrypted; set SIMEM_SYNC_PASSPHRASE/);
+  assert.throws(() => decodeBundle(encoded, "wrong"), /wrong SIMEM_SYNC_PASSPHRASE/);
   assert.equal(decodeBundle(encodeBundle("plain\n")), "plain\n");
 });
 
 test("two machines converge through a shared sync folder", withSqlite, async () => {
-  const dir = mkdtempSync(join(tmpdir(), "mixai-syncdir-"));
-  const home = process.env.MIXAI_HOME;
+  const dir = mkdtempSync(join(tmpdir(), "simem-syncdir-"));
+  const home = process.env.SIMEM_HOME;
   const laptop = await store();
   const desktop = await store();
   try {
-    process.env.MIXAI_HOME = mkdtempSync(join(tmpdir(), "mixai-machine-a-"));
+    process.env.SIMEM_HOME = mkdtempSync(join(tmpdir(), "simem-machine-a-"));
     upsertMemoryItem(laptop, { kind: "semantic", text: "Logging uses pino on the laptop setup.", importance: 7, origin: "rule" });
     syncThroughDir(laptop, project, dir, "s3cret");
-    process.env.MIXAI_HOME = mkdtempSync(join(tmpdir(), "mixai-machine-b-"));
+    process.env.SIMEM_HOME = mkdtempSync(join(tmpdir(), "simem-machine-b-"));
     upsertMemoryItem(desktop, { kind: "semantic", text: "Caching uses Redis with a five minute TTL.", importance: 7, origin: "rule" });
     const fromLaptop = syncThroughDir(desktop, project, dir, "s3cret");
     assert.equal(fromLaptop.imported[0]?.items, 1);
-    assert.equal(readdirSync(dir).filter((name) => name.endsWith(".mixai.enc")).length, 2);
+    assert.equal(readdirSync(dir).filter((name) => name.endsWith(".simem.enc")).length, 2);
     const count = (memory: MemoryDb) => (memory.db.prepare("SELECT COUNT(*) AS n FROM memory_items").get() as { n: number }).n;
     assert.equal(count(desktop), 2);
   } finally {
-    process.env.MIXAI_HOME = home;
+    process.env.SIMEM_HOME = home;
     laptop.close();
     desktop.close();
   }

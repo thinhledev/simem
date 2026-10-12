@@ -6,7 +6,7 @@ import { openMemoryDb } from "../memory/db.js";
 import { homesFor } from "../sources/homes.js";
 import { collectStats } from "../stats/stats.js";
 
-// `mixai statusline`: Claude Code's status line command. Reads the session
+// `simem statusline`: Claude Code's status line command. Reads the session
 // JSON on stdin, prints one short line, never fails.
 export async function runStatusline(fallbackCwd: string): Promise<void> {
   try {
@@ -20,7 +20,7 @@ export async function runStatusline(fallbackCwd: string): Promise<void> {
       since.setHours(0, 0, 0, 0);
       const stats = collectStats(memory, { since: since.toISOString() });
       const saved = stats.savedTokens >= 1_000 ? `saved ~${(stats.savedTokens / 1000).toFixed(stats.savedTokens >= 10_000 ? 0 : 1)}k tok today · ` : "";
-      process.stdout.write(`mixai · ${saved}${stats.memory.items} memories\n`);
+      process.stdout.write(`simem · ${saved}${stats.memory.items} memories\n`);
     } finally {
       memory.close();
     }

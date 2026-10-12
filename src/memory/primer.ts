@@ -124,8 +124,8 @@ export function buildPrimer(
   if (options.layout) sections.push(`### Layout\n\n${options.layout}`);
   if (sections.length === 0) return { text: "", refs: [] };
   const footer =
-    "Ask project memory before re-exploring: the `recall` tool (or `mixai recall`) for past decisions, `code_search` / `code_outline` to find code without reading whole files.";
-  const body = [`## Project memory: ${project.name} (mixai)`, ...sections, footer].join("\n\n");
+    "Ask project memory before re-exploring: the `recall` tool (or `simem recall`) for past decisions, `code_search` / `code_outline` to find code without reading whole files.";
+  const body = [`## Project memory: ${project.name} (simem)`, ...sections, footer].join("\n\n");
   return { text: `${capText(body, options.maxChars).text}\n`, refs };
 }
 

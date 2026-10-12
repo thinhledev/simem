@@ -25,7 +25,7 @@ class EmptyGitRunner implements CommandRunner {
 }
 
 test("prepares a token-free Codex to Claude resume and a native fork", async () => {
-  const root = await mkdtemp(join(tmpdir(), "mixai-switch-"));
+  const root = await mkdtemp(join(tmpdir(), "simem-switch-"));
   const workspace = join(root, "workspace");
   const claudeDir = join(root, "claude", "projects", "project");
   await mkdir(workspace, { recursive: true });
@@ -83,7 +83,7 @@ test("prepares a token-free Codex to Claude resume and a native fork", async () 
 });
 
 test("resumes Cursor over its CLI and opens Cursor Desktop on the project folder", async () => {
-  const root = await mkdtemp(join(tmpdir(), "mixai-switch-cursor-"));
+  const root = await mkdtemp(join(tmpdir(), "simem-switch-cursor-"));
   const workspace = join(root, "workspace");
   await mkdir(workspace, { recursive: true });
   await seedCodexSession(root, workspace);
@@ -117,7 +117,7 @@ test("resumes Cursor over its CLI and opens Cursor Desktop on the project folder
 });
 
 test("resumes Antigravity through the agy CLI and starts fresh with --new", async () => {
-  const root = await mkdtemp(join(tmpdir(), "mixai-switch-antigravity-"));
+  const root = await mkdtemp(join(tmpdir(), "simem-switch-antigravity-"));
   const workspace = join(root, "workspace");
   await mkdir(workspace, { recursive: true });
   await seedCodexSession(root, workspace);
@@ -150,7 +150,7 @@ test("resumes Antigravity through the agy CLI and starts fresh with --new", asyn
 
 if (process.platform === "darwin") {
   test("opens Antigravity Desktop without a preselected folder", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mixai-switch-antigravity-desktop-"));
+    const root = await mkdtemp(join(tmpdir(), "simem-switch-antigravity-desktop-"));
     const workspace = join(root, "workspace");
     await mkdir(workspace, { recursive: true });
     await seedCodexSession(root, workspace);

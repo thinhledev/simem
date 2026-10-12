@@ -8,6 +8,7 @@ import { openMemoryDb } from "../memory/db.js";
 import { syncTranscripts } from "../sources/ingest.js";
 import { importNativeMemory } from "../sources/native.js";
 import { resolveProject } from "../store/project.js";
+import { LEGACY_DIR, LEGACY_INTEGRATION_PATTERN } from "../legacy.js";
 import { displayPath, print, type Output } from "./common.js";
 
 export interface InitOptions extends Output {
@@ -29,15 +30,15 @@ export interface InitContext {
   remove: boolean;
 }
 
-// Files a 1.x per-project `mixai integrate` wrote in this repository. They
+// Files a 1.x per-project `simem integrate` wrote in this repository. They
 // keep working but go silent once the user-level install covers the agent.
 function legacyIntegrationFiles(root: string): string[] {
-  const candidates = [".claude/settings.json", ".mcp.json", "CLAUDE.local.md", ".codex/hooks.json", ".codex/config.toml", "AGENTS.md", ".cursor/mcp.json"];
+  const candidates = [".claude/settings.json", ".mcp.json", "CLAUDE.local.md", ".codex/hooks.json", ".codex/config.toml", "AGENTS.md", ".cursor/mcp.json", ".cursor/hooks.json"];
   return candidates.filter((relative) => {
     const path = join(root, relative);
     if (!existsSync(path)) return false;
     try {
-      return /mixai hook |mixai-memory|mixai:integrate:start|mixai:handoff:start/.test(readFileSync(path, "utf8"));
+      return LEGACY_INTEGRATION_PATTERN.test(readFileSync(path, "utf8"));
     } catch {
       return false;
     }
@@ -58,12 +59,12 @@ function describePlans(plans: IntegrationPlan[], cwd: string): string[] {
 
 export async function runInit(options: InitOptions): Promise<void> {
   if (!nodeSupportsSqlite()) {
-    throw new Error(`mixai needs Node.js >= 22.5 (built-in SQLite); this is ${process.version}. Upgrade Node, then run mixai init again.`);
+    throw new Error(`simem needs Node.js >= 22.5 (built-in SQLite); this is ${process.version}. Upgrade Node, then run simem init again.`);
   }
   if (options.check) {
     const plans = await installUserLevel({ dryRun: true });
     const drift = describePlans(plans, options.cwd);
-    print(options, drift.length === 0 ? "mixai is installed and up to date for every agent account on this machine." : `mixai init would change:\n${drift.join("\n")}`, { drift });
+    print(options, drift.length === 0 ? "simem is installed and up to date for every agent account on this machine." : `simem init would change:\n${drift.join("\n")}`, { drift });
     if (drift.some((line) => !line.includes(" note "))) process.exitCode = 1;
     return;
   }
@@ -71,7 +72,7 @@ export async function runInit(options: InitOptions): Promise<void> {
     const plans = await installUserLevel({ remove: true });
     const context: InitContext = { cwd: options.cwd, config: options.config, noModel: true, statusline: options.statusline, remove: true };
     for (const step of options.extraSteps ?? []) await step(context);
-    print(options, `Removed mixai from every agent account:\n${describePlans(plans, options.cwd).join("\n") || "  (nothing was installed)"}\nYour memory in ~/.mixai is kept; delete that folder to remove it too.`, { plans });
+    print(options, `Removed simem from every agent account:\n${describePlans(plans, options.cwd).join("\n") || "  (nothing was installed)"}\nYour memory in ~/.simem is kept; delete that folder to remove it too.`, { plans });
     return;
   }
 
@@ -84,14 +85,14 @@ export async function runInit(options: InitOptions): Promise<void> {
   const project = resolveProject(options.cwd);
   const memory = await openMemoryDb(options.cwd, { quiet: true });
   memory?.close();
-  if (existsSync(join(project.root, ".mixai", "MIGRATED.txt"))) {
-    lines.push(`This project's 1.x memory now lives in ${displayPath(project.storeDir)} (the old .mixai/ files are left untouched).`);
+  if (existsSync(join(project.root, LEGACY_DIR, "MIGRATED.txt"))) {
+    lines.push(`This project's mixai 1.x memory now lives in ${displayPath(project.storeDir)} (the old .mixai/ files are left untouched).`);
   }
   const legacy = legacyIntegrationFiles(project.root);
   if (legacy.length > 0) {
     lines.push(
-      `Found a 1.x per-project setup here (${legacy.join(", ")}). It now stays silent so nothing runs twice; ` +
-        "remove it any time with `mixai integrate --remove`.",
+      `Found a mixai 1.x per-project setup here (${legacy.join(", ")}). It still calls the old \`mixai\` command, ` +
+        "so remove it to avoid running twice: `simem integrate --remove` (it cleans up mixai's entries too), then `npm uninstall -g mixai-cli`.",
     );
   }
   const sync = await syncTranscripts({ cwd: options.cwd, memoryConfig: options.config.memory });
@@ -99,7 +100,7 @@ export async function runInit(options: InitOptions): Promise<void> {
   lines.push(
     `Imported ${project.name}'s history: ${sync.ingested} session(s), ${sync.messages} message(s), ` +
       `${native.autoMemoryItems + native.globalItems} memory item(s) from the agents' own memory. ` +
-      "Run `mixai sync --all` to import every project.",
+      "Run `simem sync --all` to import every project.",
   );
   const context: InitContext = { cwd: options.cwd, config: options.config, noModel: options.noModel, statusline: options.statusline, remove: false };
   for (const step of options.extraSteps ?? []) {

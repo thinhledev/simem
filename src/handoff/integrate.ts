@@ -3,13 +3,24 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ProviderId } from "../types.js";
 import { ensureClaudeHandoffMemory } from "./claude-memory.js";
+import { resolveProject } from "../store/project.js";
+import {
+  isLegacyHookCommand,
+  LEGACY_CURSOR_RULES,
+  LEGACY_MCP_SERVER,
+  LEGACY_MD_END,
+  LEGACY_MD_START,
+  LEGACY_TOML_END,
+  LEGACY_TOML_START,
+  stripMarkedBlock,
+} from "../legacy.js";
 
-// Distinct from claude-memory.ts's mixai:handoff markers so the two features
+// Distinct from claude-memory.ts's simem:handoff markers so the two features
 // can update their own blocks in the same file without clobbering each other.
-export const MD_START = "<!-- mixai:integrate:start -->";
-export const MD_END = "<!-- mixai:integrate:end -->";
-export const TOML_START = "# mixai:integrate:start";
-export const TOML_END = "# mixai:integrate:end";
+export const MD_START = "<!-- simem:integrate:start -->";
+export const MD_END = "<!-- simem:integrate:end -->";
+export const TOML_START = "# simem:integrate:start";
+export const TOML_END = "# simem:integrate:end";
 
 export type IntegrationAction = "created" | "updated" | "unchanged" | "removed" | "failed";
 
@@ -34,19 +45,19 @@ export interface IntegrateOptions {
 // Loaded into every session by every agent, so it stays short and names the
 // exact tools. Keep `memory_search` in it: 1.x integrations and tests key on it.
 export const INSTRUCTION_BODY =
-  "This machine has `mixai`: local project memory shared across every agent and account, plus tools that keep " +
+  "This machine has `simem`: local project memory shared across every agent and account, plus tools that keep " +
   "context small. Before re-exploring the repository, ask memory: the `recall` tool (alias `memory_search`) for " +
   "past decisions, constraints, and earlier work; `memory_get <id>` for full text. When a decision, constraint, or " +
   "preference is settled — or the user says \"remember…\" — save it with `memory_save`; if the user says to forget " +
   "something, use `memory_forget`. Find code with `code_search` and read just the span with `code_read` / " +
   "`code_outline` instead of whole files; `repo_map` gives the layout. Run noisy commands (tests, builds, installs) " +
-  "as `mixai exec -- <command>`; the full output stays available via `output_get`. If the user asks how many tokens " +
-  "mixai saved, use `memory_stats`; to open the memory dashboard, run `mixai dashboard --detach --open`. After a " +
+  "as `simem exec -- <command>`; the full output stays available via `output_get`. If the user asks how many tokens " +
+  "simem saved, use `memory_stats`; to open the memory dashboard, run `simem dashboard --detach --open`. After a " +
   "compaction or reset, `context_brief` restores the working context. To hand work to another agent, " +
   "`list_handoff_targets` then — only after the user confirms — `switch_to_provider`.";
 
 export function instructionBlock(extra?: string): string {
-  return `${MD_START}\n## Mixai project memory\n\n${INSTRUCTION_BODY}${extra ? `\n\n${extra}` : ""}\n${MD_END}`;
+  return `${MD_START}\n## simem project memory\n\n${INSTRUCTION_BODY}${extra ? `\n\n${extra}` : ""}\n${MD_END}`;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,7 +78,7 @@ export function parseJsonObject(raw: string, path: string): Record<string, unkno
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error(`${path} exists but is not valid JSON; fix or remove it, then rerun mixai integrate`);
+    throw new Error(`${path} exists but is not valid JSON; fix or remove it, then rerun simem integrate`);
   }
   if (!isRecord(parsed)) throw new Error(`${path} must contain a JSON object`);
   return parsed;
@@ -78,7 +89,8 @@ export function parseJsonObject(raw: string, path: string): Record<string, unkno
 export function upsertBlock(original: string | undefined, block: string): string {
   const start = block.startsWith(TOML_START) ? TOML_START : MD_START;
   const end = start === TOML_START ? TOML_END : MD_END;
-  const text = original ?? "";
+  // A mixai 1.x block is replaced by this one, never left beside it.
+  const text = withoutLegacyBlock(original ?? "", start === TOML_START);
   const startIndex = text.indexOf(start);
   const endIndex = text.indexOf(end);
   if (startIndex >= 0 && endIndex >= startIndex) {
@@ -88,10 +100,20 @@ export function upsertBlock(original: string | undefined, block: string): string
   return `${prefix}${prefix ? "\n" : ""}${block}\n`;
 }
 
-// Strip mixai's marker-delimited block; undefined means "delete the file"
+// Strip simem's marker-delimited block; undefined means "delete the file"
 // (nothing but our block remained).
-export function stripBlock(original: string | undefined, tomlMarkers = false): string | undefined {
-  if (original === undefined) return undefined;
+function withoutLegacyBlock(text: string, tomlMarkers: boolean): string {
+  const stripped = tomlMarkers
+    ? stripMarkedBlock(text, LEGACY_TOML_START, LEGACY_TOML_END)
+    : stripMarkedBlock(text, LEGACY_MD_START, LEGACY_MD_END);
+  return stripped === text ? text : stripped.replace(/\n{2,}$/, "\n").replace(/^\n+/, "");
+}
+
+export function stripBlock(input: string | undefined, tomlMarkers = false): string | undefined {
+  if (input === undefined) return undefined;
+  // Removes mixai 1.x's block as well as simem's.
+  const original = withoutLegacyBlock(input, tomlMarkers);
+  if (original !== input && !original.trim()) return undefined;
   const start = tomlMarkers ? TOML_START : MD_START;
   const end = tomlMarkers ? TOML_END : MD_END;
   const startIndex = original.indexOf(start);
@@ -125,14 +147,14 @@ const HOOK_EVENT_ARGS: Record<(typeof HOOK_EVENT_NAMES)[number], string> = {
 // additive (unknown fields are ignored by parsers that don't recognize it),
 // so it's safe to include for every provider, not just Codex.
 const HOOK_STATUS_MESSAGE: Record<(typeof HOOK_EVENT_NAMES)[number], string> = {
-  SessionStart: "mixai: revival brief after compaction/resume",
-  PreCompact: "mixai: checkpoint before compaction",
-  UserPromptSubmit: "mixai: inject relevant project memory",
-  Stop: "mixai: report measured token savings",
+  SessionStart: "simem: revival brief after compaction/resume",
+  PreCompact: "simem: checkpoint before compaction",
+  UserPromptSubmit: "simem: inject relevant project memory",
+  Stop: "simem: report measured token savings",
 };
 
 function hookCommand(event: (typeof HOOK_EVENT_NAMES)[number], provider: ProviderId): string {
-  return `mixai hook ${HOOK_EVENT_ARGS[event]} --provider ${provider}`;
+  return `simem hook ${HOOK_EVENT_ARGS[event]} --provider ${provider}`;
 }
 
 function withCagHookEntries(
@@ -144,12 +166,19 @@ function withCagHookEntries(
   const hooks = isRecord(clone.hooks) ? clone.hooks : {};
   for (const event of HOOK_EVENT_NAMES) {
     const command = hookCommand(event, provider);
-    const groups = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
+    // mixai 1.x entries (`mixai hook …`) are dropped: simem's replaces them.
+    const groups = (Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [])
+      .map((group) => {
+        if (!isRecord(group) || !Array.isArray(group.hooks)) return group;
+        const remaining = group.hooks.filter((hook) => !(isRecord(hook) && isLegacyHookCommand(hook.command)));
+        return remaining.length === group.hooks.length ? group : { ...group, hooks: remaining };
+      })
+      .filter((group) => !isRecord(group) || !Array.isArray(group.hooks) || group.hooks.length > 0);
     if (remove) {
       const kept = groups
         .map((group) => {
           if (!isRecord(group) || !Array.isArray(group.hooks)) return group;
-          const remaining = group.hooks.filter((hook) => !(isRecord(hook) && hook.command === command));
+          const remaining = group.hooks.filter((hook) => !(isRecord(hook) && (hook.command === command || isLegacyHookCommand(hook.command))));
           return remaining.length === group.hooks.length ? group : { ...group, hooks: remaining };
         })
         .filter((group) => !isRecord(group) || !Array.isArray(group.hooks) || group.hooks.length > 0);
@@ -194,8 +223,9 @@ function withCagMcpServer(
 ): Record<string, unknown> {
   const clone = structuredClone(config);
   const servers = isRecord(clone.mcpServers) ? clone.mcpServers : {};
-  if (remove) delete servers["mixai-memory"];
-  else servers["mixai-memory"] = { command: "mixai", args: ["mcp", "--cwd", cwd, "--provider", provider] };
+  delete servers[LEGACY_MCP_SERVER];
+  if (remove) delete servers["simem-memory"];
+  else servers["simem-memory"] = { command: "simem", args: ["mcp", "--cwd", cwd, "--provider", provider] };
   if (Object.keys(servers).length > 0) clone.mcpServers = servers;
   else delete clone.mcpServers;
   return clone;
@@ -240,7 +270,7 @@ export async function applyFile(
       await mkdir(dirname(path), { recursive: true });
       // Atomic replace: user-level files such as ~/.claude.json are also
       // written by the running app, so never leave a half-written file.
-      const temp = `${path}.mixai-${process.pid}.tmp`;
+      const temp = `${path}.simem-${process.pid}.tmp`;
       await writeFile(temp, next, "utf8");
       await rename(temp, path);
     }
@@ -278,16 +308,17 @@ async function integrateClaude(cwd: string, options: IntegrateOptions): Promise<
     (original) => (remove ? stripBlock(original) : upsertBlock(original, instructionBlock())),
     options,
   );
-  if (!remove && !options.dryRun) {
+  if (!remove && !options.dryRun && resolveProject(cwd).mode === "project") {
     // The session-start hook suppresses plain-resume output because this
     // import block feeds HANDOFF.md at startup; keep them installed together.
+    // (With the global store, the session-start primer does this instead.)
     await ensureClaudeHandoffMemory(cwd);
   }
   if (!remove) {
     const memoryContent = await readOptional(memoryPath);
-    if (options.dryRun && !(memoryContent ?? "").includes("mixai:handoff:start")) {
+    if (options.dryRun && !(memoryContent ?? "").includes("simem:handoff:start")) {
       plan.notes.push(
-        "CLAUDE.local.md lacks the mixai:handoff import block; run `mixai integrate --provider claude` (without --check) to install both together",
+        "CLAUDE.local.md lacks the simem:handoff import block; run `simem integrate --provider claude` (without --check) to install both together",
       );
     }
   }
@@ -300,7 +331,7 @@ async function integrateCodex(cwd: string, options: IntegrateOptions): Promise<I
   const hooksPath = join(cwd, ".codex", "hooks.json");
   await applyFile(plan, hooksPath, jsonTransform(hooksPath, (existing) => withCagHookEntries(existing, "codex", remove)), options);
   const configPath = join(cwd, ".codex", "config.toml");
-  const tomlBlock = `${TOML_START}\n[mcp_servers.mixai-memory]\ncommand = "mixai"\nargs = ["mcp", "--cwd", "${cwd}", "--provider", "codex"]\n${TOML_END}`;
+  const tomlBlock = `${TOML_START}\n[mcp_servers.simem-memory]\ncommand = "simem"\nargs = ["mcp", "--cwd", "${cwd}", "--provider", "codex"]\n${TOML_END}`;
   await applyFile(
     plan,
     configPath,
@@ -335,12 +366,15 @@ async function integrateCursor(cwd: string, options: IntegrateOptions): Promise<
       const clone = structuredClone(existing);
       const hooks = isRecord(clone.hooks) ? clone.hooks : {};
       const entries: Array<[string, string]> = [
-        ["sessionStart", "mixai hook session-start --provider cursor"],
-        ["beforeSubmitPrompt", "mixai hook user-prompt-submit --provider cursor"],
-        ["stop", "mixai hook stop --provider cursor"],
+        ["sessionStart", "simem hook session-start --provider cursor"],
+        ["beforeSubmitPrompt", "simem hook user-prompt-submit --provider cursor"],
+        ["stop", "simem hook stop --provider cursor"],
       ];
       for (const [event, command] of entries) {
-        const groups = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
+        // mixai 1.x entries are dropped either way; simem's replaces them.
+        const groups = (Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : []).filter(
+          (group) => !(isRecord(group) && isLegacyHookCommand(group.command)),
+        );
         if (remove) {
           const kept = groups.filter((group) => !(isRecord(group) && group.command === command));
           if (kept.length > 0) hooks[event] = kept;
@@ -361,8 +395,12 @@ async function integrateCursor(cwd: string, options: IntegrateOptions): Promise<
     options,
     CURSOR_HOOKS_NOTE,
   );
-  const rulesPath = join(cwd, ".cursor", "rules", "mixai-memory.mdc");
-  const rulesContent = `---\ndescription: Mixai persistent project memory\nalwaysApply: true\n---\n\n${instructionBlock()}\n`;
+  // mixai 1.x wrote its rules under another name; remove it either way.
+  const legacyRules = join(cwd, ".cursor", "rules", LEGACY_CURSOR_RULES);
+  await applyFile(plan, legacyRules, () => undefined, options);
+  if (plan.files.at(-1)?.action === "unchanged") plan.files.pop();
+  const rulesPath = join(cwd, ".cursor", "rules", "simem-memory.mdc");
+  const rulesContent = `---\ndescription: simem persistent project memory\nalwaysApply: true\n---\n\n${instructionBlock()}\n`;
   await applyFile(plan, rulesPath, (original) => (remove ? undefined : original === rulesContent ? original : rulesContent), options);
   return plan;
 }
@@ -378,13 +416,13 @@ async function integrateAntigravity(cwd: string, options: IntegrateOptions): Pro
   // there are no lifecycle hooks and no confirmed MCP registration.
   const geminiPath = join(geminiConfigDir(), "GEMINI.md");
   const block = instructionBlock(
-    "Automatic lifecycle hooks are not available for this agent — run `mixai brief` yourself when resuming " +
-      "work or after losing context, and `mixai memory search` before re-exploring a repository.",
+    "Automatic lifecycle hooks are not available for this agent — run `simem brief` yourself when resuming " +
+      "work or after losing context, and `simem memory search` before re-exploring a repository.",
   );
   await applyFile(plan, geminiPath, (original) => (remove ? stripBlock(original) : upsertBlock(original, block)), options);
   if (!remove) {
     plan.notes.push("Antigravity (agy) has no lifecycle hooks; instructions are global (~/.gemini/GEMINI.md), not per-project");
-    plan.notes.push("MCP registration for agy is unverified — memory tools remain reachable via the `mixai memory` CLI");
+    plan.notes.push("MCP registration for agy is unverified — memory tools remain reachable via the `simem memory` CLI");
   }
   return plan;
 }
