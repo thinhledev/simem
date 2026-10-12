@@ -27,14 +27,40 @@ import { runDoctor, type ExtraChecks } from "./commands/doctor.js";
 import { runInit, type InitContext } from "./commands/init.js";
 import { runMigrate, runProject } from "./commands/project.js";
 import { runSources, runSync } from "./commands/sources.js";
+import { runEval, runRecall } from "./commands/recall.js";
+import { BUILTIN_MODEL_SPEC, installModel, modelInstalled } from "./vec/install.js";
+import { embedNewRows } from "./vec/client.js";
 
 // Subsystems contribute steps to `mixai init` and checks to `mixai doctor`.
 function initSteps(): Array<(context: InitContext) => Promise<string | undefined>> {
-  return [];
+  return [
+    async (context) => {
+      if (context.remove || context.noModel || context.config.memory.embeddings.provider !== "builtin") return undefined;
+      const outcome = await installModel();
+      if (outcome.status === "failed") {
+        return `Embedding model: download failed (${outcome.reason}); search stays keyword-only. Re-run \`mixai init\` to retry.`;
+      }
+      const memory = await openMemoryDb(context.cwd, { quiet: true });
+      if (memory) {
+        try {
+          await embedNewRows(memory, context.config.memory);
+        } finally {
+          memory.close();
+        }
+      }
+      return `Embedding model: ${BUILTIN_MODEL_SPEC.name} ${outcome.status === "present" ? "already installed" : `installed (${BUILTIN_MODEL_SPEC.megabytes} MB, runs offline from now on)`}.`;
+    },
+  ];
 }
 
 function doctorChecks(): ExtraChecks[] {
-  return [];
+  return [
+    async () => [
+      modelInstalled()
+        ? { level: "ok" as const, area: "embeddings", message: `${BUILTIN_MODEL_SPEC.name} installed; reworded questions are understood in searches` }
+        : { level: "warn" as const, area: "embeddings", message: "Embedding model not installed; search is keyword-only. Run `mixai init`." },
+    ],
+  ];
 }
 import { discoverSessions } from "./handoff/sessions.js";
 import { checkDesktopApp, checkLaunchReadiness } from "./handoff/preflight.js";
@@ -817,6 +843,15 @@ async function main(): Promise<void> {
     });
   }
   if (options.command === "sources") return await runSources(out);
+  if (options.command === "recall") {
+    return await runRecall(options.positional.join(" "), {
+      ...out,
+      cwd: options.cwd,
+      config: await loadConfig(options.configPath),
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
+    });
+  }
+  if (options.command === "eval") return await runEval({ ...out, config: await loadConfig(options.configPath), calibrate: options.all });
   if (options.command === "project") return await runProject(options.positional[0], options.positional.slice(1), { ...out, cwd: options.cwd });
   if (options.command === "migrate") return await runMigrate(options.to, { ...out, cwd: options.cwd });
   if (options.command === "sessions") return await handleSessions(options);

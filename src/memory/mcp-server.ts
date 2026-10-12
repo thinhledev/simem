@@ -13,6 +13,7 @@ import { showRecord } from "./cli-commands.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
 import { upsertMemoryItem } from "./items.js";
+import { embedNewRows, resolveEmbeddings } from "../vec/client.js";
 import { toPreview } from "./preview.js";
 import { search } from "./retrieval.js";
 import { recordSavings } from "./savings.js";
@@ -187,7 +188,7 @@ function resolveSourceCheckpointId(memory: MemoryDb, checkpointId: string | unde
   return row ? checkpointId : null;
 }
 
-async function callTool(memory: MemoryDb, cwd: string, name: string, args: Record<string, unknown>): Promise<unknown> {
+async function callTool(memory: MemoryDb, cwd: string, name: string, args: Record<string, unknown>, memoryConfig: MemoryConfig): Promise<unknown> {
   if (name === "memory_search") {
     const query = typeof args.query === "string" ? args.query : "";
     if (!query.trim()) throw new Error("query is required");
@@ -202,7 +203,10 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
     const since = typeof args.since === "string" ? args.since : undefined;
     const until = typeof args.until === "string" ? args.until : undefined;
     const full = args.full === true;
+    // Deliberate search: vectors improve recall on reworded questions.
+    const embeddings = await resolveEmbeddings(memoryConfig);
     const hits = await search(memory, query, {
+      ...(embeddings ? { embeddings } : {}),
       ...(kind ? { kind } : {}),
       ...(category ? { category } : {}),
       ...(limit ? { limit } : {}),
@@ -257,6 +261,7 @@ async function callTool(memory: MemoryDb, cwd: string, name: string, args: Recor
       origin: "agent",
       sourceCheckpointId: resolveSourceCheckpointId(memory, state.currentCheckpointId),
     });
+    if (!saved.reinforced) await embedNewRows(memory, memoryConfig);
     return toolResult(saved.reinforced ? { id: saved.id, reinforced: true } : { id: saved.id });
   }
   throw new Error(`Unknown tool: ${name}`);
@@ -484,7 +489,7 @@ export async function handleRequest(
     }
     if (!memory) return errorResponse(id, INTERNAL_ERROR, "The memory database is unavailable on this runtime");
     try {
-      const result = await callTool(memory, cwd, params.name, args);
+      const result = await callTool(memory, cwd, params.name, args, deps.memoryConfig);
       return { jsonrpc: "2.0", id, result };
     } catch (error) {
       return errorResponse(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error));

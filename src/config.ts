@@ -33,8 +33,20 @@ export interface MemoryScoringConfig {
 
 export interface MemoryEmbeddingsConfig {
   enabled: boolean;
+  /** "builtin": the bundled static model (downloaded by `mixai init`); "ollama": a local Ollama model. */
+  provider: string;
+  /** Built-in static model name. */
+  builtinModel: string;
   ollamaUrl: string;
+  /** Ollama embedding model. */
   model: string;
+  /**
+   * Vector path of the automatic-injection gate (0 = off). Calibrate with
+   * `mixai eval`: with the default built-in model these stay off, because its
+   * similarity scores don't separate relevant from off-topic prompts reliably.
+   */
+  minSimilarity: number;
+  strongSimilarity: number;
 }
 
 // Behavior of `mixai hook` when a host agent's lifecycle hooks call in.
@@ -132,8 +144,12 @@ export const DEFAULT_CONFIG: GatewayConfig = {
     },
     embeddings: {
       enabled: true,
+      provider: "builtin",
+      builtinModel: "potion-base-8M",
       ollamaUrl: "http://localhost:11434",
       model: "nomic-embed-text",
+      minSimilarity: 0,
+      strongSimilarity: 0,
     },
     hooks: {
       perPromptInjection: true,

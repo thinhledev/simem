@@ -50,10 +50,41 @@ export interface SearchOptions {
   minCoverage?: number;
   /** Minimum number of distinct query terms a row must contain (capped at the query's term count). */
   minMatchedTerms?: number;
+  /**
+   * Vector gate (needs `embeddings`): a row that misses the keyword gate still
+   * passes with cosine >= minSimilarity when it covers at least
+   * anchorCoverage of the query's terms, or with cosine >= strongSimilarity
+   * alone. Undefined = keyword gate only.
+   */
+  minSimilarity?: number;
+  strongSimilarity?: number;
+  anchorCoverage?: number;
 }
 
-/** Gate for paths that inject memory without being asked (per-prompt hook, briefs). */
-export const AUTOMATIC_INJECTION_GATE = { minCoverage: 0.5, minMatchedTerms: 2 } as const;
+export interface InjectionGate {
+  minCoverage: number;
+  minMatchedTerms: number;
+  minSimilarity?: number;
+  strongSimilarity?: number;
+  anchorCoverage?: number;
+}
+
+/** Keyword part of the gate for paths that inject memory without being asked. */
+export const AUTOMATIC_INJECTION_GATE: InjectionGate = { minCoverage: 0.5, minMatchedTerms: 2 };
+
+// The automatic gate for a config: keywords always; the vector path only when
+// cutoffs were set (calibrated per model with `mixai eval`).
+export function automaticGate(embeddings: { minSimilarity: number; strongSimilarity: number }): InjectionGate {
+  return {
+    ...AUTOMATIC_INJECTION_GATE,
+    ...(embeddings.minSimilarity > 0 ? { minSimilarity: embeddings.minSimilarity, anchorCoverage: 0.2 } : {}),
+    ...(embeddings.strongSimilarity > 0 ? { strongSimilarity: embeddings.strongSimilarity } : {}),
+  };
+}
+
+export function vectorGateEnabled(embeddings: { minSimilarity: number; strongSimilarity: number }): boolean {
+  return embeddings.minSimilarity > 0 || embeddings.strongSimilarity > 0;
+}
 
 function dateRangeClause(column: string, since: string | undefined, until: string | undefined): { sql: string; params: string[] } {
   const clauses: string[] = [];
@@ -216,6 +247,8 @@ interface RawHit {
   /** IDF-weighted share of the query's terms this row contains (0–1). */
   coverage?: number;
   matchedTerms?: string[];
+  /** Cosine similarity to the query, when embeddings are in use. */
+  similarity?: number;
 }
 
 function queryMessages(memory: MemoryDb, terms: string[], limit: number, options: SearchOptions): RawHit[] {
@@ -388,7 +421,7 @@ function vectorRankItems(memory: MemoryDb, model: string, limit: number, options
       importance: row.importance,
     },
     embedding: fromBlob(row.embedding),
-  })).slice(0, limit);
+  }));
 }
 
 function vectorRankSummaries(memory: MemoryDb, model: string, limit: number, options: SearchOptions): EmbeddedRow[] {
@@ -403,12 +436,18 @@ function vectorRankSummaries(memory: MemoryDb, model: string, limit: number, opt
   return rows.map((row) => ({
     raw: { source: "summary" as const, id: row.id, text: row.text, checkpointId: row.covers_to, timestamp: row.created_at },
     embedding: fromBlob(row.embedding),
-  })).slice(0, limit);
+  }));
 }
 
-function rankByCosine(rows: EmbeddedRow[], queryVector: Float32Array, limit: number): RawHit[] {
+// Scores every embedded row (exact scan), returns the top `limit`, and
+// records each row's similarity so lexical hits can be gated on it too.
+function rankByCosine(rows: EmbeddedRow[], queryVector: Float32Array, limit: number, similarities: Map<string, number>): RawHit[] {
   return rows
-    .map((row) => ({ raw: row.raw, similarity: cosineSimilarity(queryVector, row.embedding) }))
+    .map((row) => {
+      const similarity = cosineSimilarity(queryVector, row.embedding);
+      similarities.set(hitKey(row.raw), similarity);
+      return { raw: { ...row.raw, similarity }, similarity };
+    })
     .sort((left, right) => right.similarity - left.similarity)
     .slice(0, limit)
     .map((entry) => entry.raw);
@@ -428,7 +467,10 @@ function scoreHits(lists: RawHit[][], options: SearchOptions): RetrievalHit[] {
       // Coverage is comparable across sources, unlike list position. A row the
       // vector search found but that shares no query term still needs a
       // relevance, so it gets a damped position-based one.
-      const relevance = matchedTerms.length > 0 ? (raw.coverage ?? 0) : 0.5 / (1 + index);
+      const relevance =
+        matchedTerms.length > 0
+          ? Math.max(raw.coverage ?? 0, raw.similarity ?? 0)
+          : raw.similarity ?? 0.5 / (1 + index);
       const recency = recencyScore(raw.timestamp, now, scoring.halfLifeDays);
       const importanceComponent = raw.importance === undefined ? 0.5 : raw.importance / 10;
       hits.push({
@@ -450,9 +492,14 @@ function scoreHits(lists: RawHit[][], options: SearchOptions): RetrievalHit[] {
   return hits.sort((left, right) => right.score - left.score);
 }
 
-function passesCoverageGate(hit: RawHit, terms: string[], options: SearchOptions): boolean {
+function passesGate(hit: RawHit, terms: string[], options: SearchOptions): boolean {
   const minMatched = Math.min(options.minMatchedTerms ?? 0, terms.length);
-  return (hit.coverage ?? 0) >= (options.minCoverage ?? 0) && (hit.matchedTerms?.length ?? 0) >= minMatched;
+  const coverage = hit.coverage ?? 0;
+  if (coverage >= (options.minCoverage ?? 0) && (hit.matchedTerms?.length ?? 0) >= minMatched) return true;
+  const similarity = hit.similarity;
+  if (similarity === undefined) return false;
+  if (options.strongSimilarity !== undefined && similarity >= options.strongSimilarity) return true;
+  return options.minSimilarity !== undefined && similarity >= options.minSimilarity && coverage >= (options.anchorCoverage ?? 0);
 }
 
 export async function search(memory: MemoryDb, query: string, options: SearchOptions = {}): Promise<RetrievalHit[]> {
@@ -472,13 +519,18 @@ export async function search(memory: MemoryDb, query: string, options: SearchOpt
     try {
       const [queryVector] = await options.embeddings.embed([raw]);
       if (queryVector) {
+        const similarities = new Map<string, number>();
         const itemRows = vectorRankItems(memory, options.embeddings.model, perSource * 4, options);
-        const itemsVector = rankByCosine(itemRows, queryVector, perSource);
+        const itemsVector = rankByCosine(itemRows, queryVector, perSource, similarities);
         items = reciprocalRankFusion([itemsFts, itemsVector], hitKey);
         if (!options.kind) {
           const summaryRows = vectorRankSummaries(memory, options.embeddings.model, perSource * 4, options);
-          const summariesVector = rankByCosine(summaryRows, queryVector, perSource);
+          const summariesVector = rankByCosine(summaryRows, queryVector, perSource, similarities);
           summaries = reciprocalRankFusion([summariesFts, summariesVector], hitKey);
+        }
+        for (const hit of [...items, ...summaries]) {
+          const similarity = similarities.get(hitKey(hit));
+          if (similarity !== undefined) hit.similarity = similarity;
         }
       }
     } catch {
@@ -490,7 +542,7 @@ export async function search(memory: MemoryDb, query: string, options: SearchOpt
   termCoverage(memory, "summary", terms, summaries);
   termCoverage(memory, "message", terms, messagesFts);
   const lists: RawHit[][] = (options.kind ? [items] : [items, summaries, messagesFts]).map((list) =>
-    list.filter((hit) => passesCoverageGate(hit, terms, options)),
+    list.filter((hit) => passesGate(hit, terms, options)),
   );
   return scoreHits(lists, options).slice(0, limit);
 }

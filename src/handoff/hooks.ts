@@ -7,7 +7,8 @@ import type { GatewayConfig } from "../config.js";
 import { openMemoryDb } from "../memory/db.js";
 import { recordLlmCall } from "../memory/ledger.js";
 import { toPreview } from "../memory/preview.js";
-import { AUTOMATIC_INJECTION_GATE, search } from "../memory/retrieval.js";
+import { automaticGate, search, vectorGateEnabled } from "../memory/retrieval.js";
+import { resolveEmbeddings } from "../vec/client.js";
 import { savingsTotals } from "../memory/savings.js";
 import { capText } from "../memory/text-cap.js";
 import type { CommandRunner } from "../process.js";
@@ -259,11 +260,15 @@ export async function buildMemoryContextBlock(
     const memory = await openMemoryDb(cwd, { quiet: true });
     if (!memory) return empty;
     try {
+      // Vectors join the automatic gate only when cutoffs were calibrated
+      // for the model; otherwise skip loading the model on every prompt.
+      const embeddings = vectorGateEnabled(config.memory.embeddings) ? await resolveEmbeddings(config.memory) : undefined;
       const hits = await search(memory, trimmed, {
         limit: 5,
         scoring: config.memory.scoring,
         excludeMessages: true,
-        ...AUTOMATIC_INJECTION_GATE,
+        ...automaticGate(config.memory.embeddings),
+        ...(embeddings ? { embeddings } : {}),
       });
       if (hits.length === 0) return empty;
       const lines = hits.map((hit) => {

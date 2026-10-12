@@ -8,7 +8,7 @@ import {
 } from "./consolidate.js";
 import type { MemoryDb } from "./db.js";
 import { openMemoryDb } from "./db.js";
-import { detectOllama } from "./embeddings.js";
+import { resolveEmbeddings } from "../vec/client.js";
 import { spendSummary, spendTotals } from "./ledger.js";
 import { toPreview } from "./preview.js";
 import { embedMissing, reindexMemory } from "./reindex.js";
@@ -17,8 +17,7 @@ import { recordSavings, savingsSummary, savingsTotals } from "./savings.js";
 import { MEMORY_CATEGORIES, MEMORY_KINDS, type MemoryCategory, type MemoryKind, type MemoryStats } from "./types.js";
 
 async function embeddingClient(memoryConfig: MemoryConfig | undefined) {
-  if (!memoryConfig?.embeddings.enabled) return undefined;
-  return await detectOllama(memoryConfig.embeddings.ollamaUrl, memoryConfig.embeddings.model);
+  return await resolveEmbeddings(memoryConfig);
 }
 
 export interface MemoryCommandOptions {

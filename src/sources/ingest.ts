@@ -6,6 +6,7 @@ import { openMemoryDb, type MemoryDb } from "../memory/db.js";
 import { isInternalMemoryPrompt } from "../memory/internal-prompt.js";
 import { recordRedactions } from "../memory/counters.js";
 import { sanitize } from "../memory/sanitize.js";
+import { embedNewRows } from "../vec/client.js";
 import { openGlobalDb } from "../store/global-db.js";
 import { resolveProject } from "../store/project.js";
 import { discoverHomes, type AgentHome, type SourceAgent } from "./homes.js";
@@ -196,6 +197,7 @@ export async function ingestTranscript(
       saveCursor.run(file.path, file.agent, info.ino, chunk.nextOffset, externalId, cwd, project.id, 0, now);
       if (options.distill !== false && chunk.messages.length > 0) {
         await consolidateCheckpoint(memory, undefined, key, options.memoryConfig ?? DEFAULT_CONFIG.memory);
+        await embedNewRows(memory, options.memoryConfig ?? DEFAULT_CONFIG.memory);
       }
     } finally {
       memory.close();
