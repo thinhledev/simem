@@ -6,6 +6,7 @@ import type { MemoryDb } from "./db.js";
 import { resetMemoryDb } from "./db.js";
 import type { EmbeddingClient } from "./embeddings.js";
 import { toBlob } from "./embeddings.js";
+import { projectStoreDir } from "../store/project.js";
 import { indexCheckpoint } from "./index-checkpoint.js";
 
 export interface ReindexResult {
@@ -78,7 +79,7 @@ export async function reindexMemory(
 ): Promise<ReindexResult> {
   if (options.rebuild) resetMemoryDb(memory);
   const result: ReindexResult = { checkpoints: 0, messages: 0, skipped: [] };
-  const checkpointsRoot = join(resolve(cwd), ".mixai", "checkpoints");
+  const checkpointsRoot = join(projectStoreDir(cwd), "checkpoints");
   let entries;
   try {
     entries = await readdir(checkpointsRoot, { withFileTypes: true });

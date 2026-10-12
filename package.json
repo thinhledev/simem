@@ -41,7 +41,7 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "node --import tsx --import ./test/setup.ts --test test/*.test.ts",
     "prepublishOnly": "rm -rf dist && npm run build && npm test"
   },
   "engines": {

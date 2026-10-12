@@ -1,12 +1,13 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { migrateLegacyStore } from "../store/migrate.js";
+import { projectStoreDir, resolveProject } from "../store/project.js";
+import { loadSqlite, type SqliteModule } from "../store/sqlite.js";
+
+export { loadSqlite, type SqliteModule } from "../store/sqlite.js";
 import { contentHash } from "./items.js";
 import { CURRENT_SCHEMA_VERSION, SCHEMA_CORE, SCHEMA_FTS, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5_COLUMNS, SCHEMA_V5_INDEX } from "./schema.js";
-
-export interface SqliteModule {
-  DatabaseSync: new (path: string) => DatabaseSync;
-}
 
 export interface MemoryDb {
   db: DatabaseSync;
@@ -29,41 +30,18 @@ export const SQLITE_REQUIREMENT_MESSAGE =
   `Persistent memory requires Node.js >= 22.5 (built-in node:sqlite); this runtime is ${process.version}. ` +
   "Core handoff commands keep working without it.";
 
-let cachedSqlite: SqliteModule | null | undefined;
-
-const SQLITE_EXPERIMENTAL_WARNING_SNIPPET = "SQLite is an experimental feature";
-
-// node:sqlite unconditionally emits a process-wide ExperimentalWarning the
-// first time it's imported, with no stable alternative to switch to — every
-// `mixai` invocation would otherwise print it on every run. Suppress only this
-// exact warning (never warnings in general) by intercepting process.emitWarning
-// for the duration of the import.
-async function importSqliteQuietly(): Promise<unknown> {
-  const originalEmitWarning = process.emitWarning;
-  process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
-    const message = typeof warning === "string" ? warning : warning.message;
-    if (message.includes(SQLITE_EXPERIMENTAL_WARNING_SNIPPET)) return;
-    return (originalEmitWarning as (...args: unknown[]) => void)(warning, ...rest);
-  }) as typeof process.emitWarning;
-  try {
-    return await import("node:sqlite");
-  } finally {
-    process.emitWarning = originalEmitWarning;
-  }
-}
-
-export async function loadSqlite(): Promise<SqliteModule | undefined> {
-  if (cachedSqlite !== undefined) return cachedSqlite ?? undefined;
-  try {
-    cachedSqlite = (await importSqliteQuietly()) as unknown as SqliteModule;
-  } catch {
-    cachedSqlite = null;
-  }
-  return cachedSqlite ?? undefined;
-}
-
+// The project's store (global ~/.mixai/projects/<id> by default, or the
+// repo's .mixai in project mode); a 1.x in-repo database is migrated into the
+// global store the first time it is opened there.
 export function memoryDbPath(cwd: string): string {
-  return join(resolve(cwd), ".mixai", "memory.db");
+  const ref = resolveProject(cwd);
+  if (ref.mode === "global") {
+    const outcome = migrateLegacyStore(ref);
+    // Another process holds the migration lock past the wait: read the
+    // not-yet-moved legacy database rather than create an empty global one.
+    if (outcome === "busy") return join(ref.root, ".mixai", "memory.db");
+  }
+  return join(projectStoreDir(cwd), "memory.db");
 }
 
 // Ordered migrations; index N upgrades schema_version N to N+1. Version 0 is

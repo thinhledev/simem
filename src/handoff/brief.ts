@@ -4,6 +4,7 @@ import type { MemoryConfig } from "../config.js";
 import { assembleContext } from "../memory/budget.js";
 import { openMemoryDb } from "../memory/db.js";
 import { capText } from "../memory/text-cap.js";
+import { projectStoreDir } from "../store/project.js";
 import type { CommandRunner } from "../process.js";
 import type { CheckpointManifest } from "./types.js";
 import { captureWorkspaceSummary } from "./workspace.js";
@@ -32,7 +33,7 @@ export interface Brief {
 
 async function latestManifest(cwd: string): Promise<CheckpointManifest | undefined> {
   try {
-    const raw = await readFile(join(cwd, ".mixai", "current", "manifest.json"), "utf8");
+    const raw = await readFile(join(projectStoreDir(cwd), "current", "manifest.json"), "utf8");
     const manifest = JSON.parse(raw) as CheckpointManifest;
     return manifest.version === 1 ? manifest : undefined;
   } catch {
@@ -56,7 +57,7 @@ async function latestSummary(
     return { objective: manifest.summary.latestObjective, outcome: manifest.summary.latestOutcome };
   }
   try {
-    const handoff = await readFile(join(cwd, ".mixai", "current", "HANDOFF.md"), "utf8");
+    const handoff = await readFile(join(projectStoreDir(cwd), "current", "HANDOFF.md"), "utf8");
     const objective = handoffSection(handoff, "Latest user objective");
     const outcome = handoffSection(handoff, "Latest agent outcome");
     return {

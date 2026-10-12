@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { DEFAULT_CONFIG, type MemoryConfig } from "../config.js";
 import { assembleContext } from "../memory/budget.js";
 import { openMemoryDb } from "../memory/db.js";
 import { indexCheckpointBestEffort } from "../memory/index-checkpoint.js";
+import { projectStoreDir, resolveProject } from "../store/project.js";
 import { isInternalMemoryPrompt } from "../memory/internal-prompt.js";
 import { capText } from "../memory/text-cap.js";
 import type { CommandRunner } from "../process.js";
@@ -25,8 +27,20 @@ const EMPTY_STATE: GatewayState = { version: 1, checkpoints: {}, sessions: {} };
 // every manifest.json; `mixai brief` re-caps to its own budget on read anyway.
 const MANIFEST_SUMMARY_CAP = 2_000;
 
+// The project's store directory: global (~/.mixai/projects/<id>) by default,
+// shared by every worktree, clone, agent, and account; the repo's .mixai in
+// project mode.
 function gatewayDirectory(cwd: string): string {
-  return join(resolve(cwd), ".mixai");
+  return projectStoreDir(cwd);
+}
+
+// 1.x integrations @import <repo>/.mixai/current/BRIEF.md from CLAUDE.local.md.
+// While such a directory exists, keep it current so the import never goes stale.
+function legacyCurrentMirror(cwd: string): string | undefined {
+  const ref = resolveProject(cwd);
+  if (ref.mode !== "global") return undefined;
+  const dir = join(ref.root, ".mixai", "current");
+  return existsSync(dir) ? dir : undefined;
 }
 
 export async function readGatewayState(cwd: string): Promise<GatewayState> {
@@ -320,9 +334,15 @@ export async function createCheckpoint(
     writeFile(join(currentDirectory, statusName), status, "utf8"),
     writeFile(join(currentDirectory, "manifest.json"), manifestJson, "utf8"),
   ]);
+  const mirror = legacyCurrentMirror(cwd);
+  if (mirror) {
+    await Promise.all([writeFile(join(mirror, handoffName), handoff, "utf8"), writeFile(join(mirror, briefName), brief, "utf8")]);
+  }
 
   state.currentCheckpointId = id;
-  state.checkpoints[id] = relative(cwd, directory);
+  // Relative inside the repo (project mode), absolute in the global store.
+  const relativeDirectory = relative(cwd, directory);
+  state.checkpoints[id] = relativeDirectory.startsWith("..") ? directory : relativeDirectory;
   state.sessions[session.provider] = session.id;
   if (options.targetProvider && options.targetSessionId) state.sessions[options.targetProvider] = options.targetSessionId;
   const statePath = await writeGatewayState(cwd, state);
