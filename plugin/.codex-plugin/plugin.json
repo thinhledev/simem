@@ -28,6 +28,7 @@
       "Write"
     ],
     "websiteURL": "https://github.com/thinhledev/simem",
+    "supportURL": "https://github.com/thinhledev/simem/issues",
     "logo": "./assets/simem.png",
     "composerIcon": "./assets/simem.svg",
     "defaultPrompt": [
