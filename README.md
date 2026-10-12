@@ -19,7 +19,13 @@ That's the only setup. `mixai init` runs once per machine (not once per project)
 - imports this project's past sessions and the agents' own memories — **without spending a single token**,
 - downloads a small local embedding model (31 MB, MIT-licensed, works offline after that).
 
-Restart the apps afterwards (the Codex app asks you once to trust the new hooks). Prefer a terminal? Run the same two commands yourself. Requires Node.js 22.5 or newer.
+Restart the apps afterwards (the Codex app asks you once to trust the new hooks). Prefer a terminal? Run the same two commands yourself. The npm package needs Node.js 22.5 or newer.
+
+**No Node.js?** On macOS or Linux, install the standalone binary instead. It downloads one checksum-verified file and runs `mixai init`:
+
+```bash
+curl -fsSL https://github.com/thinhledev/mixai/releases/latest/download/install.sh | sh
+```
 
 ## The two problems it solves
 
@@ -85,6 +91,8 @@ The plugins carry skills only; hooks and tools come from `mixai init`, so nothin
 
 **Do I need a terminal?** Only for the one-time install, and your agent can run it for you.
 
+**Do I need Node.js?** Not with the standalone binary (macOS and Linux, see *Set up*). The npm package needs Node.js 22.5+.
+
 **Does it proxy my API calls?** No. See *Privacy and safety*.
 
 **Do I need Ollama or a GPU?** No. The embedding model is tiny and runs in plain JavaScript. If you use Ollama, mixai can use it instead (`memory.embeddings.provider: "ollama"`), e.g. for non-English prompts.
@@ -124,6 +132,7 @@ npm install
 npm run build
 npm test
 npm link          # use your local build as the global `mixai` command
+npm install --no-save postject && npm run build:standalone   # optional: standalone binary for this OS/CPU
 ```
 
 ## License

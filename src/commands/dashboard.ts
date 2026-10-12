@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import type { GatewayConfig } from "../config.js";
-import { cliEntry } from "../install/launcher.js";
+import { selfCommand } from "../runtime.js";
 import { startDashboard } from "../dashboard/server.js";
 import { print, type Output } from "./common.js";
 
@@ -47,8 +47,8 @@ export async function runDashboard(options: Output & { cwd: string; config: Gate
   if (options.detach) {
     const port = options.port ?? (await freePort());
     const token = randomBytes(18).toString("base64url");
-    const entry = cliEntry();
-    spawn(process.execPath, [entry, "dashboard", "--port", String(port), "--cwd", options.cwd], {
+    const [command, ...prefix] = selfCommand();
+    spawn(command!, [...prefix, "dashboard", "--port", String(port), "--cwd", options.cwd], {
       detached: true,
       stdio: "ignore",
       env: { ...process.env, MIXAI_DASHBOARD_TOKEN: token },

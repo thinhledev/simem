@@ -30,6 +30,7 @@ import { runMigrate, runProject } from "./commands/project.js";
 import { runSources, runSync } from "./commands/sources.js";
 import { runEval, runRecall } from "./commands/recall.js";
 import { runIndex } from "./commands/index.js";
+import { isBundled, isStandalone, mixaiVersion } from "./runtime.js";
 import { runStats } from "./commands/stats.js";
 import { installStatusline, runStatusline } from "./commands/statusline.js";
 import { runDashboard } from "./commands/dashboard.js";
@@ -157,9 +158,7 @@ interface CliOptions {
 }
 
 function readVersion(): string {
-  const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
-  return pkg.version ?? "0.0.0";
+  return mixaiVersion();
 }
 
 const HELP = `mixai — local memory and context compression for AI coding agents
@@ -1054,6 +1053,8 @@ async function main(): Promise<void> {
 }
 
 function isMainModule(): boolean {
+  // The bundle (and the binary built from it) is always the entry point.
+  if (isStandalone() || isBundled()) return true;
   if (!process.argv[1]) return false;
   try {
     return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));

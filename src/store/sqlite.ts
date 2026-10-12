@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import type { DatabaseSync } from "node:sqlite";
 
 export interface SqliteModule {
@@ -8,7 +7,6 @@ export interface SqliteModule {
 let cachedSqlite: SqliteModule | null | undefined;
 
 const SQLITE_EXPERIMENTAL_WARNING_SNIPPET = "SQLite is an experimental feature";
-const require = createRequire(import.meta.url);
 
 // node:sqlite unconditionally emits a process-wide ExperimentalWarning the
 // first time it's imported, with no stable alternative to switch to — every
@@ -25,7 +23,9 @@ export function loadSqliteSync(): SqliteModule | undefined {
     return (originalEmitWarning as (...args: unknown[]) => void)(warning, ...rest);
   }) as typeof process.emitWarning;
   try {
-    cachedSqlite = require("node:sqlite") as SqliteModule;
+    // getBuiltinModule loads builtins synchronously from ESM, CommonJS, and
+    // single-executable builds alike.
+    cachedSqlite = (process.getBuiltinModule("node:sqlite") as SqliteModule | undefined) ?? null;
   } catch {
     cachedSqlite = null;
   } finally {

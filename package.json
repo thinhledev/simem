@@ -44,7 +44,8 @@
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "test": "node --import tsx --import ./test/setup.ts --test test/*.test.ts",
-    "prepublishOnly": "rm -rf dist && npm run build && npm test"
+    "prepublishOnly": "rm -rf dist && npm run build && npm test",
+    "build:standalone": "npm run build && node scripts/build-standalone.mjs"
   },
   "engines": {
     "node": ">=22.5.0"

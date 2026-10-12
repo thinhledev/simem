@@ -124,3 +124,14 @@ test("`mixai init` end to end: launcher, user-level install, history import, ide
   assert.equal(second.status, 0, second.stderr);
   assert.match(second.stdout, /already up to date/);
 });
+
+test("the standalone launcher execs the binary alone and falls back quietly", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mixai-launcher-sea-"));
+  const script = join(dir, "mixai");
+  writeFileSync(script, launcherScript("/bin/echo", ""), { mode: 0o755 });
+  const ok = spawnSync(script, ["hello", "world"], { env: { PATH: "/usr/bin:/bin" }, encoding: "utf8" });
+  assert.equal(ok.stdout, "hello world\n");
+  writeFileSync(script, launcherScript("/does/not/exist", ""), { mode: 0o755 });
+  const missing = spawnSync(script, ["--version"], { env: { PATH: "/usr/bin:/bin" }, encoding: "utf8" });
+  assert.equal(missing.status, 0);
+});

@@ -17,7 +17,8 @@ mixai is now a local memory and context-compression layer for the Claude Code an
 - **Visibility**: `mixai stats`, `mixai dashboard`, MCP `memory_stats` / `mixai_doctor` / `recall` / `memory_forget`, Stop notice in Claude Code, optional status line, `mixai doctor`.
 - **Portability**: `mixai memory export` / `import`, `memory.syncDir` with optional AES-256-GCM encryption.
 - Secret redaction on everything stored or shown; `mcp.toolGroups`; `~/.mixai/config.json`.
-- Claude Code plugin with `mixai` and `mixai-setup` skills (`.claude-plugin/marketplace.json`).
+- Plugins for both apps sharing the `mixai` and `mixai-setup` skills: Claude Code (`.claude-plugin/marketplace.json`) and Codex (`.agents/plugins/marketplace.json`).
+- Standalone binary (no Node.js needed) for macOS and Linux, built per platform in CI and installed with `install.sh`.
 
 ### Changed
 - Requires Node.js 22.5 or newer.

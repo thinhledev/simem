@@ -14,7 +14,7 @@ All phases are implemented. 232 tests pass. Each phase is its own commit.
 | 5 Compression and guards | Done |
 | 6 Visibility | Done |
 | 7 Portability | Done |
-| 8 Distribution and docs | Mostly done: README, CHANGELOG, Claude Code plugin, config example. Codex plugin and standalone binary not done (see below) |
+| 8 Distribution and docs | Done: README, CHANGELOG, config example, Claude Code and Codex plugins (installed with each app's own CLI in sandboxes), standalone binary build (bundle verified end to end; CI builds per platform) |
 
 **Where the implementation differs from the plan, and why:**
 
@@ -28,7 +28,7 @@ All phases are implemented. 232 tests pass. Each phase is its own commit.
 6. **Cursor** gets user-level MCP only; its hooks still come from per-project `integrate`. **Antigravity** has no user-level install (no hooks or MCP surface).
 7. **Not imported:** `CLAUDE.md` / `AGENTS.md` / `.cursor/rules`. Every agent already reads them natively from the repository.
 8. **Claude Code plugin** ships skills (`mixai`, `mixai-setup`), not hooks or MCP, so nothing is registered twice alongside `mixai init`.
-9. **Not done:** the standalone binary (Node SEA) and a Codex plugin (its plugin format is unverified). npm plus `mixai init` covers both apps today.
+9. **Plugins and binary.** The Codex plugin format was taken from the plugins Codex itself installs (`.codex-plugin/plugin.json`, `skills/`, `.agents/plugins/marketplace.json`); both plugins share one `plugin/` folder and ship skills only. The standalone binary is a Node single-executable build of an esbuild bundle. A binary only runs on the OS and CPU it was built on, so CI builds macOS arm64/x64 and Linux x64/arm64. There is no Windows binary (the launcher is a POSIX script).
 
 **Measured on this repository** (maintainer's machine, read-only sync into a scratch store):
 - 8 Claude app sessions re-sent about 1.04B cached tokens.

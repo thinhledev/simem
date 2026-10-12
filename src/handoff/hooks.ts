@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { basename } from "node:path";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { GatewayConfig } from "../config.js";
 import { openMemoryDb } from "../memory/db.js";
 import { recordLlmCall } from "../memory/ledger.js";
@@ -17,6 +16,7 @@ import { buildBrief } from "./brief.js";
 import { createCheckpoint } from "./checkpoints.js";
 import { resolveSession } from "./sessions.js";
 import type { SessionInfo } from "./types.js";
+import { selfCommand } from "../runtime.js";
 import type { SourceAgent } from "../sources/homes.js";
 import { ingestTranscript, sessionKey, unreadBytes } from "../sources/ingest.js";
 import { clearInjections, injectedRefs, recordInjections } from "../memory/injections.js";
@@ -185,9 +185,9 @@ export type ConsolidationSpawner = (cwd: string, checkpointId: string, configPat
 // compaction) never waits on the LLM call. The child self-bounds via
 // consolidationTimeoutMs inside consolidateBestEffort.
 export function spawnDetachedConsolidation(cwd: string, checkpointId: string, configPath?: string): void {
-  const entrypoint = fileURLToPath(new URL("../cli.js", import.meta.url));
+  const [command, ...prefix] = selfCommand();
   const args = [
-    entrypoint,
+    ...prefix,
     "memory",
     "consolidate-checkpoint",
     checkpointId,
@@ -195,7 +195,7 @@ export function spawnDetachedConsolidation(cwd: string, checkpointId: string, co
     cwd,
     ...(configPath ? ["--config", configPath] : []),
   ];
-  const child = spawn(process.execPath, args, { detached: true, stdio: "ignore" });
+  const child = spawn(command!, args, { detached: true, stdio: "ignore" });
   child.unref();
 }
 
@@ -381,9 +381,9 @@ const INLINE_INGEST_MAX_BYTES = 2 * 1024 * 1024;
 export type IngestSpawner = (path: string, agent: SourceAgent, configPath?: string) => void;
 
 export function spawnDetachedIngest(path: string, agent: SourceAgent, configPath?: string): void {
-  const entrypoint = fileURLToPath(new URL("../cli.js", import.meta.url));
-  const args = [entrypoint, "sync", "--path", path, "--provider", agent, "--quiet", ...(configPath ? ["--config", configPath] : [])];
-  const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", env: { ...process.env, MIXAI_INTERNAL: "1" } });
+  const [command, ...prefix] = selfCommand();
+  const args = [...prefix, "sync", "--path", path, "--provider", agent, "--quiet", ...(configPath ? ["--config", configPath] : [])];
+  const child = spawn(command!, args, { detached: true, stdio: "ignore", env: { ...process.env, MIXAI_INTERNAL: "1" } });
   child.unref();
 }
 
@@ -428,8 +428,8 @@ export async function handlePreToolUse(input: RawHookInput, cwd: string, provide
 export function spawnDetachedSync(cwd: string, config: GatewayConfig): void {
   if (!config.memory.syncDir || process.env.MIXAI_NO_BACKGROUND === "1") return;
   try {
-    const entrypoint = fileURLToPath(new URL("../cli.js", import.meta.url));
-    spawn(process.execPath, [entrypoint, "sync", "--quiet", "--cwd", cwd], { detached: true, stdio: "ignore", env: { ...process.env, MIXAI_INTERNAL: "1" } }).unref();
+    const [command, ...prefix] = selfCommand();
+    spawn(command!, [...prefix, "sync", "--quiet", "--cwd", cwd], { detached: true, stdio: "ignore", env: { ...process.env, MIXAI_INTERNAL: "1" } }).unref();
   } catch {
     // Best-effort.
   }
@@ -438,8 +438,8 @@ export function spawnDetachedSync(cwd: string, config: GatewayConfig): void {
 export function spawnDetachedIndex(cwd: string): void {
   if (process.env.MIXAI_NO_BACKGROUND === "1") return;
   try {
-    const entrypoint = fileURLToPath(new URL("../cli.js", import.meta.url));
-    const child = spawn(process.execPath, [entrypoint, "index", "--quiet", "--cwd", cwd], {
+    const [command, ...prefix] = selfCommand();
+    const child = spawn(command!, [...prefix, "index", "--quiet", "--cwd", cwd], {
       detached: true,
       stdio: "ignore",
       env: { ...process.env, MIXAI_INTERNAL: "1" },
