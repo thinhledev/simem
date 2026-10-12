@@ -31,6 +31,15 @@ test("the /simem:stats and /simem:dashboard shortcuts run only when the user ask
   }
 });
 
+test("the setup skill pins the CLI to this release and asks before changing anything", () => {
+  const pkg = read("package.json");
+  const body = readFileSync(new URL("../plugin/skills/simem-setup/SKILL.md", import.meta.url), "utf8");
+  assert.ok(body.includes(`npm install -g @simem/cli@${pkg.version}\``), "install command pinned to package.json version");
+  assert.doesNotMatch(body, /@latest/);
+  assert.match(body, /simem init --check/);
+  assert.match(body, /only after they say yes/);
+});
+
 test("both marketplaces point at the plugin folder", () => {
   const claude = read(".claude-plugin/marketplace.json");
   const codex = read(".agents/plugins/marketplace.json");

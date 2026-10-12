@@ -2,6 +2,9 @@
 
 ## 2.0.1
 
+### Changed
+- The `simem-setup` skill asks the user before installing the CLI and again before `simem init`, shows exactly what `init` will change first (`simem init --check`), and installs the pinned release (`@simem/cli@2.0.1`) instead of `@latest`.
+
 ### Added
 - Plugin shortcuts **`/simem:stats`** (token usage and savings; `7d` by default, or `30d`, `12h`, `all`) and **`/simem:dashboard`** (opens the private memory dashboard). In Codex they are `$simem:stats` and `$simem:dashboard`. Both run only when the user types them; Claude Code doesn't load their descriptions into the context until then.
 

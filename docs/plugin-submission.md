@@ -11,7 +11,7 @@ This repository is a marketplace for both apps. No form or review is involved.
 | Claude Code | `.claude-plugin/marketplace.json` | `/plugin marketplace add thinhledev/simem`, then `/plugin install simem@simem` |
 | Codex | `.agents/plugins/marketplace.json` | `codex plugin marketplace add thinhledev/simem`, then `codex plugin add simem@simem` |
 
-To release a new plugin version, bump `version` in both manifests (a test keeps them equal to `package.json`) and push. Users get it with `claude plugin update simem@simem` or `codex plugin marketplace upgrade`.
+To release a new plugin version, bump `version` in both manifests and the pinned install command in `plugin/skills/simem-setup/SKILL.md` (tests keep all three equal to `package.json`) and push. Users get it with `claude plugin update simem@simem` or `codex plugin marketplace upgrade`.
 
 Before every release, run:
 
@@ -59,7 +59,7 @@ claude plugin validate --strict ./plugin && claude plugin validate --strict .
 ### Test cases (optional for skills-only; useful if reviewers ask)
 
 Positive:
-1. "Set up simem on this machine." → `simem-setup` checks the Node.js version, installs `@simem/cli` (or asks the user to install Node.js 22.5+ first), runs `simem init` and `simem doctor`, and tells the user to restart.
+1. "Set up simem on this machine." → `simem-setup` checks the Node.js version (or asks the user to install Node.js 22.5+ and stops), asks before running `npm install -g @simem/cli@<version>`, previews the changes with `simem init --check`, asks again before `simem init`, runs `simem doctor`, and tells the user to restart.
 2. "What did we decide about the database?" → `simem`: the `recall` tool or `simem recall`, quoting the matching memory.
 3. "Remember that we deploy only from CI." → `memory_save` (or `simem memory add`) with category `decision`.
 4. "How many tokens did simem save this week?" → `memory_stats` (or `simem stats --since 7d`), separating measured figures from estimates.
