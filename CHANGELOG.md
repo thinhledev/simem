@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1
+
+### Added
+- Plugin shortcuts **`/simem:stats`** (token usage and savings; `7d` by default, or `30d`, `12h`, `all`) and **`/simem:dashboard`** (opens the private memory dashboard). In Codex they are `$simem:stats` and `$simem:dashboard`. Both run only when the user types them; Claude Code doesn't load their descriptions into the context until then.
+
 ## 2.0.0
 
 **simem — Super Intelligence Memory.** **Renamed from mixai to simem** (npm package `@simem/cli`, command `simem`, data in `~/.simem`). mixai 1.x projects upgrade in place: `simem init` migrates the old `.mixai/` memory, and `simem integrate` replaces mixai's per-project entries.

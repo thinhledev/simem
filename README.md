@@ -113,6 +113,8 @@ What survives: logging out and in, switching accounts, switching between Claude 
 | *"Open the simem dashboard."* | A private page on your machine: usage, savings, and your memory to search, edit, forget, or apply to all projects. |
 | *"Continue."* (in the other app) | Opening Codex after Claude Code (or vice versa) starts with the other app's latest work in the primer — no switch command, no copy-paste. |
 
+Shortcuts from the plugin: **`/simem:stats`** (add `30d` or `all` for another period) and **`/simem:dashboard`** in Claude Code; `$simem:stats` and `$simem:dashboard` in Codex. They run only when you type them; Claude Code doesn't load them into the context until then.
+
 Claude Code can also show today's savings in its status line: `simem init --statusline`.
 
 ## Privacy and safety

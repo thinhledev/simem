@@ -1,6 +1,6 @@
 # Publishing the simem plugin
 
-simem ships one plugin folder (`plugin/`) with two manifests: `.claude-plugin/plugin.json` for Claude Code and `.codex-plugin/plugin.json` for Codex. Both use the same skills (`simem`, `simem-setup`) and icon.
+simem ships one plugin folder (`plugin/`) with two manifests: `.claude-plugin/plugin.json` for Claude Code and `.codex-plugin/plugin.json` for Codex. Both use the same skills and icon: `simem` and `simem-setup`, plus the user-only shortcuts `stats` and `dashboard` (`/simem:stats`, `/simem:dashboard` in Claude Code; `$simem:stats`, `$simem:dashboard` in Codex).
 
 ## 1. Self-hosted marketplaces (live as soon as `master` is pushed)
 
@@ -52,6 +52,8 @@ claude plugin validate --strict ./plugin && claude plugin validate --strict .
 
 **Long description:** use `interface.longDescription` from `plugin/.codex-plugin/plugin.json`.
 
+**Release notes (2.0.1):** Adds two shortcuts that run only when the user types them: `stats` (token usage and savings for a period) and `dashboard` (opens the private memory dashboard).
+
 **Release notes (2.0.0):** First public release under the name simem (Super Intelligence Memory). It adds two skills. One answers questions from local project memory, saves and forgets facts, reports token savings, and opens the memory dashboard. The other installs or repairs the simem CLI. All data stays on the user's machine.
 
 ### Test cases (optional for skills-only; useful if reviewers ask)
@@ -62,6 +64,8 @@ Positive:
 3. "Remember that we deploy only from CI." → `memory_save` (or `simem memory add`) with category `decision`.
 4. "How many tokens did simem save this week?" → `memory_stats` (or `simem stats --since 7d`), separating measured figures from estimates.
 5. "Open my memory dashboard." → runs `simem dashboard --detach --open` and returns the local link.
+6. `/simem:stats 30d` (Codex: `$simem:stats 30d`) → `memory_stats` with `since: "30d"`, summarised as measured vs estimated.
+7. `/simem:dashboard` (Codex: `$simem:dashboard`) → same as 5.
 
 Negative:
 1. "Write a haiku about autumn." → no simem action.

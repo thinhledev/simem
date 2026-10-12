@@ -15,10 +15,19 @@ test("Claude Code and Codex plugin manifests match the package version and share
   assert.equal(codex.skills, "./skills/");
   assert.ok(existsSync(new URL(`../plugin/${codex.interface.logo}`, import.meta.url)));
   const skills = readdirSync(new URL("../plugin/skills/", import.meta.url));
-  assert.deepEqual(skills.sort(), ["simem", "simem-setup"]);
+  assert.deepEqual(skills.sort(), ["dashboard", "simem", "simem-setup", "stats"]);
   for (const skill of skills) {
     const body = readFileSync(new URL(`../plugin/skills/${skill}/SKILL.md`, import.meta.url), "utf8");
-    assert.match(body, new RegExp(`^---\\nname: ${skill}\\ndescription: .{20,300}\\n---\\n`), `${skill}: frontmatter`);
+    assert.match(body, new RegExp(`^---\\nname: ${skill}\\ndescription: .{20,300}\\n(?:[a-z-]+: .+\\n)*---\\n`), `${skill}: frontmatter`);
+  }
+});
+
+test("the /simem:stats and /simem:dashboard shortcuts run only when the user asks, in both apps", () => {
+  for (const skill of ["stats", "dashboard"]) {
+    const body = readFileSync(new URL(`../plugin/skills/${skill}/SKILL.md`, import.meta.url), "utf8");
+    assert.match(body, /\ndisable-model-invocation: true\n/, `${skill}: Claude Code`);
+    const policy = readFileSync(new URL(`../plugin/skills/${skill}/agents/openai.yaml`, import.meta.url), "utf8");
+    assert.match(policy, /^policy:\n  allow_implicit_invocation: false\n$/, `${skill}: Codex`);
   }
 });
 
