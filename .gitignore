@@ -7,5 +7,7 @@ gateway.config.json
 .mixai/
 
 CLAUDE.local.md
+
+blog/
 build/
 .simem/

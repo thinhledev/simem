@@ -107,7 +107,7 @@ simem trims those reports before they go on the stack. It keeps what matters —
 
 Because the AI reads the stack again on every turn, each page simem removes is saved again on every later turn — the longer the conversation, the bigger the saving.
 
-**Why only 22% here?** In this project the agent was already cutting most reports short itself, so there was less left to trim. When a report arrives in full — a complete test run or package install — simem cuts **81–99%** of it (details in the table below).
+**Why only 22% here?** In this project the agent was already cutting most reports short itself, so there was less left to trim. When a report arrives in full — a complete test run or package install — simem cuts **81–99%** of it.
 
 *In the Claude Code app, test, build, and install reports are trimmed automatically when your settings already let those commands run without asking; otherwise the agent can choose to use simem's trimming (`simem exec`). These are one project's numbers; your savings depend on your work. To measure your own projects: `node scripts/replay-filters.mjs`.*
 
