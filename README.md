@@ -1,29 +1,72 @@
-# simem — spend fewer tokens, never re-explain your project
+<p align="center"><img src="plugin/assets/simem.png" width="96" alt="simem"></p>
+
+# simem — Super Intelligence Memory
+
+**Spend fewer tokens. Never re-explain your project.**
+
+simem is a **Super Intelligence Memory** for AI coding agents. It remembers what your agents learn about a project — decisions, constraints, preferences, how to build and test — and gives that memory to **every agent and every account** you use: Claude Code, Codex, and Cursor, in the desktop apps and the CLIs. It also keeps the noise (huge command outputs, whole-file reads, repeated context) out of what gets sent to the model. Everything runs on your machine.
 
 *simem was called **mixai** until 2.0.*
-
-**Local memory and context compression for the Claude Code and Codex apps (and their CLIs).** simem keeps what your agents learn about a project on your machine, shares it with every agent and every account you use, and keeps the noise (huge command outputs, whole-file reads, repeated context) out of what gets sent to the model.
 
 [![npm version](https://img.shields.io/npm/v/simem.svg)](https://www.npmjs.com/package/simem)
 [![npm downloads](https://img.shields.io/npm/dm/simem.svg)](https://www.npmjs.com/package/simem)
 [![license](https://img.shields.io/npm/l/simem.svg)](LICENSE)
 [![Node.js](https://img.shields.io/node/v/simem.svg)](https://nodejs.org)
 
-## Set up in 30 seconds — from inside your app
+## Install
 
-Paste this into Claude Code or Codex:
+Pick the app you use. Both routes end the same way: start a new session and say **"set up simem"** — the plugin's setup skill installs the simem CLI and runs `simem init` for you.
 
-> Install and set up simem: run `npm install -g simem && simem init`, then tell me to restart the app.
+### Claude Code — plugin marketplace
 
-That's the only setup. `simem init` runs once per machine (not once per project) and:
+In Claude Code (desktop app or CLI), run:
+
+```text
+/plugin marketplace add thinhledev/simem
+/plugin install simem@simem
+```
+
+Or both at once with `/plugin install simem --marketplace thinhledev/simem` (Claude Code 2.1.275+). From a terminal:
+
+```bash
+claude plugin marketplace add thinhledev/simem
+```
+```bash
+claude plugin install simem@simem
+```
+
+Updates: `claude plugin update simem@simem`, or turn on auto-update for the `simem` marketplace in `/plugin`.
+
+### Codex — plugin marketplace
+
+From a terminal (the Codex app uses the same configuration):
+
+```bash
+codex plugin marketplace add thinhledev/simem
+```
+```bash
+codex plugin add simem@simem
+```
+
+Or inside Codex, open `/plugins` and install **simem** from the `simem` marketplace. Updates: `codex plugin marketplace upgrade`.
+
+### Then: "set up simem"
+
+Start a new session in either app and say **"set up simem"**. The agent runs `npm install -g simem && simem init` (or, without Node.js, the standalone installer below — it asks you first). `simem init` runs once per machine, not per project, and:
 
 - connects simem to **every Claude Code and Codex account** on the machine (hooks + tools),
 - imports this project's past sessions and the agents' own memories — **without spending a single token**,
 - downloads a small local embedding model (31 MB, MIT-licensed, works offline after that).
 
-Restart the apps afterwards (the Codex app asks you once to trust the new hooks). Prefer a terminal? Run the same two commands yourself. The npm package needs Node.js 22.5 or newer.
+Restart the apps afterwards (the Codex app asks you once to trust the new hooks). The plugins only add skills; hooks and tools come from `simem init`, so nothing is registered twice.
 
-**No Node.js?** On macOS or Linux, install the standalone binary instead. It downloads one checksum-verified file and runs `simem init`:
+### Without the plugins
+
+Paste this into Claude Code or Codex — or run it in a terminal (needs Node.js 22.5+):
+
+> Install and set up simem: run `npm install -g simem && simem init`, then tell me to restart the app.
+
+**No Node.js?** On macOS or Linux, install the standalone binary. It downloads one checksum-verified file and runs `simem init`:
 
 ```bash
 curl -fsSL https://github.com/thinhledev/simem/releases/latest/download/install.sh | sh
@@ -72,14 +115,12 @@ What survives: logging out and in, switching accounts, switching between Claude 
 | *"Open the simem dashboard."* | A private page on your machine: usage, savings, and your memory to search, edit, forget, or apply to all projects. |
 | *"Continue."* (in the other app) | Opening Codex after Claude Code (or vice versa) starts with the other app's latest work in the primer — no switch command, no copy-paste. |
 
-**Plugins (optional).** Both apps can install a simem plugin that teaches the agent these requests and can install or repair simem for you:
-
-- Claude Code: `/plugin marketplace add thinhledev/simem`, then `/plugin install simem@simem`
-- Codex: `codex plugin marketplace add https://github.com/thinhledev/simem`, then `codex plugin add simem@simem` (or find **simem memory** in the Codex app's plugin list)
-
-The plugins carry skills only; hooks and tools come from `simem init`, so nothing is registered twice. Claude Code can also show today's savings in its status line (`simem init --statusline`).
+Claude Code can also show today's savings in its status line: `simem init --statusline`.
 
 ## Privacy and safety
+
+Full details: [PRIVACY.md](PRIVACY.md) · [TERMS.md](TERMS.md).
+
 
 - **Local only.** Memory lives in `~/.simem`. Nothing is uploaded; there is no simem server.
 - **No proxy, no credentials.** simem never sits between you and the model provider and never reads your logins. It works through the apps' own hooks and tool (MCP) interfaces.
@@ -91,9 +132,11 @@ The plugins carry skills only; hooks and tools come from `simem init`, so nothin
 
 **Does it work in the desktop apps?** Yes — that's the main target. Claude Code (the Code tab of the desktop app, and the CLI) and Codex (app and CLI) get everything; Cursor gets the tools; Antigravity can get instructions with `simem integrate --provider antigravity`.
 
-**Do I need a terminal?** Only for the one-time install, and your agent can run it for you.
+**What does the name mean?** simem stands for **Super Intelligence Memory**: memory that is collected automatically, searched by meaning as well as keywords, shared by every agent you use, and kept small enough to save tokens — all on your machine.
 
-**Do I need Node.js?** Not with the standalone binary (macOS and Linux, see *Set up*). The npm package needs Node.js 22.5+.
+**Do I need a terminal?** No. Install the plugin from inside Claude Code or Codex and say "set up simem" — the agent runs the one-time install for you.
+
+**Do I need Node.js?** Not with the standalone binary (macOS and Linux, see *Install*). The npm package needs Node.js 22.5+.
 
 **Does it proxy my API calls?** No. See *Privacy and safety*.
 

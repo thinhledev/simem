@@ -1,11 +1,19 @@
 {
   "name": "simem",
-  "interface": { "displayName": "simem" },
+  "interface": {
+    "displayName": "simem \u2014 Super Intelligence Memory"
+  },
   "plugins": [
     {
       "name": "simem",
-      "source": { "source": "local", "path": "./plugin" },
-      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "source": {
+        "source": "local",
+        "path": "./plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
       "category": "Developer Tools"
     }
   ]

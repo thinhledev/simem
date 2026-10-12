@@ -1,11 +1,26 @@
 {
   "name": "simem",
-  "displayName": "simem memory",
+  "displayName": "simem \u00b7 Super Intelligence Memory",
   "version": "2.0.0",
-  "description": "Local project memory shared across every agent and account, plus tools that keep context small. Requires the simem package (the setup skill installs it).",
-  "author": { "name": "Thinh Le", "url": "https://github.com/thinhledev" },
+  "description": "Super Intelligence Memory for coding agents: local project memory shared across every agent and account, plus tools that keep context small. The setup skill installs the simem CLI.",
+  "author": {
+    "name": "Thinh Le",
+    "url": "https://github.com/thinhledev"
+  },
   "homepage": "https://github.com/thinhledev/simem#readme",
   "repository": "https://github.com/thinhledev/simem",
   "license": "MIT",
-  "keywords": ["memory", "tokens", "context", "codex", "mcp"]
+  "keywords": [
+    "memory",
+    "super-intelligence-memory",
+    "tokens",
+    "context",
+    "codex",
+    "mcp"
+  ],
+  "icon": "./assets/simem.png",
+  "documentationUrl": "https://github.com/thinhledev/simem#readme",
+  "supportUrl": "https://github.com/thinhledev/simem/issues",
+  "privacyPolicyUrl": "https://github.com/thinhledev/simem/blob/master/PRIVACY.md",
+  "termsOfServiceUrl": "https://github.com/thinhledev/simem/blob/master/TERMS.md"
 }

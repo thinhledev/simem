@@ -2,7 +2,7 @@
 
 ## 2.0.0
 
-**Renamed from mixai to simem** (npm package `simem`, command `simem`, data in `~/.simem`). mixai 1.x projects upgrade in place: `simem init` migrates the old `.mixai/` memory, and `simem integrate` replaces mixai's per-project entries.
+**simem — Super Intelligence Memory.** **Renamed from mixai to simem** (npm package `simem`, command `simem`, data in `~/.simem`). mixai 1.x projects upgrade in place: `simem init` migrates the old `.mixai/` memory, and `simem integrate` replaces mixai's per-project entries.
 
 simem is now a local memory and context-compression layer for the Claude Code and Codex apps. Agent switching stays, as an extra.
 
@@ -19,7 +19,7 @@ simem is now a local memory and context-compression layer for the Claude Code an
 - **Visibility**: `simem stats`, `simem dashboard`, MCP `memory_stats` / `simem_doctor` / `recall` / `memory_forget`, Stop notice in Claude Code, optional status line, `simem doctor`.
 - **Portability**: `simem memory export` / `import`, `memory.syncDir` with optional AES-256-GCM encryption.
 - Secret redaction on everything stored or shown; `mcp.toolGroups`; `~/.simem/config.json`.
-- Plugins for both apps sharing the `simem` and `simem-setup` skills: Claude Code (`.claude-plugin/marketplace.json`) and Codex (`.agents/plugins/marketplace.json`).
+- Plugins for both apps sharing the `simem` and `simem-setup` skills, published through this repository's own marketplaces: Claude Code (`/plugin marketplace add thinhledev/simem`) and Codex (`codex plugin marketplace add thinhledev/simem`). Directory submission materials are in `docs/plugin-submission.md`; `PRIVACY.md` and `TERMS.md` added.
 - Standalone binary (no Node.js needed) for macOS and Linux, built per platform in CI and installed with `install.sh`.
 
 ### Changed

@@ -161,7 +161,7 @@ function readVersion(): string {
   return simemVersion();
 }
 
-const HELP = `simem — local memory and context compression for AI coding agents
+const HELP = `simem — Super Intelligence Memory for AI coding agents
 Works inside the Claude Code and Codex apps (and their CLIs). Everything stays on this machine.
 
 Set up (once per machine; an agent can run this for you):

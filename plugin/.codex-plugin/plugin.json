@@ -1,27 +1,42 @@
 {
   "name": "simem",
   "version": "2.0.0",
-  "description": "Local project memory shared across every agent and account, plus tools that keep context small. Requires the simem package (the setup skill installs it).",
-  "author": { "name": "Thinh Le", "url": "https://github.com/thinhledev" },
+  "description": "Super Intelligence Memory for coding agents: local project memory shared across every agent and account, plus tools that keep context small. The setup skill installs the simem CLI.",
+  "author": {
+    "name": "Thinh Le",
+    "url": "https://github.com/thinhledev"
+  },
   "homepage": "https://github.com/thinhledev/simem#readme",
   "license": "MIT",
-  "keywords": ["memory", "tokens", "context", "claude-code", "mcp"],
+  "keywords": [
+    "memory",
+    "super-intelligence-memory",
+    "tokens",
+    "context",
+    "claude-code",
+    "mcp"
+  ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "simem memory",
-    "shortDescription": "Project memory shared across agents and accounts",
-    "longDescription": "simem keeps what your agents learn about a project on your machine and shares it with every agent and account you use (Codex, Claude Code, Cursor). It also keeps noisy command output and whole-file reads out of the context. Everything stays local.",
+    "displayName": "simem",
+    "shortDescription": "Super Intelligence Memory",
+    "longDescription": "simem (Super Intelligence Memory) keeps what your coding agents learn about a project on your machine and shares it with every agent and account you use: Codex, Claude Code, and Cursor. It cuts tokens by keeping noisy command output, whole-file reads, and repeated context out of the conversation, and it builds memory with local rules instead of model calls. Everything stays local; the plugin adds skills, and the simem CLI provides the memory tools.",
     "developerName": "Thinh Le",
     "category": "Developer Tools",
-    "capabilities": ["Read", "Write"],
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
     "websiteURL": "https://github.com/thinhledev/simem",
-    "logo": "./assets/simem.svg",
+    "logo": "./assets/simem.png",
     "composerIcon": "./assets/simem.svg",
     "defaultPrompt": [
       "Set up simem memory for this machine",
       "What did we decide about this project before?",
       "How many tokens did simem save this week?"
     ],
-    "brandColor": "#2F6F5E"
+    "brandColor": "#2F6F5E",
+    "privacyPolicyURL": "https://github.com/thinhledev/simem/blob/master/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/thinhledev/simem/blob/master/TERMS.md"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "simem",
-  "description": "simem: local memory and context compression for Claude Code and Codex.",
+  "description": "simem \u2014 Super Intelligence Memory: local memory and context compression for Claude Code and Codex.",
   "owner": {
     "name": "Thinh Le",
     "url": "https://github.com/thinhledev"
@@ -9,7 +9,7 @@
     {
       "name": "simem",
       "source": "./plugin",
-      "description": "Local project memory shared across every agent and account, plus tools that keep context small."
+      "description": "Super Intelligence Memory: project memory shared across every agent and account, plus tools that keep context small."
     }
   ]
 }
