@@ -8,10 +8,10 @@ simem is a **Super Intelligence Memory** for AI coding agents. It remembers what
 
 *simem was called **mixai** until 2.0.*
 
-[![npm version](https://img.shields.io/npm/v/simem.svg)](https://www.npmjs.com/package/simem)
-[![npm downloads](https://img.shields.io/npm/dm/simem.svg)](https://www.npmjs.com/package/simem)
-[![license](https://img.shields.io/npm/l/simem.svg)](LICENSE)
-[![Node.js](https://img.shields.io/node/v/simem.svg)](https://nodejs.org)
+[![npm version](https://img.shields.io/npm/v/@simem/cli.svg)](https://www.npmjs.com/package/@simem/cli)
+[![npm downloads](https://img.shields.io/npm/dm/@simem/cli.svg)](https://www.npmjs.com/package/@simem/cli)
+[![license](https://img.shields.io/npm/l/@simem/cli.svg)](LICENSE)
+[![Node.js](https://img.shields.io/node/v/@simem/cli.svg)](https://nodejs.org)
 
 ## Install
 
@@ -52,7 +52,7 @@ Or inside Codex, open `/plugins` and install **simem** from the `simem` marketpl
 
 ### Then: "set up simem"
 
-Start a new session in either app and say **"set up simem"**. The agent runs `npm install -g simem && simem init` (or, without Node.js, the standalone installer below — it asks you first). `simem init` runs once per machine, not per project, and:
+Start a new session in either app and say **"set up simem"**. The agent runs `npm install -g @simem/cli && simem init` (or, without Node.js, the standalone installer below — it asks you first). `simem init` runs once per machine, not per project, and:
 
 - connects simem to **every Claude Code and Codex account** on the machine (hooks + tools),
 - imports this project's past sessions and the agents' own memories — **without spending a single token**,
@@ -62,9 +62,9 @@ Restart the apps afterwards (the Codex app asks you once to trust the new hooks)
 
 ### Without the plugins
 
-Paste this into Claude Code or Codex — or run it in a terminal (needs Node.js 22.5+):
+The npm package is **`@simem/cli`**; the command it installs is **`simem`**. Paste this into Claude Code or Codex — or run it in a terminal (needs Node.js 22.5+):
 
-> Install and set up simem: run `npm install -g simem && simem init`, then tell me to restart the app.
+> Install and set up simem: run `npm install -g @simem/cli && simem init`, then tell me to restart the app.
 
 **No Node.js?** On macOS or Linux, install the standalone binary. It downloads one checksum-verified file and runs `simem init`:
 

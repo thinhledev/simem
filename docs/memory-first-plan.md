@@ -175,7 +175,7 @@ Interop: if [RTK](https://github.com/rtk-ai/rtk) is detected, L3's Bash rewrite 
   - Later option: a standalone binary built with Node SEA, so app users don't need a Node toolchain (§6, Phase 8).
 - **Hook entries never change after install:** one dispatcher command per event (`~/.simem/bin/simem hook <event>`). Everything else is decided at runtime from config, so the Codex app's `trusted_hash` approvals stay valid across simem upgrades.
 - **Finding the project at runtime:** hooks read `cwd` from the payload. The MCP server uses `--cwd` if given, then MCP `roots/list`, then `process.cwd()`. Verify what each app passes for worktree sessions.
-- **Onboarding without a terminal:** the README's first instruction is a sentence to paste into either app: *"Install and set up simem: run `npm i -g simem && simem init`, then restart this app."* The agent runs it with its own shell tool. Phase 8 adds a **Claude Code plugin** (marketplace: hooks, MCP, and slash commands `/simem:recall`, `/simem:remember`, `/simem:stats`) installable from the app's plugin UI, and a Codex plugin if its plugin format allows hooks and MCP (verify).
+- **Onboarding without a terminal:** the README's first instruction is a sentence to paste into either app: *"Install and set up simem: run `npm i -g @simem/cli && simem init`, then restart this app."* The agent runs it with its own shell tool. Phase 8 adds a **Claude Code plugin** (marketplace: hooks, MCP, and slash commands `/simem:recall`, `/simem:remember`, `/simem:stats`) installable from the app's plugin UI, and a Codex plugin if its plugin format allows hooks and MCP (verify).
 - **Per-project `simem integrate` stays available** for teams that want repo-level config. It isn't required, and it no longer writes the `CLAUDE.local.md` `@BRIEF.md` import or `.worktreeinclude` entries by default, because the SessionStart primer replaces them.
 
 ### 4.2 Storage layout and project identity
@@ -505,7 +505,7 @@ The keyword fix already shipped in 1.0.6. Phase 3 adds:
 ## 11. README rewrite outline (Phase 8)
 
 1. **Hero:** "Spend fewer tokens. Never re-explain your project." Works in the **Claude Code app and the Codex app** (and their CLIs).
-2. **Setup in 30 seconds, from inside your app:** the sentence to paste into Claude Code or Codex ("Install and set up simem: run `npm i -g simem && simem init`, then restart this app"). The plugin path once it exists. A terminal path for CLI users.
+2. **Setup in 30 seconds, from inside your app:** the sentence to paste into Claude Code or Codex ("Install and set up simem: run `npm i -g @simem/cli && simem init`, then restart this app"). The plugin path once it exists. A terminal path for CLI users.
 3. **The two problems it solves:** re-exploration and re-sent context burn tokens; memory is stuck in one app, one account, and one worktree.
 4. **How it saves tokens:** L1–L10 in plain words, each with how it's measured, plus a real `memory_stats` answer from a chat (labelled as one person's numbers).
 5. **Memory that follows the project:** a diagram (Claude app account A or B, Codex app, worktrees, clones → `~/.simem/projects/<id>`), and what survives.

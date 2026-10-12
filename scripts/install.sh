@@ -10,12 +10,12 @@ VERSION="${SIMEM_VERSION:-latest}"
 case "$(uname -s)" in
   Darwin) os=darwin ;;
   Linux) os=linux ;;
-  *) echo "simem: unsupported OS $(uname -s); install with npm instead: npm i -g simem" >&2; exit 1 ;;
+  *) echo "simem: unsupported OS $(uname -s); install with npm instead: npm i -g @simem/cli" >&2; exit 1 ;;
 esac
 case "$(uname -m)" in
   arm64|aarch64) arch=arm64 ;;
   x86_64|amd64) arch=x64 ;;
-  *) echo "simem: unsupported CPU $(uname -m); install with npm instead: npm i -g simem" >&2; exit 1 ;;
+  *) echo "simem: unsupported CPU $(uname -m); install with npm instead: npm i -g @simem/cli" >&2; exit 1 ;;
 esac
 asset="simem-$os-$arch"
 if [ "$VERSION" = latest ]; then base="https://github.com/$REPO/releases/latest/download"; else base="https://github.com/$REPO/releases/download/$VERSION"; fi

@@ -2,7 +2,7 @@
 
 ## 2.0.0
 
-**simem — Super Intelligence Memory.** **Renamed from mixai to simem** (npm package `simem`, command `simem`, data in `~/.simem`). mixai 1.x projects upgrade in place: `simem init` migrates the old `.mixai/` memory, and `simem integrate` replaces mixai's per-project entries.
+**simem — Super Intelligence Memory.** **Renamed from mixai to simem** (npm package `@simem/cli`, command `simem`, data in `~/.simem`). mixai 1.x projects upgrade in place: `simem init` migrates the old `.mixai/` memory, and `simem integrate` replaces mixai's per-project entries.
 
 simem is now a local memory and context-compression layer for the Claude Code and Codex apps. Agent switching stays, as an extra.
 

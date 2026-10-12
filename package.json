@@ -1,7 +1,7 @@
 {
-  "name": "simem",
+  "name": "@simem/cli",
   "version": "2.0.0",
-  "description": "simem — Super Intelligence Memory for AI coding agents: spend fewer tokens in the Claude Code and Codex apps, and keep project memory across every account, agent, and worktree.",
+  "description": "simem \u2014 Super Intelligence Memory for AI coding agents: spend fewer tokens in the Claude Code and Codex apps, and keep project memory across every account, agent, and worktree.",
   "type": "module",
   "license": "MIT",
   "author": "Thinh Le",
@@ -39,6 +39,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "check": "tsc -p tsconfig.json --noEmit",
