@@ -1,0 +1,15 @@
+{
+  "name": "mixai",
+  "description": "mixai: local memory and context compression for Claude Code and Codex.",
+  "owner": {
+    "name": "Thinh Le",
+    "url": "https://github.com/thinhledev"
+  },
+  "plugins": [
+    {
+      "name": "mixai",
+      "source": "./plugin",
+      "description": "Local project memory shared across every agent and account, plus tools that keep context small."
+    }
+  ]
+}

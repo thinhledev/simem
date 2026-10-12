@@ -1,25 +1,8 @@
 {
-  "routing": {
-    "providers": ["codex", "claude", "cursor"],
-    "credentialOrder": ["paid", "included", "free", "unknown"],
-    "fallbackOn": ["auth", "quota", "rate-limit", "unavailable", "timeout", "provider"]
-  },
-  "providers": {
-    "codex": {
-      "enabled": true,
-      "command": "codex"
-    },
-    "claude": {
-      "enabled": true,
-      "command": "claude"
-    },
-    "cursor": {
-      "enabled": true,
-      "command": "cursor-agent"
-    }
-  },
   "memory": {
     "enabled": true,
+    "storage": "global",
+    "syncDir": "",
     "verbatimCheckpoints": 8,
     "epochSize": 10,
     "projectDigestEpochs": 5,
@@ -43,8 +26,12 @@
     },
     "embeddings": {
       "enabled": true,
+      "provider": "builtin",
+      "builtinModel": "potion-base-8M",
       "ollamaUrl": "http://localhost:11434",
-      "model": "nomic-embed-text"
+      "model": "nomic-embed-text",
+      "minSimilarity": 0,
+      "strongSimilarity": 0
     },
     "hooks": {
       "perPromptInjection": true,
@@ -57,5 +44,21 @@
       "remote": false,
       "ollamaModel": ""
     }
+  },
+  "compression": {
+    "bashRewrite": "auto",
+    "readGuard": "suggest",
+    "rereadGuard": "suggest",
+    "largeReadLines": 800,
+    "rtk": "defer"
+  },
+  "mcp": {
+    "toolGroups": [
+      "memory",
+      "code",
+      "compression",
+      "setup",
+      "handoff"
+    ]
   }
 }

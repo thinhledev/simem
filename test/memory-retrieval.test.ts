@@ -332,3 +332,16 @@ test("the automatic gate injects nothing for filler, one-common-word, or unknown
     memory.close();
   }
 });
+
+test("a brand-new project with a single memory still injects for a natural question", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedItem(memory, "We decided to keep all prices in integer cents, never floats.", 8);
+    const hits = await search(memory, "how do we store prices, integer cents or floats?", { excludeMessages: true, ...AUTOMATIC_INJECTION_GATE });
+    assert.equal(hits.length, 1);
+    assert.deepEqual(await search(memory, "let's deploy the billing service to kubernetes", { excludeMessages: true, ...AUTOMATIC_INJECTION_GATE }), []);
+  } finally {
+    memory.close();
+  }
+});

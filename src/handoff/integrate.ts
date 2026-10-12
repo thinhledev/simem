@@ -31,18 +31,19 @@ export interface IntegrateOptions {
   dryRun?: boolean;
 }
 
+// Loaded into every session by every agent, so it stays short and names the
+// exact tools. Keep `memory_search` in it: 1.x integrations and tests key on it.
 export const INSTRUCTION_BODY =
-  "This project has persistent local memory managed by `mixai`. Before re-exploring the repository from " +
-  "scratch, check it first: use the `memory_search` MCP tool or `mixai memory search \"<topic>\"` for past " +
-  "decisions, constraints, and outcomes (results are compact previews — drill in with `memory_get` or " +
-  "`mixai memory show <id>`). Record new durable decisions the moment they are made with the `memory_save` " +
-  "MCP tool. If your context feels thin after a compaction or reset, run `mixai brief` (or the " +
-  "`context_brief` MCP tool) to reload the latest objective, live workspace state, and the most relevant " +
-  "project memory without re-reading the repository. If you or the user hit a usage or rate limit, or the " +
-  "user asks to switch coding agents, call `list_handoff_targets` to see which other agents (Codex, Claude " +
-  "Code, Cursor, Antigravity) are installed and ready right now, then — only after the user confirms — call " +
-  "`switch_to_provider` to hand off: it checkpoints this session's work and launches the target agent with a " +
-  "continuation prompt.";
+  "This machine has `mixai`: local project memory shared across every agent and account, plus tools that keep " +
+  "context small. Before re-exploring the repository, ask memory: the `recall` tool (alias `memory_search`) for " +
+  "past decisions, constraints, and earlier work; `memory_get <id>` for full text. When a decision, constraint, or " +
+  "preference is settled — or the user says \"remember…\" — save it with `memory_save`; if the user says to forget " +
+  "something, use `memory_forget`. Find code with `code_search` and read just the span with `code_read` / " +
+  "`code_outline` instead of whole files; `repo_map` gives the layout. Run noisy commands (tests, builds, installs) " +
+  "as `mixai exec -- <command>`; the full output stays available via `output_get`. If the user asks how many tokens " +
+  "mixai saved, use `memory_stats`; to open the memory dashboard, run `mixai dashboard --detach --open`. After a " +
+  "compaction or reset, `context_brief` restores the working context. To hand work to another agent, " +
+  "`list_handoff_targets` then — only after the user confirms — `switch_to_provider`.";
 
 export function instructionBlock(extra?: string): string {
   return `${MD_START}\n## Mixai project memory\n\n${INSTRUCTION_BODY}${extra ? `\n\n${extra}` : ""}\n${MD_END}`;

@@ -162,83 +162,52 @@ function readVersion(): string {
   return pkg.version ?? "0.0.0";
 }
 
-const HELP = `mixai — coding-agent relay and persistent memory
+const HELP = `mixai — local memory and context compression for AI coding agents
+Works inside the Claude Code and Codex apps (and their CLIs). Everything stays on this machine.
 
-Cross-agent handoff:
-  mixai sessions [codex|claude] [--cwd PATH]
-  mixai export [--from codex|claude] [--session ID]
-  mixai switch <target> [--from PROVIDER] [--session SOURCE_ID] [--to-session TARGET_ID]
-  mixai fork <target> [--from PROVIDER] [--session SOURCE_ID] [--to-session TARGET_ID]
-                                   <target>: codex, claude, cursor, or antigravity
-                                   (antigravity: --surface desktop cannot select a project folder;
-                                    --surface interactive uses the agy CLI and supports --continue)
+Set up (once per machine; an agent can run this for you):
+  mixai init [--statusline] [--no-model]   Install hooks + tools for every Claude/Codex account, import history
+  mixai init --check | --remove            Show drift / uninstall (memory in ~/.mixai is kept)
+  mixai doctor                             Check the setup and say what to fix (alias: status)
 
-Agent routing:
-  mixai status [--json] [--config PATH]
-  mixai run [options] <prompt>
+Use memory:
+  mixai recall "<question>"                What does memory know about this? (also the agent's recall tool)
+  mixai stats [--since 7d] [--group-by agent|surface|day|session]
+                                           Real token usage from your agents and what mixai saved
+  mixai dashboard [--detach] [--open]      Private local web page: usage, savings, browse/edit/forget memory
+  mixai memory add "<fact>" | forget <id> | promote <id> | demote <id> | global
+  mixai memory search <query> | show <id> | export [--path F] [--all] | import <file>
+  mixai memory distill [--all] | compact | reindex [--rebuild] [--embed] | spend | savings
 
-Persistent memory:
-  mixai memory search <query> [--kind K] [--category C] [--min-importance N] [--since T] [--until T]
-                     [--limit N] [--include-superseded] [--full]
-                     Returns compact previews by default (both --json and human output); --full for complete text
-  mixai memory show <checkpoint-id|item-id>
-  mixai memory stats
-  mixai memory spend [--group-by purpose|provider|day]
-  mixai memory savings [--json]     Exact, measured token/char savings from mixai's own compression
-                                   (compaction, preview disclosure, prompt caps) — not a "vs no mixai" estimate
-  mixai memory distill [--all]      Turn checkpoints into memory with local rules (zero provider tokens);
-                                   --all also re-mines already-consolidated checkpoints
-  mixai memory compact
-  mixai memory reindex [--rebuild] [--embed]
-  mixai mcp [--cwd PATH] [--provider P]   Serve memory + handoff tools over MCP stdio (requires Node >= 22.5)
-                                 --provider identifies the calling agent so list_handoff_targets/
-                                 switch_to_provider can exclude it (set automatically by "mixai integrate")
+Keep context small:
+  mixai exec -- <command>                  Run a noisy command; print only what matters (full output kept)
+  mixai out <id>                           Full output of a filtered command
+  mixai index [status | search <query>] [--rebuild]
+                                           Local code index behind code_search / code_read / repo_map
 
-Context revival:
-  mixai brief [--objective TEXT] [--max-chars N] [--json]
-                                  Print a deterministic revival brief (latest objective/outcome,
-                                  live git state, budgeted project memory) — zero LLM calls
-  mixai hook <session-start|pre-compact|user-prompt-submit|stop> --provider P [--cwd PATH]
-                                  Host-agent lifecycle hook entry (reads the hook JSON from stdin;
-                                  wired automatically by "mixai integrate"; always exits 0)
-  mixai integrate [--provider P] [--check] [--remove] [--cwd PATH]
-                                  Wire a coding agent to call mixai automatically: lifecycle hooks,
-                                  MCP registration, and instruction blocks (default: all four);
-                                  --check reports drift without writing, --remove undoes it
+Sources and projects:
+  mixai sync [--all] [--since 90d]         Import sessions from every agent account (zero tokens)
+  mixai sources                            Agent homes found on this machine
+  mixai project show | list | link <id> | unlink
+  mixai migrate --to global|project        Where this project's memory lives
+  mixai eval [--all]                       Measure retrieval quality; --all suggests vector cutoffs
 
-Handoff options:
-  --from PROVIDER                 Source app; default is latest local Codex/Claude session
-  --session ID                    Source session (default: latest in this workspace)
-  --to-session ID                 Continue a specific target session
-  --new                           Start a new target conversation
-  --surface desktop|interactive  Desktop is the default on macOS; interactive launches the terminal client
-  --no-launch                     Export and print the continuation command without opening an app
-  --note TEXT                     Add an operator note to the checkpoint
+Hand off to another agent (optional):
+  mixai switch <target> [--from PROVIDER] [--session ID] [--to-session ID] [--surface desktop|interactive]
+  mixai fork <target> …                    Like switch, but keeps the original conversation
+  mixai export | sessions [codex|claude] | brief [--objective TEXT] [--max-chars N]
+                                           <target>: codex, claude, cursor, or antigravity
 
-Memory options:
-  --kind semantic|episodic|procedural  Filter memory search/list results
-  --category decision|constraint|preference|fact|todo  Filter memory search to one category
-  --min-importance N               Only match memory items with importance >= N
-  --since TIMESTAMP                Only match records at or after this ISO timestamp
-  --until TIMESTAMP                Only match records at or before this ISO timestamp
-  --limit N                       Cap the number of search results (default: 10)
-  --full                           Return complete text instead of previews (memory search)
-  --rebuild                       Drop and recreate the memory index before reindexing
-  --embed                         Also (re)compute embeddings via a local Ollama, if configured
-  --include-superseded             Also match summaries rolled up by compaction
-  --group-by purpose|provider|day  Group "mixai memory spend" output (default: purpose)
+Integration (used by init; rarely needed by hand):
+  mixai hook <event> --provider P          Lifecycle hook entry (reads JSON on stdin; always exits 0)
+  mixai mcp [--provider P]                 MCP server (memory, code, compression, setup, handoff tools)
+  mixai integrate [--provider P] [--check] [--remove]   1.x per-project setup
+  mixai statusline                         Claude Code status line command
 
 Common options:
-  --cwd PATH                      Project workspace (default: current directory)
-  --json                          Emit machine-readable output
-  -h, --help                      Show this help
-
-Run options:
-  --provider codex|claude|cursor  Pin one provider; default is policy routing
-  --model MODEL                   Override the provider model
-  --write                         Allow workspace edits (default is read-only/plan mode)
-  --timeout SECONDS               Per-provider timeout (default: 900)
-  --config PATH                   JSON configuration file
+  --cwd PATH  --json  --quiet  --config PATH  --limit N  --since 7d|ISO  --category C  --min-importance N
+Deprecated:
+  mixai run "<task>"                       Removed in 3.0; mixai now works inside your agent apps
 `;
 
 function provider(value: string, flag: string): ProviderId {

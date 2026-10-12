@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergeConfig } from "../src/config.js";
+import { DEFAULT_CONFIG, mergeConfig } from "../src/config.js";
 import { parseArgs } from "../src/cli.js";
 
 test("merges provider overrides without dropping defaults", () => {
@@ -34,4 +34,13 @@ test("parses switch and fork handoff commands", () => {
   const forking = parseArgs(["fork", "codex", "--from", "claude", "--to-session", "thread-1"]);
   assert.equal(forking.command, "fork");
   assert.equal(forking.targetSessionId, "thread-1");
+});
+
+test("config.example.json matches the real defaults and loads cleanly", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const example = JSON.parse(await readFile(new URL("../config.example.json", import.meta.url), "utf8"));
+  const merged = mergeConfig(example);
+  assert.deepEqual(merged.memory, DEFAULT_CONFIG.memory);
+  assert.deepEqual(merged.compression, DEFAULT_CONFIG.compression);
+  assert.deepEqual(merged.mcp, DEFAULT_CONFIG.mcp);
 });

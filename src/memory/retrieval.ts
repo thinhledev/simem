@@ -174,6 +174,8 @@ function likeClauses(terms: string[], column: string): { where: string; params: 
   return { where: where || "0", params: terms.map(likePattern) };
 }
 
+const MIN_IDF_CORPUS = 20;
+
 const SOURCE_TABLES: Record<RetrievalHit["source"], { table: string; fts: string }> = {
   message: { table: "messages", fts: "messages_fts" },
   memory_item: { table: "memory_items", fts: "memory_items_fts" },
@@ -186,7 +188,10 @@ const SOURCE_TABLES: Record<RetrievalHit["source"], { table: string; fts: string
 // should lower every row's coverage rather than be silently ignored.
 function inverseDocumentFrequencies(memory: MemoryDb, source: RetrievalHit["source"], terms: string[]): Map<string, number> {
   const { table, fts } = SOURCE_TABLES[source];
-  const total = (memory.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+  // Smoothed for small stores: with only a handful of memories, every word in
+  // them would otherwise look "common" (near-zero weight) and one unknown word
+  // in the question would outweigh several genuine matches.
+  const total = Math.max(MIN_IDF_CORPUS, (memory.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n);
   const count = memory.fts
     ? memory.db.prepare(`SELECT COUNT(*) AS n FROM ${fts} WHERE ${fts} MATCH ?`)
     : memory.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE text LIKE ? ESCAPE '\\'`);

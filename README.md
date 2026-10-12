@@ -1,159 +1,114 @@
-# mixai — switch between AI coding agents without losing context
+# mixai — spend fewer tokens, never re-explain your project
 
-**Seamlessly move your work between AI coding agents — Claude Code, Codex, Cursor, and Antigravity — without losing context.**
+**Local memory and context compression for the Claude Code and Codex apps (and their CLIs).** mixai keeps what your agents learn about a project on your machine, shares it with every agent and every account you use, and keeps the noise (huge command outputs, whole-file reads, repeated context) out of what gets sent to the model.
 
 [![npm version](https://img.shields.io/npm/v/mixai-cli.svg)](https://www.npmjs.com/package/mixai-cli)
 [![npm downloads](https://img.shields.io/npm/dm/mixai-cli.svg)](https://www.npmjs.com/package/mixai-cli)
 [![license](https://img.shields.io/npm/l/mixai-cli.svg)](LICENSE)
 [![Node.js](https://img.shields.io/node/v/mixai-cli.svg)](https://nodejs.org)
 
-> **npm package:** [`mixai-cli`](https://www.npmjs.com/package/mixai-cli) · **install:** `npm install -g mixai-cli` · **repository:** [github.com/thinhledev/mixai](https://github.com/thinhledev/mixai)
+## Set up in 30 seconds — from inside your app
 
-**mixai** is a local-first command-line tool (CLI) that works alongside the AI coding agents you already use. When you hit a usage limit, want a second opinion, or simply prefer a different agent for the next task, mixai hands off your work — full context intact — in a single command. It also gives every agent a shared, persistent memory of your project's decisions and history, so no agent ever starts from scratch.
+Paste this into Claude Code or Codex:
 
-Everything runs on your machine. Your credentials never leave your computer, and creating a hand-off never spends a single token.
+> Install and set up mixai: run `npm install -g mixai-cli && mixai init`, then tell me to restart the app.
 
-**Keywords:** AI coding agent orchestrator, Claude Code ↔ Codex ↔ Cursor ↔ Antigravity handoff, cross-agent context handoff, persistent project memory for LLM agents, MCP memory server, agent switching CLI.
+That's the only setup. `mixai init` runs once per machine (not once per project) and:
 
-## Why mixai
+- connects mixai to **every Claude Code and Codex account** on the machine (hooks + tools),
+- imports this project's past sessions and the agents' own memories — **without spending a single token**,
+- downloads a small local embedding model (31 MB, MIT-licensed, works offline after that).
 
-- **🔀 Switch agents in one command.** `mixai switch codex` checkpoints your current Claude session and opens Codex right where you left off. Round-trip freely between all four agents — Claude ↔ Codex ↔ Cursor ↔ Antigravity.
-- **🧠 Shared project memory.** Decisions, constraints, and preferences are captured once and made available to every agent. Ask any agent "why did we choose X?" and the answer is already in context — no re-explaining, no re-reading old transcripts.
-- **✂️ Smaller prompts, lower cost.** Memory stays bounded and is compressed as it ages; search returns compact previews instead of walls of text. A built-in ledger shows exactly what each agent spends and what mixai's compression saves — measured, not guessed.
-- **♻️ Survives context resets.** When an agent compacts or clears its context window, mixai restores the important parts instantly from local memory — no expensive re-exploration of your repository.
-- **🔌 Works with your existing tools.** mixai orchestrates the native agent apps and CLIs you already have. It doesn't replace them, relay your credentials, or lock you in.
+Restart the apps afterwards (the Codex app asks you once to trust the new hooks). Prefer a terminal? Run the same two commands yourself. Requires Node.js 22.5 or newer.
 
-## Requirements
+## The two problems it solves
 
-- **Node.js 22.5 or newer.** Persistent-memory features use Node's built-in SQLite.
-- **At least one supported agent** installed and signed in: Claude Code, Codex, Cursor, or Antigravity.
-- **macOS** for one-click desktop hand-offs. Other platforms use the agents' terminal CLIs (`--surface interactive`).
+**1. Agents burn tokens re-learning your project — and pay for it again on every turn.** A new session starts by listing folders, reading the README, grepping, and reading whole files. Everything that lands in the context is sent again (as cached input) on every later turn until the conversation is compacted. On the maintainer's own machine, this repository's 8 Claude app sessions re-sent **about 1 billion cached tokens**, and the biggest things filling the context were **command output (~1.1M tokens over 1,530 calls)** and **file reads (~430k tokens)** — measured from the session transcripts with `mixai stats`. *(One person's numbers, shown to make the mechanism concrete — not a promise of what you'll see.)*
 
-## Installation
+**2. Memory is stuck in one app, one account, one folder.** Switch from Claude Code account A to account B, from Claude Code to Codex, open a new worktree, or re-clone the repo — and the agent starts from zero. mixai's memory belongs to the **project**, not to an app or a login.
 
-Install the [`mixai-cli`](https://www.npmjs.com/package/mixai-cli) package from npm:
+## How it saves tokens
 
-```bash
-npm install -g mixai-cli
-mixai status      # see which agents are installed and ready
-mixai --version   # confirm the installed version
+| What mixai does | How | Measured as |
+|---|---|---|
+| **Project primer at session start** | A short, stable summary (latest work from any agent, standing decisions, build/test commands that worked, repo layout) instead of exploration turns. Byte-identical while memory is unchanged, so the provider's prompt cache keeps hitting. | — |
+| **Shortened command output** | `mixai exec -- <command>` drops ANSI codes, progress bars, passing-test lines, install chatter, and repeats — **never failure lines**. The full output stays on disk (`mixai out <id>`). In Claude Code it's applied automatically to commands your own permission settings already allow. | Exact characters before/after. Test corpus: jest 92%, vitest 99%, pytest 81%, node:test 98%, go test 98%, npm install 99%; a wall of compiler *errors* is kept whole (0%) because every line is a failure. |
+| **Local code search** | `code_search` returns `path:line-range` + signature instead of grep-then-read loops; `code_read` returns one function, not the whole file. | Exact for `code_read`; labelled estimate for `code_search`. |
+| **Large-read and re-read guards** | A full read of a file over 800 lines gets its outline first (once — ask again and you get the file). Re-reading an unchanged file already in context is flagged once. | Exact; the saving is withdrawn if the agent reads the file anyway. |
+| **Relevant memory, once** | Only memory that clearly matches your prompt is added, never twice in the same context window. | Characters injected. |
+| **Secrets stay out** | API keys, tokens, private keys, and passwords are redacted from everything mixai stores or shows. | Redaction count. |
+| **Zero tokens to build memory** | Memory is extracted by local rules from what *you* said (decisions, constraints, preferences, corrections), plus the apps' own summaries. A local Ollama model or a remote agent are optional extras, off by default. | Provider calls by mixai: 0. |
+
+Ask your agent *"how much did mixai save?"*, run `mixai stats`, or open the dashboard. Every figure says whether it is **measured** or an **estimate**.
+
+## Memory that follows the project, not the account
+
+```
+ Claude Code app (account A) ─┐
+ Claude Code app (account B) ─┤
+ Codex app / CLI             ─┼──▶ ~/.mixai/projects/<project-id>  ──▶ the same memory everywhere
+ Cursor                      ─┤      (id = your repo's first commit:
+ any worktree or clone       ─┘       same for every clone and worktree)
 ```
 
-`npm install` sets up the `mixai` command globally, but it doesn't wire mixai into any project — that's a separate, per-project step, and it doesn't happen automatically:
+What survives: logging out and in, switching accounts, switching between Claude Code / Codex / Cursor, new worktrees, re-clones, renamed folders. New machine? `mixai memory export` / `import`, or point `memory.syncDir` at a folder you already sync (iCloud, Dropbox) — optionally encrypted.
 
-```bash
-cd your-project
-mixai integrate    # once per project: hooks, MCP registration, and instruction files
-```
+## Using it day to day — just ask
 
-This installs mixai into that project's agent config (`.claude/`, `.codex/`, `.cursor/`, and Antigravity's global `~/.gemini/GEMINI.md`) so hand-off, memory, and context restoration happen automatically as you work — see [Automatic integration](#how-it-works) below. Without it, mixai still works, but only when you invoke it yourself (`mixai switch`, `mixai run`, `mixai memory search`, ...). Run `mixai integrate --check` anytime to confirm a project is still wired up correctly.
+| Say to your agent | What happens |
+|---|---|
+| *"Why did we pick Postgres?"* | The `recall` tool searches memory (keywords + local embeddings) across every agent's past sessions. |
+| *"Remember that we deploy only from CI."* | Saved as a decision; every agent and account sees it from now on. |
+| *"Forget that."* | Archived; it won't come back, even if old transcripts mention it again. |
+| *"How much did mixai save this week?"* | Real token usage from your sessions, and what mixai kept out — measured vs estimated. |
+| *"Open the mixai dashboard."* | A private page on your machine: usage, savings, and your memory to search, edit, forget, or apply to all projects. |
+| *"Continue."* (in the other app) | Opening Codex after Claude Code (or vice versa) starts with the other app's latest work in the primer — no switch command, no copy-paste. |
 
-### Hit a usage limit? Just switch
+Optional extras for Claude Code: a plugin that teaches the agent these requests and can install mixai for you (`/plugin marketplace add thinhledev/mixai`, then install **mixai**), and a status line showing today's savings (`mixai init --statusline`).
 
-If an agent's usage limit, rate limit, or quota kicks in mid-task — a real desktop-app account can hit this independently of any CLI credentials — switch to whichever other agent still has room. Your objective, git state, and conversation carry over, so you're not re-explaining anything:
+## Privacy and safety
 
-```bash
-mixai switch codex      --from claude   # Claude hit its limit — pick up in Codex instead
-mixai switch cursor     --from codex    # Codex is out of quota — try Cursor
-mixai switch claude     --from cursor   # ...or back to Claude, if it's recovered
-mixai switch antigravity --from claude  # continue in Antigravity
-```
+- **Local only.** Memory lives in `~/.mixai`. Nothing is uploaded; there is no mixai server.
+- **No proxy, no credentials.** mixai never sits between you and the model provider and never reads your logins. It works through the apps' own hooks and tool (MCP) interfaces.
+- **Your permission settings stay in charge.** mixai only shortens a command's output automatically when your settings would have allowed that command anyway; otherwise the agent is simply told how to use `mixai exec`. The read guards only ever *decline* a read once — they never approve anything.
+- **Zero provider tokens by default** for building and searching memory.
+- **Easy to undo.** `mixai init --remove` restores every file it touched; deleting `~/.mixai` removes all memory.
 
-**NOTE:** Follow the instructions in the command's output, copy and paste them into the open desktop app to continue your work.
+## FAQ
 
+**Does it work in the desktop apps?** Yes — that's the main target. Claude Code (the Code tab of the desktop app, and the CLI) and Codex (app and CLI) get everything; Cursor gets the tools; Antigravity can get instructions with `mixai integrate --provider antigravity`.
 
-## Quick start
+**Do I need a terminal?** Only for the one-time install, and your agent can run it for you.
 
-```bash
-# Hand off your latest Codex work to Claude Code
-mixai switch claude --from codex
+**Does it proxy my API calls?** No. See *Privacy and safety*.
 
-# Route a one-off task; the best available agent is chosen for you
-mixai run "Explain the architecture and flag the riskiest module"
+**Do I need Ollama or a GPU?** No. The embedding model is tiny and runs in plain JavaScript. If you use Ollama, mixai can use it instead (`memory.embeddings.provider: "ollama"`), e.g. for non-English prompts.
 
-# Let the agent edit your project (read-only by default)
-mixai run --write "Add input validation and tests"
+**I use RTK.** mixai leaves your shell commands to RTK when it's installed and focuses on memory, search, and read guards.
 
-# Ask your project's memory a question
-mixai memory search "why did we pick Postgres over Mongo"
-```
+**How are savings measured?** Characters before vs after at the moment mixai shortened something, converted to tokens at ~3.6 characters per token. Provider usage comes straight from the token counts your agents write into their transcripts. The "re-sent tokens avoided" figure multiplies the direct saving by a typical number of later turns and is always labelled an estimate.
+
+**I used mixai 1.x.** `mixai init` copies your old in-repo `.mixai/` memory into the shared store and leaves the old files untouched. Old per-project hooks stay but go quiet, so nothing runs twice. Remove them whenever you like with `mixai integrate --remove`.
 
 ## Commands
 
-**Working across agents**
+**Set up:** `mixai init [--statusline] [--no-model]` · `mixai init --check | --remove` · `mixai doctor`
 
-| Command | What it does |
-|---|---|
-| `mixai status` | Show which agents are installed, authenticated, and ready |
-| `mixai run "<task>"` | Route a task to the best available agent (`--write` to allow edits, `--provider <name>` to pin one) |
-| `mixai switch <agent>` | Checkpoint current work and open another agent to continue it |
-| `mixai fork <agent>` | Like `switch`, but branches a separate conversation and leaves the original untouched |
-| `mixai export` | Save a hand-off checkpoint without opening another agent |
-| `mixai sessions` | List local agent sessions for this project |
-| `mixai brief` | Print a fast context brief — objective, git state, relevant memory — with zero token cost |
+**Memory:** `mixai recall "<question>"` · `mixai stats [--since 7d]` · `mixai dashboard [--detach] [--open]` · `mixai memory add | forget | promote | demote | global | search | show | export | import | distill`
 
-**Project memory**
+**Context:** `mixai exec -- <command>` · `mixai out <id>` · `mixai index [status | search <query>]`
 
-| Command | What it does |
-|---|---|
-| `mixai memory search "<query>"` | Search project memory: decisions, past work, transcripts |
-| `mixai memory show <id>` | Show a full memory record |
-| `mixai memory stats` | Overview of what's stored, spent, and saved |
-| `mixai memory spend` | Token/cost breakdown by agent, purpose, or day |
-| `mixai memory savings` | Measured token savings from mixai's compression |
-| `mixai memory compact` | Run memory consolidation and roll-ups by hand |
-| `mixai memory reindex` | Rebuild memory from checkpoint files |
+**Sources:** `mixai sync [--all] [--since 90d]` · `mixai sources` · `mixai project show | list | link | unlink` · `mixai migrate --to global|project` · `mixai eval`
 
-**Integration**
+**Agent tools (MCP):** `recall`, `memory_get`, `memory_save`, `memory_forget`, `memory_stats`, `context_brief`, `code_search`, `code_read`, `code_outline`, `code_find_references`, `repo_map`, `output_get`, `mixai_doctor`, `list_handoff_targets`, `switch_to_provider`.
 
-| Command | What it does |
-|---|---|
-| `mixai integrate` | Wire mixai into your agents so memory and hand-off work automatically (`--check`, `--remove`) |
-| `mixai mcp` | Serve memory and hand-off tools over MCP for agents that speak it |
+## Handing work to another agent (optional)
 
-
-## How it works
-
-**Token-free checkpoints.** Every hand-off writes a checkpoint to `.mixai/` — the objective, the conversation, git status, and a patch of your changes. No model is called, so it works even after an agent's quota is exhausted. Your repository stays the source of truth; the checkpoint is just a portable hand-off bundle.
-
-**Persistent memory that stays small.** Each checkpoint is indexed into a local SQLite database and distilled into durable facts (decisions, constraints, preferences) plus a short summary. Recent history is kept verbatim; older history is progressively compressed into digests, while durable facts never expire. An agent can pick up a decision from weeks ago without the context ever growing unbounded. Search works out of the box via SQLite's [FTS5](https://www.sqlite.org/fts5.html) full-text index with BM25 relevance ranking, and layers in semantic search automatically if a local [Ollama](https://ollama.com) is available.
-
-**Cost transparency.** mixai records every model call it makes with exact token counts where the provider reports them, and measures the token savings from its own compression. `mixai memory spend` and `mixai memory savings` give you the real numbers — not marketing percentages.
-
-**Automatic integration (optional).** `mixai integrate` wires mixai into each agent's lifecycle hooks so memory updates as you work, context is restored after a compaction or reset, and — when you hit a limit — the agent can check which other agents are ready and offer to switch. Every change is an idempotent, reversible edit to your project's agent config; `mixai integrate --remove` undoes all of it.
-
-## Editor & MCP integration
-
-Agents that speak [MCP](https://modelcontextprotocol.io) can call mixai's tools directly instead of shelling out. `mixai integrate` sets this up for you, or register it manually:
-
-```bash
-# Claude Code
-claude mcp add mixai-memory -- mixai mcp --cwd /path/to/project
-
-# Cursor: .cursor/mcp.json
-{ "mcpServers": { "mixai-memory": { "command": "mixai", "args": ["mcp", "--cwd", "/path/to/project"] } } }
-```
-
-Exposed tools: `memory_search`, `memory_get`, `memory_save`, `context_brief` (rebuild working context after a reset), `list_handoff_targets` / `switch_to_provider` (see which other agents are ready and hand off to one, gated by your editor's own approval prompt), and the **code map** tools below.
-
-### Code map
-
-Two on-demand tools help the agent navigate your repo without reading whole files:
-
-- **`code_outline`** — lists a file's functions, classes, methods, and types with line numbers, so the agent jumps straight to the relevant lines instead of reading the whole file.
-- **`code_find_references`** — finds every place a symbol is used across the repo, so renames and refactors don't miss a spot (including files you just created).
-
-**Why it saves tokens and context:** the agent *pulls* just the structure it needs, on demand, instead of reading — and re-reading — large files. And unlike an always-loaded "repo map," these tools add nothing to every message: only the small result of a call you asked for, once. No native build and no extra dependencies, so they work anywhere mixai runs.
+When one agent hits a usage limit, you can still hand over explicitly: `mixai switch codex --from claude` writes a checkpoint (objective, conversation, git state, patch) and opens the other app. With mixai installed in both apps, simply opening the other app and saying "continue" usually works too, because the primer already carries the latest work. `mixai fork`, `mixai export`, and `mixai sessions` are available as before.
 
 ## Configuration
 
-Optional — everything has sensible defaults. Copy `gateway.config.example.json` to `gateway.config.json` to tune agent routing, memory limits, hook behavior, and embeddings. The file is gitignored, since commands and model choices are often machine-specific.
-
-## Privacy
-
-- **Nothing is uploaded.** All data lives in `.mixai/` inside your project, which is gitignored by default.
-- **Credentials are never copied or relayed** — each agent uses its own local login.
-- **Checkpoints and briefs never call a model,** so they cost nothing and work offline.
+Optional. Put overrides in `~/.mixai/config.json` (it applies to the desktop apps' hooks too); see [`config.example.json`](config.example.json) for every option and its default. Useful ones: `memory.syncDir`, `memory.storage` (`"project"` keeps memory inside the repo), `compression.readGuard` / `rereadGuard` (`suggest`, `enforce`, `off`), `compression.bashRewrite`, `mcp.toolGroups`, `memory.distill.ollamaModel`.
 
 ## Development
 
@@ -165,8 +120,6 @@ npm run build
 npm test
 npm link          # use your local build as the global `mixai` command
 ```
-
-Provider integrations follow each vendor's official automation surface: [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive), [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/cli-usage), and [Cursor headless CLI](https://docs.cursor.com/en/cli/headless).
 
 ## License
 

@@ -1,7 +1,7 @@
 {
   "name": "mixai-cli",
-  "version": "1.0.6",
-  "description": "Local-first gateway for Codex, Claude Code, and Cursor CLI",
+  "version": "2.0.0",
+  "description": "Local memory and context compression for AI coding agents: spend fewer tokens in the Claude Code and Codex apps, and keep project memory across every account, agent, and worktree.",
   "type": "module",
   "license": "MIT",
   "author": "Thinh Le",
@@ -19,16 +19,18 @@
     "claude-code",
     "codex",
     "cursor",
-    "antigravity",
-    "cli",
-    "llm",
-    "agent-handoff",
-    "context-handoff",
+    "memory",
     "persistent-memory",
+    "project-memory",
+    "token-savings",
+    "context-compression",
+    "context-window",
     "mcp",
+    "local-first",
+    "embeddings",
+    "code-search",
     "developer-tools",
-    "ai-agents",
-    "orchestrator"
+    "llm"
   ],
   "bin": {
     "mixai": "./dist/cli.js"
@@ -45,7 +47,7 @@
     "prepublishOnly": "rm -rf dist && npm run build && npm test"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.5.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

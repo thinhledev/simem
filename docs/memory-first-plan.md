@@ -1,5 +1,44 @@
 # mixai 2.0: memory-first plan
 
+## Implementation status (2.0.0, branch `release/2.0.0`)
+
+All phases are implemented. 232 tests pass. Each phase is its own commit.
+
+| Phase | Status |
+|---|---|
+| 0 Repositioning | Done: help text and package metadata, `run` deprecated, `status` = doctor + handoff readiness |
+| 1 App-first install, shared store, ingestion | Done |
+| 2 Local-first distillation | Done, including the app summaries, global scope, and procedural memory that were deferred earlier |
+| 3 Vectors, primer, sanitization | Done |
+| 4 Code index | Done |
+| 5 Compression and guards | Done |
+| 6 Visibility | Done |
+| 7 Portability | Done |
+| 8 Distribution and docs | Mostly done: README, CHANGELOG, Claude Code plugin, config example. Codex plugin and standalone binary not done (see below) |
+
+**Where the implementation differs from the plan, and why:**
+
+1. **Vector storage.** Vectors are float32 BLOBs in the existing `memory_items` / `summaries` / `chunks` columns, not packed one-byte segments. An exact scan was measured fast enough at this scale, and it avoided a second storage format.
+2. **The built-in model's role in automatic injection.**
+   - `potion-base-8M` similarity doesn't separate relevant from off-topic prompts (an off-topic prompt scored 0.51 against a calibrated cutoff of 0.52). So the vector path of the automatic-injection gate is off by default (`memory.embeddings.minSimilarity` / `strongSimilarity` = 0), and `mixai eval --all` calibrates it for stronger models.
+   - Deliberate search does use vectors: top-3 recall on reworded questions went from 42% to 75%, which meets Phase 3's ≥70% target for deliberate search. Automatic injection on reworded questions stays at 8%, keyword-gated, with 0 false injections.
+3. **`code_find_references`** stays a full scan. The index doesn't hold every line of every file, and a reference missed during a rename is worse than a slower scan.
+4. **Bash rewrite.** In Claude Code, a PreToolUse rewrite must be paired with `"allow"`, which skips the permission prompt. So mixai only rewrites when the user's own settings would auto-approve the command anyway: bypass mode, or an allow rule with no deny/ask match, a simple command, and not plan mode. Codex also requires `"allow"` and has no Read tool, so Codex gets no PreToolUse hook; it uses `mixai exec` through its instructions.
+5. **Migration** copies the 1.x store and leaves the old `.mixai/` files untouched (marked `MIGRATED.txt`) instead of renaming them. A mixai 1.x still installed elsewhere keeps working instead of starting an empty database, and `doctor` warns if the old file keeps changing.
+6. **Cursor** gets user-level MCP only; its hooks still come from per-project `integrate`. **Antigravity** has no user-level install (no hooks or MCP surface).
+7. **Not imported:** `CLAUDE.md` / `AGENTS.md` / `.cursor/rules`. Every agent already reads them natively from the repository.
+8. **Claude Code plugin** ships skills (`mixai`, `mixai-setup`), not hooks or MCP, so nothing is registered twice alongside `mixai init`.
+9. **Not done:** the standalone binary (Node SEA) and a Codex plugin (its plugin format is unverified). npm plus `mixai init` covers both apps today.
+
+**Measured on this repository** (maintainer's machine, read-only sync into a scratch store):
+- 8 Claude app sessions re-sent about 1.04B cached tokens.
+- Command output (~1.1M tokens over 1,530 calls) and file reads (~430k) dominated what filled the context.
+- 141 files index in about 330 ms, embeddings included.
+- Output filter reductions on the golden corpus: jest 92%, vitest 99%, pytest 81%, node:test 98%, go test 98%, npm install 99%, tsc errors 0% (every line is a failure, so all are kept).
+
+---
+
+
 **Status:** proposal, awaiting approval · **Drafted:** 2026-10-11 (rev. 2: app-first) · **Target release:** `mixai-cli@2.0.0`
 
 This plan changes mixai's main purpose. Switching between agents becomes a secondary feature. The new focus:
