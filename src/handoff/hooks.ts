@@ -18,7 +18,9 @@ import { createCheckpoint } from "./checkpoints.js";
 import { resolveSession } from "./sessions.js";
 import type { SessionInfo } from "./types.js";
 import type { SourceAgent } from "../sources/homes.js";
-import { ingestTranscript, unreadBytes } from "../sources/ingest.js";
+import { ingestTranscript, sessionKey, unreadBytes } from "../sources/ingest.js";
+import { clearInjections, injectedRefs, recordInjections } from "../memory/injections.js";
+import { sessionPrimer } from "../memory/primer.js";
 
 export type HookEvent = "session-start" | "pre-compact" | "user-prompt-submit" | "stop" | "session-end" | "pre-tool-use";
 
@@ -119,7 +121,33 @@ export async function handleSessionStart(
 ): Promise<string> {
   if (!config.memory.hooks.sessionStartBrief) return "";
   const source = input.source ?? "";
+  const agent = PROVIDER_SOURCE_AGENT[provider];
+  const key = agent && input.sessionId ? sessionKey(agent, input.sessionId) : undefined;
+  if (source === "startup") {
+    // A fresh session: the primer replaces the usual exploration turns.
+    if (!config.memory.enabled) return "";
+    try {
+      return await sessionPrimer(cwd, config.memory, { ...(key ? { sessionKey: key } : {}) });
+    } catch {
+      return "";
+    }
+  }
   if (!REVIVAL_SOURCES.has(source)) return "";
+  if (key && (source === "compact" || source === "clear")) {
+    // The context window was emptied: memory may be shown again.
+    try {
+      const memory = await openMemoryDb(cwd, { quiet: true });
+      if (memory) {
+        try {
+          clearInjections(memory, key);
+        } finally {
+          memory.close();
+        }
+      }
+    } catch {
+      // Best-effort.
+    }
+  }
   if (provider === "claude" && source === "resume") return "";
   const brief = await buildBrief(runner, {
     cwd,
@@ -251,6 +279,7 @@ export async function buildMemoryContextBlock(
   cwd: string,
   prompt: string,
   config: GatewayConfig,
+  sessionKeyForDedupe?: string,
 ): Promise<MemoryContextBlock> {
   const empty: MemoryContextBlock = { block: "", hitCount: 0 };
   if (!config.memory.enabled || !config.memory.hooks.perPromptInjection) return empty;
@@ -270,8 +299,13 @@ export async function buildMemoryContextBlock(
         ...automaticGate(config.memory.embeddings),
         ...(embeddings ? { embeddings } : {}),
       });
-      if (hits.length === 0) return empty;
-      const lines = hits.map((hit) => {
+      // Never re-inject what this session's context already holds (the
+      // primer or an earlier prompt's injection).
+      const already = sessionKeyForDedupe ? injectedRefs(memory, sessionKeyForDedupe) : new Set<string>();
+      const fresh = hits.filter((hit) => !already.has(`${hit.source}:${hit.id}`));
+      if (fresh.length === 0) return empty;
+      if (sessionKeyForDedupe) recordInjections(memory, sessionKeyForDedupe, fresh.map((hit) => `${hit.source}:${hit.id}`));
+      const lines = fresh.map((hit) => {
         const preview = toPreview(hit);
         return `- [${preview.source} ${preview.id}] ${preview.preview}`;
       });
@@ -280,7 +314,7 @@ export async function buildMemoryContextBlock(
       // we add a trailing newline, so leave 2 chars of headroom to keep the
       // whole injection within the configured cap.
       const block = capText(`${header}\n${lines.join("\n")}`, config.memory.hooks.perPromptMaxChars - 2).text;
-      return { block: `${block}\n`, hitCount: hits.length };
+      return { block: `${block}\n`, hitCount: fresh.length };
     } finally {
       memory.close();
     }
@@ -325,7 +359,9 @@ export async function handleUserPromptSubmit(
   const prompt = input.prompt?.trim() ?? "";
   if (!prompt) return "";
   const started = Date.now();
-  const { block, hitCount } = await buildMemoryContextBlock(cwd, prompt, config);
+  const agent = PROVIDER_SOURCE_AGENT[provider];
+  const key = agent && input.sessionId ? sessionKey(agent, input.sessionId) : undefined;
+  const { block, hitCount } = await buildMemoryContextBlock(cwd, prompt, config, key);
   if (hitCount === 0) return "";
   await recordMemoryInjection(cwd, provider, prompt.length, block.length, Date.now() - started);
   return block;
