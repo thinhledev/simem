@@ -71,13 +71,16 @@ The npm package is [**`@simem/cli`**](https://www.npmjs.com/package/@simem/cli);
 ### Homebrew (macOS and Linux, no Node.js needed)
 
 ```bash
-brew install thinhledev/simem/simem
+brew tap thinhledev/simem
+```
+```bash
+brew install simem
 ```
 ```bash
 simem init
 ```
 
-Homebrew brings its own Node.js, so this works without Node.js installed. Upgrades (`brew upgrade simem`) keep working in the desktop apps without re-running `simem init`.
+Homebrew brings its own Node.js, so this works without Node.js installed. (`brew install thinhledev/simem/simem` does the first two steps in one.) Upgrades (`brew upgrade simem`) keep working in the desktop apps without re-running `simem init`.
 
 ## The two problems it solves
 
@@ -145,7 +148,7 @@ Full details: [PRIVACY.md](PRIVACY.md) · [TERMS.md](TERMS.md).
 
 **Do I need a terminal?** No. Install the plugin from inside Claude Code or Codex and say "set up simem" — the agent runs the one-time install for you.
 
-**Do I need Node.js?** Only for the npm install (22.5 or newer). With Homebrew (`brew install thinhledev/simem/simem`) you don't.
+**Do I need Node.js?** Only for the npm install (22.5 or newer). With Homebrew (`brew tap thinhledev/simem && brew install simem`) you don't.
 
 **Does it proxy my API calls?** No. See *Privacy and safety*.
 
