@@ -115,3 +115,19 @@ test("reinforcing with an older statement never moves last_reinforced_at backwar
     memory.close();
   }
 });
+
+test("a forgotten item stays forgotten when the same fact is restated or re-extracted", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    const input = { kind: "semantic" as const, category: "constraint" as const, origin: "rule" as const, importance: 8, text: "Never deploy on Fridays." };
+    const { id } = upsertMemoryItem(memory, input);
+    memory.db.prepare("UPDATE memory_items SET status = 'archived' WHERE id = ?").run(id);
+    const again = upsertMemoryItem(memory, input);
+    assert.deepEqual(again, { id, reinforced: true });
+    const rows = memory.db.prepare("SELECT status FROM memory_items").all() as Array<{ status: string }>;
+    assert.deepEqual(rows.map((row) => row.status), ["archived"]);
+  } finally {
+    memory.close();
+  }
+});

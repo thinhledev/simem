@@ -2,6 +2,8 @@ import type { GatewayConfig } from "../config.js";
 import { discoverHomes, type SourceAgent } from "../sources/homes.js";
 import { ingestTranscript, listTranscripts, syncTranscripts } from "../sources/ingest.js";
 import { importNativeMemory } from "../sources/native.js";
+import { openMemoryDb } from "../memory/db.js";
+import { syncThroughDir } from "../portability/bundle.js";
 import { listProjects, resolveProject } from "../store/project.js";
 import { displayPath, parseSince, print, type Output } from "./common.js";
 
@@ -39,12 +41,26 @@ export async function runSync(options: SyncCommandOptions): Promise<void> {
     native.appSummaries += result.appSummaries;
     native.codexSummaries += result.codexSummaries;
   }
+  const syncDir = options.config.memory.syncDir;
+  let syncDirLine = "";
+  if (syncDir) {
+    const memory = await openMemoryDb(options.cwd, { quiet: true });
+    if (memory) {
+      try {
+        const result = syncThroughDir(memory, resolveProject(options.cwd), syncDir, process.env.MIXAI_SYNC_PASSPHRASE || undefined);
+        const imported = result.imported.reduce((sum, entry) => sum + entry.items, 0);
+        syncDirLine = `\nSync folder: wrote this machine's bundle; imported ${imported} item(s) from ${result.imported.length} other machine(s).`;
+      } finally {
+        memory.close();
+      }
+    }
+  }
   const scope = options.all ? "all projects" : resolveProject(options.cwd).name;
   print(
     options,
     `Synced ${scope}: ${summary.ingested} session file(s) ingested, ${summary.unchanged} unchanged, ${summary.messages} new message(s).\n` +
       `Imported from the agents' own memory: ${native.autoMemoryItems} item(s), ${native.globalItems} user-wide preference(s), ` +
-      `${native.appSummaries + native.codexSummaries} session summar${native.appSummaries + native.codexSummaries === 1 ? "y" : "ies"}. No provider tokens used.`,
+      `${native.appSummaries + native.codexSummaries} session summar${native.appSummaries + native.codexSummaries === 1 ? "y" : "ies"}. No provider tokens used.${syncDirLine}`,
     { ...summary, native },
   );
 }

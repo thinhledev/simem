@@ -12,6 +12,9 @@ import { embedNewRows, resolveEmbeddings } from "../vec/client.js";
 import { upsertMemoryItem } from "./items.js";
 import { demoteGlobal, listGlobalItems, promoteToGlobal } from "../sources/native.js";
 import { resolveProject } from "../store/project.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { decodeBundle, encodeBundle, exportBundle, importBundle } from "../portability/bundle.js";
 import { spendSummary, spendTotals } from "./ledger.js";
 import { toPreview } from "./preview.js";
 import { embedMissing, reindexMemory } from "./reindex.js";
@@ -40,8 +43,10 @@ export interface MemoryCommandOptions {
   full: boolean;
   /** Optional LLM tier for consolidation/rollups; undefined = rules only (zero provider tokens). */
   distillRunner?: DistillRunner | undefined;
-  /** `memory distill --all`: also re-run rules over already-consolidated checkpoints. */
+  /** `memory distill --all`: also re-run rules over already-consolidated checkpoints; `memory export --all`: include transcripts. */
   all?: boolean;
+  /** `memory export --path FILE` / `memory import --path FILE`. */
+  path?: string;
   memoryConfig?: MemoryConfig;
 }
 
@@ -401,6 +406,36 @@ export async function handleMemoryCommand(
     const items = listGlobalItems(100);
     if (options.json) process.stdout.write(`${JSON.stringify(items)}\n`);
     else process.stdout.write(items.length ? `${items.map((item) => `${item.id}. ${item.text}`).join("\n")}\n` : "No preferences apply to all projects yet.\n");
+    return;
+  }
+  if (sub === "export") {
+    const memory = await requireMemory(options);
+    try {
+      const project = resolveProject(options.cwd);
+      const passphrase = process.env.MIXAI_SYNC_PASSPHRASE || undefined;
+      const target = options.path ?? join(options.cwd, `${project.name}${passphrase ? ".mixai.enc" : ".mixai.gz"}`);
+      writeFileSync(target, encodeBundle(exportBundle(memory, project, { transcripts: Boolean(options.all) }), passphrase), { mode: 0o600 });
+      process.stdout.write(options.json ? `${JSON.stringify({ path: target })}\n` : `Exported ${project.name}'s memory to ${target}${passphrase ? " (encrypted)" : ""}.\n`);
+    } finally {
+      memory.close();
+    }
+    return;
+  }
+  if (sub === "import") {
+    const file = options.args[0] ?? options.path;
+    if (!file) throw new Error("mixai memory import <bundle-file>");
+    const memory = await requireMemory(options);
+    try {
+      const result = importBundle(memory, decodeBundle(readFileSync(file), process.env.MIXAI_SYNC_PASSPHRASE || undefined));
+      await embedNewRows(memory, options.memoryConfig);
+      process.stdout.write(
+        options.json
+          ? `${JSON.stringify(result)}\n`
+          : `Imported ${result.items} new item(s) (${result.reinforced} already known), ${result.summaries} summaries, ${result.sessions} session(s), ${result.messages} message(s).\n`,
+      );
+    } finally {
+      memory.close();
+    }
     return;
   }
   if (sub === "distill") {

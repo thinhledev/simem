@@ -51,17 +51,20 @@ export interface UpsertResult {
   reinforced: boolean;
 }
 
-function findDuplicate(memory: MemoryDb, input: MemoryItemInput, hash: string): number | undefined {
+function findDuplicate(memory: MemoryDb, input: MemoryItemInput, hash: string): { id: number; archived: boolean } | undefined {
+  // Exact matches include forgotten (archived) items, so a fact the user
+  // asked to forget is not brought back by a later restatement, a backfill
+  // over old transcripts, or a re-import.
   const exact = memory.db
-    .prepare("SELECT id FROM memory_items WHERE content_hash = ? AND status = 'active' LIMIT 1")
-    .get(hash) as { id: number } | undefined;
-  if (exact) return exact.id;
+    .prepare("SELECT id, status FROM memory_items WHERE content_hash = ? AND status IN ('active', 'archived') ORDER BY status = 'active' DESC LIMIT 1")
+    .get(hash) as { id: number; status: string } | undefined;
+  if (exact) return { id: exact.id, archived: exact.status === "archived" };
   const words = wordSet(input.text);
   const candidates = memory.db
     .prepare("SELECT id, text FROM memory_items WHERE status = 'active' AND kind = ? AND category IS ?")
     .all(input.kind, input.category ?? null) as Array<{ id: number; text: string }>;
   for (const candidate of candidates) {
-    if (jaccard(words, wordSet(candidate.text)) >= NEAR_DUPLICATE_JACCARD) return candidate.id;
+    if (jaccard(words, wordSet(candidate.text)) >= NEAR_DUPLICATE_JACCARD) return { id: candidate.id, archived: false };
   }
   return undefined;
 }
@@ -76,12 +79,14 @@ export function upsertMemoryItem(memory: MemoryDb, input: MemoryItemInput, now =
   const hash = contentHash(input.text);
   const duplicate = findDuplicate(memory, input, hash);
   if (duplicate !== undefined) {
-    memory.db
-      .prepare(
-        "UPDATE memory_items SET last_reinforced_at = MAX(last_reinforced_at, ?), importance = MAX(importance, ?) WHERE id = ?",
-      )
-      .run(now, input.importance, duplicate);
-    return { id: duplicate, reinforced: true };
+    if (!duplicate.archived) {
+      memory.db
+        .prepare(
+          "UPDATE memory_items SET last_reinforced_at = MAX(last_reinforced_at, ?), importance = MAX(importance, ?) WHERE id = ?",
+        )
+        .run(now, input.importance, duplicate.id);
+    }
+    return { id: duplicate.id, reinforced: true };
   }
   const result = memory.db
     .prepare(

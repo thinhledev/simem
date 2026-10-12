@@ -79,6 +79,12 @@ export interface MemoryConfig {
   enabled: boolean;
   /** "global" (default): ~/.mixai/projects/<id>, shared by every checkout and agent; "project": the repo's .mixai/. */
   storage: string;
+  /**
+   * Optional folder you already sync between machines (iCloud, Dropbox, …):
+   * each machine writes its bundle there and imports the others'. Encrypted
+   * when MIXAI_SYNC_PASSPHRASE is set. Empty = off.
+   */
+  syncDir: string;
   verbatimCheckpoints: number;
   epochSize: number;
   projectDigestEpochs: number;
@@ -154,6 +160,7 @@ export const DEFAULT_CONFIG: GatewayConfig = {
   memory: {
     enabled: true,
     storage: "global",
+    syncDir: "",
     verbatimCheckpoints: 8,
     epochSize: 10,
     projectDigestEpochs: 5,

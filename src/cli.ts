@@ -15,6 +15,7 @@ import {
   handlePreCompact,
   handleSessionStart,
   handleStopNotice,
+  spawnDetachedSync,
   handleUserPromptSubmit,
   readHookInput,
   recordMemoryInjection,
@@ -717,6 +718,7 @@ async function handleHook(options: CliOptions, runner: NodeCommandRunner): Promi
       process.stdout.write(await handleStopNotice(input, cwd, provider, config));
     } else if (event === "session-end") {
       await captureSession(input, provider, config, undefined, options.configPath);
+      spawnDetachedSync(cwd, config);
     } else if (event === "pre-tool-use") {
       process.stdout.write(await handlePreToolUse(input, cwd, provider, config));
     } else {
@@ -955,6 +957,7 @@ async function main(): Promise<void> {
       ...(options.until !== undefined ? { until: options.until } : {}),
       ...(options.groupBy !== undefined ? { groupBy: options.groupBy } : {}),
       all: options.all,
+      ...(options.path ? { path: options.path } : {}),
       ...(options.subcommand === "compact" || options.subcommand === "consolidate-checkpoint"
         ? {
             distillRunner: await selectDistillRunner(

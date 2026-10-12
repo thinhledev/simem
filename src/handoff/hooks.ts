@@ -424,6 +424,17 @@ export async function handlePreToolUse(input: RawHookInput, cwd: string, provide
   }
 }
 
+// SessionEnd: refresh the sync-folder bundle in the background, if configured.
+export function spawnDetachedSync(cwd: string, config: GatewayConfig): void {
+  if (!config.memory.syncDir || process.env.MIXAI_NO_BACKGROUND === "1") return;
+  try {
+    const entrypoint = fileURLToPath(new URL("../cli.js", import.meta.url));
+    spawn(process.execPath, [entrypoint, "sync", "--quiet", "--cwd", cwd], { detached: true, stdio: "ignore", env: { ...process.env, MIXAI_INTERNAL: "1" } }).unref();
+  } catch {
+    // Best-effort.
+  }
+}
+
 export function spawnDetachedIndex(cwd: string): void {
   if (process.env.MIXAI_NO_BACKGROUND === "1") return;
   try {
