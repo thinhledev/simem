@@ -3,7 +3,7 @@
 ## 2.0.2
 
 ### Added
-- **Homebrew:** `brew install thinhledev/simem/simem` installs simem with Homebrew's own Node.js, so Node.js isn't required. The formula is generated per release by `scripts/homebrew-formula.sh` and published in the `thinhledev/homebrew-simem` tap.
+- **Homebrew:** `brew tap thinhledev/simem`, `brew trust --formula thinhledev/simem/simem`, `brew install simem` installs simem with Homebrew's own Node.js, so Node.js isn't required. The formula is generated per release by `scripts/homebrew-formula.sh` and published in the `thinhledev/homebrew-simem` tap.
 - The `simem-setup` skill offers Homebrew when Node.js 22.5+ is missing (still asking before it installs anything).
 
 ### Fixed

@@ -12,5 +12,5 @@
    cd ../homebrew-simem && git commit -am "simem <x.y.z>" && git push
    ```
 
-   Optional check: `brew update && brew upgrade simem && brew test simem`.
+   Optional check: `brew update && brew upgrade simem && brew test simem`. When testing `simem init` in a sandbox, set `SIMEM_HOME_DISCOVERY=env` along with `SIMEM_HOME`, `CLAUDE_CONFIG_DIR`, and `CODEX_HOME`; otherwise `init` also rewrites every real agent account on the machine to point at the sandbox.
 6. **OpenAI plugin directory** (once listings are open): `scripts/package-plugin.sh`, then upload `build/plugin/simem-plugin-<x.y.z>.zip` to the existing draft. See `docs/plugin-submission.md`.

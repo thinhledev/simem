@@ -8,7 +8,7 @@ Set up simem only when the user asked for it, and get their explicit go-ahead be
 1. **Check what is there (read-only).** Run `simem --version`, `node --version`, and `brew --version`. If simem already prints 2.0.2 or newer, go to step 3.
 2. **Install the CLI, after asking.** Pick one route, tell the user the exact command and what it installs (the open-source simem command: https://github.com/thinhledev/simem, https://www.npmjs.com/package/@simem/cli), and run it only after they say yes:
    - Node.js 22.5 or newer: `npm install -g @simem/cli@2.0.2`.
-   - Otherwise, with Homebrew (macOS or Linux): `brew install thinhledev/simem/simem`. It brings its own Node.js, so the user doesn't need one.
+   - Otherwise, with Homebrew (macOS or Linux): `brew tap thinhledev/simem`, `brew trust --formula thinhledev/simem/simem`, then `brew install simem`. It brings its own Node.js, so the user doesn't need one. Homebrew requires the user to trust third-party formulas: say so, and run `brew trust` only if they agree to trusting it.
    - Neither: tell the user simem needs Node.js 22.5 or newer (https://nodejs.org) or Homebrew (https://brew.sh), and stop. Don't install those yourself.
 3. **Preview the setup (read-only).** Run `simem init --check`. It writes nothing; it lists every file `simem init` would add or change, such as hook and tool entries in the user's agent settings.
 4. **Apply it, after asking.** Show the user that list and explain that `simem init` will:
