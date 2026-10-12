@@ -1,7 +1,7 @@
 {
   "name": "simem",
   "version": "2.0.0",
-  "description": "simem \u2014 Super Intelligence Memory for AI coding agents: spend fewer tokens in the Claude Code and Codex apps, and keep project memory across every account, agent, and worktree.",
+  "description": "simem — Super Intelligence Memory for AI coding agents: spend fewer tokens in the Claude Code and Codex apps, and keep project memory across every account, agent, and worktree.",
   "type": "module",
   "license": "MIT",
   "author": "Thinh Le",
@@ -34,7 +34,7 @@
     "llm"
   ],
   "bin": {
-    "simem": "./dist/cli.js"
+    "simem": "dist/cli.js"
   },
   "files": [
     "dist"
@@ -45,8 +45,9 @@
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "test": "node --import tsx --import ./test/setup.ts --test test/*.test.ts",
-    "prepublishOnly": "rm -rf dist && npm run build && npm test",
-    "build:standalone": "npm run build && node scripts/build-standalone.mjs"
+    "prepublishOnly": "npm run build && node scripts/check-dist.mjs && npm test",
+    "build:standalone": "npm run build && node scripts/build-standalone.mjs",
+    "build:clean": "rm -rf dist && npm run build"
   },
   "engines": {
     "node": ">=22.5.0"
