@@ -57,6 +57,8 @@ export interface RetrievalHit {
   relevance: number;
   recency: number;
   importance?: number;
+  /** Query terms this hit contains; empty for a vector-only match. */
+  matchedTerms?: string[];
 }
 
 export interface MemoryStats {

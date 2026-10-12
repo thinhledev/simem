@@ -7,7 +7,7 @@ import type { GatewayConfig } from "../config.js";
 import { openMemoryDb } from "../memory/db.js";
 import { recordLlmCall } from "../memory/ledger.js";
 import { toPreview } from "../memory/preview.js";
-import { search } from "../memory/retrieval.js";
+import { AUTOMATIC_INJECTION_GATE, search } from "../memory/retrieval.js";
 import { savingsTotals } from "../memory/savings.js";
 import { capText } from "../memory/text-cap.js";
 import type { CommandRunner } from "../process.js";
@@ -248,7 +248,12 @@ export async function buildMemoryContextBlock(
     const memory = await openMemoryDb(cwd, { quiet: true });
     if (!memory) return empty;
     try {
-      const hits = await search(memory, trimmed, { limit: 5, scoring: config.memory.scoring, excludeMessages: true });
+      const hits = await search(memory, trimmed, {
+        limit: 5,
+        scoring: config.memory.scoring,
+        excludeMessages: true,
+        ...AUTOMATIC_INJECTION_GATE,
+      });
       if (hits.length === 0) return empty;
       const lines = hits.map((hit) => {
         const preview = toPreview(hit);

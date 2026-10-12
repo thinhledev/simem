@@ -1,7 +1,7 @@
 import type { MemoryBudgetConfig, MemoryScoringConfig } from "../config.js";
 import type { MemoryDb } from "./db.js";
 import type { EmbeddingClient } from "./embeddings.js";
-import { search } from "./retrieval.js";
+import { AUTOMATIC_INJECTION_GATE, search } from "./retrieval.js";
 import { capText, oneLine, type CapResult } from "./text-cap.js";
 
 export interface AssembledContext {
@@ -80,6 +80,7 @@ export async function assembleContext(
   const seenPrefixes = new Set<string>();
   const rawHits = await search(memory, latestObjective, {
     limit: 16,
+    ...AUTOMATIC_INJECTION_GATE,
     ...(scoring ? { scoring } : {}),
     ...(embeddings ? { embeddings } : {}),
   });

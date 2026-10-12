@@ -42,7 +42,18 @@ export interface SearchOptions {
    * since broader recall is exactly what a human-invoked search wants.
    */
   excludeMessages?: boolean;
+  /**
+   * Minimum IDF-weighted share of the query's terms a row must contain (0–1).
+   * Default 0: deliberate searches show anything that matches a term.
+   * Automatic injection raises it so weak, one-common-word matches stay out.
+   */
+  minCoverage?: number;
+  /** Minimum number of distinct query terms a row must contain (capped at the query's term count). */
+  minMatchedTerms?: number;
 }
+
+/** Gate for paths that inject memory without being asked (per-prompt hook, briefs). */
+export const AUTOMATIC_INJECTION_GATE = { minCoverage: 0.5, minMatchedTerms: 2 } as const;
 
 function dateRangeClause(column: string, since: string | undefined, until: string | undefined): { sql: string; params: string[] } {
   const clauses: string[] = [];
@@ -76,22 +87,115 @@ export function reciprocalRankFusion<T>(lists: T[][], keyOf: (item: T) => string
     .map(([, item]) => item);
 }
 
-// FTS5 treats -, (, ", NEAR, AND, OR as syntax. Quoting every whitespace
-// token turns arbitrary code identifiers and error strings into literal
-// phrase terms; internal double quotes are doubled per SQL quoting rules.
-export function ftsQuery(raw: string): string {
-  const tokens = raw
+// Function words plus words that frame a question rather than name its topic
+// ("why did we decide…", "remember…"). They carry no retrieval signal, and
+// leaving them in made natural-language prompts require words no memory row
+// ever contains.
+const STOPWORDS = new Set(
+  `a about above after again against all am an and any are as at be because been before being below between both but
+  by can could did do does doing done down during each few for from further had has have having he her here hers him
+  his how i if in into is it its itself just let lets me more most my no nor not now of off on once only or other our
+  ours out over own same she should so some such than that the their theirs them then there these they this those
+  through to too under until up us very was we were what when where which while who whom why will with would you your
+  yours yes yeah ok okay sure please thanks thank continue go ahead proceed lgtm hi hello hey want need like make use
+  used using get got also still really actually maybe decide decided decision decisions choose chose chosen pick
+  picked reason reasons explain remember recall tell know think`
     .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean);
-  return tokens.map((token) => `"${token.replaceAll('"', '""')}"`).join(" ");
+    .filter(Boolean),
+);
+
+const MAX_QUERY_TERMS = 12;
+
+// Topic terms for a free-text query. Splits the same way FTS5's unicode61
+// tokenizer does (anything that isn't a letter or digit), so `CLAUDE.local.md`
+// becomes claude/local/md and matches what was indexed. Empty for prompts with
+// no topic words ("yes, continue"), which callers treat as "nothing to find".
+export function queryTerms(raw: string): string[] {
+  const terms: string[] = [];
+  const seen = new Set<string>();
+  for (const word of raw.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+    if (word.length < 2 || STOPWORDS.has(word) || seen.has(word)) continue;
+    seen.add(word);
+    terms.push(word);
+    if (terms.length === MAX_QUERY_TERMS) break;
+  }
+  return terms;
 }
 
-function likeClauses(raw: string, column: string): { where: string; params: string[] } {
-  const tokens = raw.split(/\s+/).filter(Boolean);
-  const where = tokens.map(() => `${column} LIKE ? ESCAPE '\\'`).join(" AND ");
-  const params = tokens.map((token) => `%${token.replaceAll(/[\\%_]/g, (ch) => `\\${ch}`)}%`);
-  return { where: where || "1", params };
+function quoteFtsTerm(term: string): string {
+  return `"${term.replaceAll('"', '""')}"`;
+}
+
+// FTS5 treats -, (, ", NEAR, AND, OR as syntax, and space-separated terms as
+// AND — which made a prompt match only when every one of its words appeared in
+// a single row. Terms are OR-ed instead; how much of the query a row actually
+// covers is measured separately (see termCoverage) and gates weak matches.
+export function ftsQuery(raw: string): string {
+  return queryTerms(raw).map(quoteFtsTerm).join(" OR ");
+}
+
+function likePattern(term: string): string {
+  return `%${term.replaceAll(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
+function likeClauses(terms: string[], column: string): { where: string; params: string[] } {
+  const where = terms.map(() => `${column} LIKE ? ESCAPE '\\'`).join(" OR ");
+  return { where: where || "0", params: terms.map(likePattern) };
+}
+
+const SOURCE_TABLES: Record<RetrievalHit["source"], { table: string; fts: string }> = {
+  message: { table: "messages", fts: "messages_fts" },
+  memory_item: { table: "memory_items", fts: "memory_items_fts" },
+  summary: { table: "summaries", fts: "summaries_fts" },
+};
+
+// BM25-style IDF per term, so rare, specific words ("handoff", "cowork") count
+// for more than words that appear in most rows. A term no row contains keeps a
+// high weight on purpose: a question about something memory has never seen
+// should lower every row's coverage rather than be silently ignored.
+function inverseDocumentFrequencies(memory: MemoryDb, source: RetrievalHit["source"], terms: string[]): Map<string, number> {
+  const { table, fts } = SOURCE_TABLES[source];
+  const total = (memory.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+  const count = memory.fts
+    ? memory.db.prepare(`SELECT COUNT(*) AS n FROM ${fts} WHERE ${fts} MATCH ?`)
+    : memory.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE text LIKE ? ESCAPE '\\'`);
+  const weights = new Map<string, number>();
+  for (const term of terms) {
+    const df = (count.get(memory.fts ? quoteFtsTerm(term) : likePattern(term)) as { n: number }).n;
+    weights.set(term, Math.log(1 + (total - df + 0.5) / (df + 0.5)));
+  }
+  return weights;
+}
+
+// Which query terms each candidate row contains. With FTS5 this asks SQLite
+// per term, so its own stemming decides ("hooks" matches "hook"); the LIKE
+// fallback uses a case-insensitive substring check.
+function termCoverage(memory: MemoryDb, source: RetrievalHit["source"], terms: string[], hits: RawHit[]): void {
+  if (hits.length === 0) return;
+  const weights = inverseDocumentFrequencies(memory, source, terms);
+  const totalWeight = [...weights.values()].reduce((sum, weight) => sum + weight, 0);
+  const matched = new Map<number, string[]>(hits.map((hit) => [hit.id, []]));
+  if (memory.fts) {
+    const { fts } = SOURCE_TABLES[source];
+    const ids = [...matched.keys()];
+    const statement = memory.db.prepare(
+      `SELECT rowid AS id FROM ${fts} WHERE ${fts} MATCH ? AND rowid IN (${ids.map(() => "?").join(",")})`,
+    );
+    for (const term of terms) {
+      for (const row of statement.all(quoteFtsTerm(term), ...ids) as Array<{ id: number }>) matched.get(row.id)?.push(term);
+    }
+  } else {
+    for (const hit of hits) {
+      const text = hit.text.toLowerCase();
+      matched.set(hit.id, terms.filter((term) => text.includes(term)));
+    }
+  }
+  for (const hit of hits) {
+    const hitTerms = matched.get(hit.id) ?? [];
+    const weight = hitTerms.reduce((sum, term) => sum + (weights.get(term) ?? 0), 0);
+    hit.matchedTerms = hitTerms;
+    hit.coverage = totalWeight > 0 ? weight / totalWeight : 0;
+  }
 }
 
 function recencyScore(timestamp: string | undefined, now: number, halfLifeDays: number): number {
@@ -109,9 +213,12 @@ interface RawHit {
   checkpointId?: string;
   timestamp?: string;
   importance?: number;
+  /** IDF-weighted share of the query's terms this row contains (0–1). */
+  coverage?: number;
+  matchedTerms?: string[];
 }
 
-function queryMessages(memory: MemoryDb, raw: string, limit: number, options: SearchOptions): RawHit[] {
+function queryMessages(memory: MemoryDb, terms: string[], limit: number, options: SearchOptions): RawHit[] {
   const dateRange = dateRangeClause("c.created_at", options.since, options.until);
   let rows: Array<{ id: number; text: string; checkpoint_id: string; created_at: string }>;
   if (memory.fts) {
@@ -124,9 +231,9 @@ function queryMessages(memory: MemoryDb, raw: string, limit: number, options: Se
          WHERE messages_fts MATCH ? ${dateRange.sql}
          ORDER BY bm25(messages_fts) LIMIT ?`,
       )
-      .all(ftsQuery(raw), ...dateRange.params, limit) as typeof rows;
+      .all(terms.map(quoteFtsTerm).join(" OR "), ...dateRange.params, limit) as typeof rows;
   } else {
-    const { where, params } = likeClauses(raw, "m.text");
+    const { where, params } = likeClauses(terms, "m.text");
     rows = memory.db
       .prepare(
         `SELECT m.id, m.text, m.checkpoint_id, c.created_at
@@ -144,7 +251,7 @@ function queryMessages(memory: MemoryDb, raw: string, limit: number, options: Se
   }));
 }
 
-function queryMemoryItems(memory: MemoryDb, raw: string, limit: number, options: SearchOptions): RawHit[] {
+function queryMemoryItems(memory: MemoryDb, terms: string[], limit: number, options: SearchOptions): RawHit[] {
   const extra: string[] = [];
   const extraParams: Array<string | number> = [];
   if (options.kind) {
@@ -177,9 +284,9 @@ function queryMemoryItems(memory: MemoryDb, raw: string, limit: number, options:
          WHERE memory_items_fts MATCH ? AND i.status = 'active' ${extraFilter}
          ORDER BY bm25(memory_items_fts) LIMIT ?`,
       )
-      .all(ftsQuery(raw), ...extraParams, ...dateRange.params, limit) as typeof rows;
+      .all(terms.map(quoteFtsTerm).join(" OR "), ...extraParams, ...dateRange.params, limit) as typeof rows;
   } else {
-    const { where, params } = likeClauses(raw, "i.text");
+    const { where, params } = likeClauses(terms, "i.text");
     rows = memory.db
       .prepare(
         `SELECT i.id, i.text, i.source_checkpoint_id, i.last_reinforced_at, i.importance
@@ -199,7 +306,7 @@ function queryMemoryItems(memory: MemoryDb, raw: string, limit: number, options:
   }));
 }
 
-function querySummaries(memory: MemoryDb, raw: string, limit: number, options: SearchOptions): RawHit[] {
+function querySummaries(memory: MemoryDb, terms: string[], limit: number, options: SearchOptions): RawHit[] {
   const supersededFilter = options.includeSuperseded ? "" : "AND s.superseded_by IS NULL";
   const dateRange = dateRangeClause("s.created_at", options.since, options.until);
   let rows: Array<{ id: number; text: string; covers_to: string; created_at: string }>;
@@ -212,9 +319,9 @@ function querySummaries(memory: MemoryDb, raw: string, limit: number, options: S
          WHERE summaries_fts MATCH ? ${supersededFilter} ${dateRange.sql}
          ORDER BY bm25(summaries_fts) LIMIT ?`,
       )
-      .all(ftsQuery(raw), ...dateRange.params, limit) as typeof rows;
+      .all(terms.map(quoteFtsTerm).join(" OR "), ...dateRange.params, limit) as typeof rows;
   } else {
-    const { where, params } = likeClauses(raw, "s.text");
+    const { where, params } = likeClauses(terms, "s.text");
     rows = memory.db
       .prepare(
         `SELECT s.id, s.text, s.covers_to, s.created_at
@@ -317,7 +424,11 @@ function scoreHits(lists: RawHit[][], options: SearchOptions): RetrievalHit[] {
   const hits: RetrievalHit[] = [];
   for (const list of lists) {
     list.forEach((raw, index) => {
-      const relevance = 1 / (1 + index);
+      const matchedTerms = raw.matchedTerms ?? [];
+      // Coverage is comparable across sources, unlike list position. A row the
+      // vector search found but that shares no query term still needs a
+      // relevance, so it gets a damped position-based one.
+      const relevance = matchedTerms.length > 0 ? (raw.coverage ?? 0) : 0.5 / (1 + index);
       const recency = recencyScore(raw.timestamp, now, scoring.halfLifeDays);
       const importanceComponent = raw.importance === undefined ? 0.5 : raw.importance / 10;
       hits.push({
@@ -328,6 +439,7 @@ function scoreHits(lists: RawHit[][], options: SearchOptions): RetrievalHit[] {
         relevance,
         recency,
         ...(raw.importance !== undefined ? { importance: raw.importance } : {}),
+        matchedTerms,
         score:
           scoring.recencyWeight * recency +
           scoring.importanceWeight * importanceComponent +
@@ -338,15 +450,21 @@ function scoreHits(lists: RawHit[][], options: SearchOptions): RetrievalHit[] {
   return hits.sort((left, right) => right.score - left.score);
 }
 
+function passesCoverageGate(hit: RawHit, terms: string[], options: SearchOptions): boolean {
+  const minMatched = Math.min(options.minMatchedTerms ?? 0, terms.length);
+  return (hit.coverage ?? 0) >= (options.minCoverage ?? 0) && (hit.matchedTerms?.length ?? 0) >= minMatched;
+}
+
 export async function search(memory: MemoryDb, query: string, options: SearchOptions = {}): Promise<RetrievalHit[]> {
   const raw = query.trim();
-  if (!raw) return [];
+  const terms = queryTerms(raw);
+  if (terms.length === 0) return [];
   const limit = options.limit ?? 10;
   const perSource = Math.max(limit, 10);
 
-  const itemsFts = queryMemoryItems(memory, raw, perSource, options);
-  const summariesFts = options.kind ? [] : querySummaries(memory, raw, perSource, options);
-  const messagesFts = options.kind || options.excludeMessages ? [] : queryMessages(memory, raw, perSource, options);
+  const itemsFts = queryMemoryItems(memory, terms, perSource, options);
+  const summariesFts = options.kind ? [] : querySummaries(memory, terms, perSource, options);
+  const messagesFts = options.kind || options.excludeMessages ? [] : queryMessages(memory, terms, perSource, options);
 
   let items = itemsFts;
   let summaries = summariesFts;
@@ -368,6 +486,11 @@ export async function search(memory: MemoryDb, query: string, options: SearchOpt
     }
   }
 
-  const lists: RawHit[][] = options.kind ? [items] : [items, summaries, messagesFts];
+  termCoverage(memory, "memory_item", terms, items);
+  termCoverage(memory, "summary", terms, summaries);
+  termCoverage(memory, "message", terms, messagesFts);
+  const lists: RawHit[][] = (options.kind ? [items] : [items, summaries, messagesFts]).map((list) =>
+    list.filter((hit) => passesCoverageGate(hit, terms, options)),
+  );
   return scoreHits(lists, options).slice(0, limit);
 }

@@ -2,15 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadSqlite, openMemoryDb, type MemoryDb } from "../src/memory/db.js";
 import { toBlob, type EmbeddingClient } from "../src/memory/embeddings.js";
-import { ftsQuery, reciprocalRankFusion, search } from "../src/memory/retrieval.js";
+import { AUTOMATIC_INJECTION_GATE, ftsQuery, queryTerms, reciprocalRankFusion, search } from "../src/memory/retrieval.js";
 
 const sqlite = await loadSqlite();
 const withSqlite = { skip: sqlite ? false : "node:sqlite unavailable on this Node runtime" };
 
-test("ftsQuery quotes arbitrary code and error strings safely", () => {
-  assert.equal(ftsQuery("foo-bar()"), '"foo-bar()"');
-  assert.equal(ftsQuery("TypeError: x is not a function"), '"TypeError:" "x" "is" "not" "a" "function"');
-  assert.equal(ftsQuery('say "hello" AND NEAR'), '"say" """hello""" "AND" "NEAR"');
+test("ftsQuery ORs quoted topic terms so FTS5 syntax in user text is inert", () => {
+  assert.equal(ftsQuery("foo-bar()"), '"foo" OR "bar"');
+  assert.equal(ftsQuery("TypeError: x is not a function"), '"typeerror" OR "function"');
+  assert.equal(ftsQuery('parse "quoted" AND NEAR'), '"parse" OR "quoted" OR "near"');
+});
+
+test("queryTerms keeps topic words, splits identifiers like the FTS tokenizer, and drops filler", () => {
+  assert.deepEqual(
+    queryTerms("why did we decide to use a CLAUDE.local.md import for the Claude Desktop handoff"),
+    ["claude", "local", "md", "import", "desktop", "handoff"],
+  );
+  assert.deepEqual(queryTerms("yes, continue"), []);
+  assert.deepEqual(queryTerms("ok go ahead please"), []);
 });
 
 function seedCheckpoint(memory: MemoryDb, id: string, createdAt: string): void {
@@ -267,6 +276,58 @@ test("vector search surfaces a semantically related item FTS alone would miss", 
     const embeddings = fakeEmbeddings({ [query]: [0.95, 0.05] });
     const hybrid = await search(memory, query, { now: "2026-07-02T00:00:00Z", embeddings });
     assert.equal(hybrid.some((hit) => hit.text === oauthText), true);
+  } finally {
+    memory.close();
+  }
+});
+
+// Regression for the per-prompt injection bug: every word of a natural-language
+// prompt had to appear in one row, so real prompts never matched anything.
+test("natural-language prompts retrieve the matching memory through the automatic gate", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    const handoff = seedItem(
+      memory,
+      "Claude Desktop handoff loading is implemented through a managed `CLAUDE.local.md` import of `.mixai/current/HANDOFF.md`.",
+      9,
+    );
+    const hookLabels = seedItem(
+      memory,
+      "Hook registrations now include documented `statusMessage` labels so Codex Desktop approval prompts can show semantic names.",
+      8,
+    );
+    seedItem(memory, "After the hook-label changes, the repository test suite passed with 153 tests.", 6);
+    seedItem(memory, "Passing a project folder to `open -a Claude` routes Claude Desktop to Cowork instead of Code.", 8);
+    const options = { now: "2026-07-02T00:00:00Z", excludeMessages: true, ...AUTOMATIC_INJECTION_GATE };
+
+    const decision = await search(memory, "why did we decide to use a CLAUDE.local.md import for the Claude Desktop handoff", options);
+    assert.equal(decision[0]?.id, handoff);
+    assert.deepEqual(decision[0]?.matchedTerms, ["claude", "local", "md", "import", "desktop", "handoff"]);
+
+    const labels = await search(memory, "how do Codex Desktop approval prompts label our hooks?", options);
+    assert.equal(labels[0]?.id, hookLabels);
+  } finally {
+    memory.close();
+  }
+});
+
+test("the automatic gate injects nothing for filler, one-common-word, or unknown-topic prompts", withSqlite, async () => {
+  const memory = await openMemoryDb(process.cwd(), { path: ":memory:" });
+  assert.ok(memory);
+  try {
+    seedItem(memory, "Claude Desktop handoff loading is implemented through a managed `CLAUDE.local.md` import.", 9);
+    seedItem(memory, "After the hook-label changes, the repository test suite passed with 153 tests.", 6);
+    seedItem(memory, "Claude Desktop login does not authenticate the separate claude terminal client.", 8);
+    const options = { now: "2026-07-02T00:00:00Z", excludeMessages: true, ...AUTOMATIC_INJECTION_GATE };
+
+    assert.deepEqual(await search(memory, "yes, continue", options), []);
+    assert.deepEqual(await search(memory, "fix the failing test in the router", options), []);
+    assert.deepEqual(await search(memory, "let's deploy the claude handoff to kubernetes", options), []);
+
+    // A deliberate search (no gate) still shows the partial matches.
+    const deliberate = await search(memory, "fix the failing test in the router", { now: "2026-07-02T00:00:00Z" });
+    assert.ok(deliberate.some((hit) => hit.text.includes("test suite")));
   } finally {
     memory.close();
   }

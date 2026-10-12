@@ -173,6 +173,28 @@ test("user-prompt-submit injects capped previews and records an inject ledger ro
   assert.equal(row.cost_usd, null, "inject rows never claim a dollar cost");
 });
 
+test("user-prompt-submit injects for a full natural-language question, not only keyword prompts", withSqlite, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-natural-"));
+  const memory = await openMemoryDb(workspace);
+  assert.ok(memory);
+  memory.db
+    .prepare(
+      "INSERT INTO memory_items (kind, category, text, importance, status, created_at, last_reinforced_at) " +
+        "VALUES ('semantic', 'constraint', 'The parser must reject unterminated strings.', 9, 'active', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
+    )
+    .run();
+  memory.close();
+
+  const output = await handleUserPromptSubmit(
+    { prompt: "why does the parser reject unterminated strings again?" },
+    workspace,
+    "claude",
+    config(),
+  );
+  assert.match(output, /reject unterminated strings/);
+  assert.equal(await handleUserPromptSubmit({ prompt: "yes, continue" }, workspace, "claude", config()), "");
+});
+
 test("user-prompt-submit stays silent when disabled, when the prompt is empty, and when nothing matches", withSqlite, async () => {
   const workspace = await mkdtemp(join(tmpdir(), "mixai-hook-silent-"));
   const memory = await openMemoryDb(workspace);
