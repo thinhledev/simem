@@ -135,6 +135,14 @@ Because the AI reads the stack again on every turn, each page simem removes is s
 
 Ask your agent *"how much did simem save?"*, run `simem stats`, or open the dashboard. Every figure says whether it is **measured** or an **estimate**.
 
+**What that looks like in a real session.** In Claude Code you don't have to remember to ask: simem's session hook shows a short notice on its own — once per session, when the agent finishes a reply and simem has saved at least 1k tokens in the project that day (the "Claude Code notice" at the top of the screenshot). Ask the question it suggests and the agent answers from simem's own records:
+
+<p align="center"><img src="docs/images/simem-savings-session.png" width="720" alt="Claude Code session: asked how much simem saved, the agent reports ~116k tokens kept out of context (measured) and ~8.9M tokens avoided with the compounding estimate, broken down by outline-instead-of-full-read, filtered command output, and memory previews"></p>
+
+- **~116k tokens kept out of context, measured.** One large-read guard alone stopped a 76k-token file read and pointed the agent at the part it needed.
+- **~8.9M tokens avoided, estimated** — because whatever stays out of context isn't re-sent on every later turn.
+- The agent also spots where more savings are: only 5 commands had gone through `simem exec`, while command output was the biggest thing in context.
+
 ## Memory that follows the project, not the account
 
 ```
