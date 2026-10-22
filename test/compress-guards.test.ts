@@ -87,6 +87,27 @@ test("read guards: a large full read gets an outline once; an unchanged re-read 
   memory.close();
 });
 
+test("read guards leave images, PDFs and other binary files alone", withSqlite, async () => {
+  const dir = workspace();
+  const manyLines = "\n".repeat(2_000);
+  const png = join(dir, "screenshot.png");
+  writeFileSync(png, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(manyLines)]));
+  const pdf = join(dir, "report.pdf");
+  writeFileSync(pdf, `%PDF-1.7${manyLines}`);
+  const blob = join(dir, "data.bin.cache");
+  writeFileSync(blob, Buffer.concat([Buffer.from(manyLines), Buffer.from([0, 1, 2, 3])]));
+  const read = (file: string) => decidePreToolUse({ toolName: "Read", toolInput: { file_path: file }, sessionId: "b1" }, dir, "claude", config);
+
+  for (const file of [png, pdf, blob]) {
+    assert.equal(await read(file), undefined, `${file}: no outline for a non-text file`);
+    assert.equal(await read(file), undefined, `${file}: no re-read flag either`);
+  }
+  const memory = await openMemoryDb(dir, { quiet: true });
+  assert.ok(memory);
+  assert.equal((memory.db.prepare("SELECT COUNT(*) AS n FROM savings_events").get() as { n: number }).n, 0, "no savings claimed");
+  memory.close();
+});
+
 test("simem exec keeps the exit code, passes small output through, filters and stores large output", withSqlite, async () => {
   const dir = workspace();
   const quiet = await execCompressed(["printf 'hello\\n'; exit 3"], dir);

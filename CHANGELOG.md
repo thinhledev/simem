@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- The large-read and re-read guards no longer stop Claude Code from reading images, PDFs, notebooks, or other binary files. Read shows these visually or as cells, so the guard's "N lines, ~Xk tokens" estimate was wrong and only cost the agent an extra turn (and claimed a saving that never happened).
+
 ## 2.0.3
 
 ### Changed

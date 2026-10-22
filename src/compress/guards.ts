@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { symbolsWithRanges } from "../codeindex/indexer.js";
 import { detectLanguage } from "../codemap/outline.js";
@@ -82,6 +82,25 @@ function withdrawGuardSaving(memory: MemoryDb, key: string): void {
   memory.db.prepare("UPDATE hook_runs SET ts = 'withdrawn' WHERE key = ?").run(key);
 }
 
+// Claude Code's Read shows images and PDFs visually and notebooks as cells, so
+// their byte size says nothing about the tokens they cost and offset/limit
+// advice does not apply. Other binary files have no lines to outline either.
+const NON_TEXT_EXTENSIONS = /\.(?:png|jpe?g|gif|webp|bmp|ico|tiff?|heic|avif|pdf|ipynb)$/i;
+
+function isNonTextFile(path: string): boolean {
+  if (NON_TEXT_EXTENSIONS.test(path)) return true;
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    const head = Buffer.alloc(8192);
+    return head.subarray(0, readSync(fd, head, 0, head.length, 0)).includes(0);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
 function readGuards(input: RawHookInput, cwd: string, config: GatewayConfig, memory: MemoryDb): PreToolUseDecision | undefined {
   const filePath = typeof input.toolInput?.file_path === "string" ? input.toolInput.file_path : "";
   if (!filePath || !input.sessionId) return undefined;
@@ -97,6 +116,7 @@ function readGuards(input: RawHookInput, cwd: string, config: GatewayConfig, mem
   } catch {
     return undefined;
   }
+  if (isNonTextFile(absolute)) return undefined;
   const session = sessionKey("claude", input.sessionId);
   const display = relative(cwd, absolute).startsWith("..") ? absolute : relative(cwd, absolute);
 
