@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+  svg { display: block; margin-top: 26px; }
+  .pill rect { fill: var(--panel); stroke: var(--line); }
+  .pill text { fill: var(--ink); font-size: 21px; font-weight: 600; }
+  .pill .s { fill: var(--ink-3); font-size: 15px; font-weight: 500; }
+  .wire { stroke: var(--with); stroke-width: 2.5; fill: none; opacity: .8; }
+  .vault rect.o { fill: #12241e; stroke: var(--with); stroke-width: 2; }
+  .vault text { fill: var(--ink); }
+  .checks text { fill: var(--ink-2); font-size: 21px; }
+  .checks .c { fill: var(--mint); font-weight: 700; }
+</style>
+<div class="frame glow">
+  <div class="kicker">Problem 2 · memory stuck in one app, one account</div>
+  <h1>Memory belongs to the project.<br><span class="mint">Not to the app. Not to the login.</span></h1>
+  <svg width="1456" height="560" viewBox="0 0 1456 560">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#199e70"/></marker>
+    </defs>
+    <!-- sources -->
+    <g class="pill" transform="translate(0,20)"><rect width="380" height="76" rx="14"/><text x="24" y="34">Claude Code</text><text class="s" x="24" y="58">account A, app or CLI</text></g>
+    <g class="pill" transform="translate(0,120)"><rect width="380" height="76" rx="14"/><text x="24" y="34">Claude Code</text><text class="s" x="24" y="58">account B, after hitting a limit</text></g>
+    <g class="pill" transform="translate(0,220)"><rect width="380" height="76" rx="14"/><text x="24" y="34">Codex</text><text class="s" x="24" y="58">app or CLI</text></g>
+    <g class="pill" transform="translate(0,320)"><rect width="380" height="76" rx="14"/><text x="24" y="34">Cursor</text><text class="s" x="24" y="58">through simem's tools</text></g>
+    <g class="pill" transform="translate(0,420)"><rect width="380" height="76" rx="14"/><text x="24" y="34">New worktree or re-clone</text><text class="s" x="24" y="58">same repo, different folder</text></g>
+    <!-- wires -->
+    <path class="wire" marker-end="url(#a)" d="M380 58 C 470 58, 470 240, 548 250"/>
+    <path class="wire" marker-end="url(#a)" d="M380 158 C 470 158, 470 250, 548 255"/>
+    <path class="wire" marker-end="url(#a)" d="M380 258 L 548 258"/>
+    <path class="wire" marker-end="url(#a)" d="M380 358 C 470 358, 470 266, 548 261"/>
+    <path class="wire" marker-end="url(#a)" d="M380 458 C 470 458, 470 276, 548 266"/>
+    <!-- vault -->
+    <g class="vault" transform="translate(556,150)">
+      <rect class="o" width="400" height="216" rx="20"/>
+      <text x="32" y="56" font-size="15" font-family="SF Mono, Menlo, monospace" letter-spacing="2" fill="#9fe3c7">ON YOUR MACHINE</text>
+      <text x="32" y="102" font-size="24" font-weight="700" font-family="SF Mono, Menlo, monospace">~/.simem/projects/</text>
+      <text x="32" y="134" font-size="24" font-weight="700" font-family="SF Mono, Menlo, monospace">&lt;project-id&gt;</text>
+      <text x="32" y="174" font-size="16" fill="#b9c7c0">id = your repo's first commit,</text>
+      <text x="32" y="196" font-size="16" fill="#b9c7c0">the same in every clone and worktree</text>
+    </g>
+    <path class="wire" marker-end="url(#a)" d="M956 258 L 1044 258"/>
+    <!-- result -->
+    <g transform="translate(1052,58)">
+      <rect width="404" height="400" rx="20" fill="#171e1b" stroke="#2a3530"/>
+      <text x="30" y="52" font-size="24" font-weight="700" fill="#eef5f1">Same memory everywhere</text>
+      <g class="checks">
+        <text x="30" y="110"><tspan class="c">✓ </tspan>log out, switch accounts</text>
+        <text x="30" y="160"><tspan class="c">✓ </tspan>Claude Code ⇄ Codex ⇄ Cursor</text>
+        <text x="30" y="210"><tspan class="c">✓ </tspan>new worktrees</text>
+        <text x="30" y="260"><tspan class="c">✓ </tspan>fresh clones</text>
+        <text x="30" y="310"><tspan class="c">✓ </tspan>renamed folders</text>
+        <text x="30" y="360"><tspan class="c">✓ </tspan>say “continue” in the other app</text>
+      </g>
+    </g>
+  </svg>
+</div>

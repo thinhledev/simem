@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+  svg { display: block; margin-top: 22px; }
+  .grid { stroke: #24302b; stroke-width: 1; }
+  .axis { fill: var(--ink-3); font-size: 16px; }
+  .lbl { font-size: 20px; font-weight: 650; fill: var(--ink); }
+  .val { font-size: 17px; fill: var(--ink-2); }
+  .legend { display: flex; gap: 28px; margin-top: 22px; font-size: 18px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 10px; }
+  .legend i { width: 26px; height: 4px; border-radius: 2px; display: inline-block; }
+</style>
+<div class="frame glow">
+  <div class="kicker">Problem 3 · paying for the same text again and again</div>
+  <h1>One test report, <span class="mint">re-read on every turn after it.</span></h1>
+  <div class="sub">A jest run with 1 failure in 341 tests: ~1,130 tokens as printed, ~95 tokens after simem's filter. The app re-sends it with every message until the conversation is compacted.</div>
+  <div class="legend"><span><i style="background:var(--without)"></i>Without simem</span><span><i style="background:var(--with)"></i>With simem</span></div>
+  <svg width="1456" height="470" viewBox="0 0 1456 470">
+    <!-- y grid: 0..36k → 420..20 -->
+    <g class="grid">
+      <line x1="100" x2="1210" y1="420" y2="420" stroke="#3a4842"/>
+      <line x1="100" x2="1210" y1="308.9" y2="308.9"/>
+      <line x1="100" x2="1210" y1="197.8" y2="197.8"/>
+      <line x1="100" x2="1210" y1="86.7" y2="86.7"/>
+    </g>
+    <g class="axis" text-anchor="end">
+      <text x="86" y="425">0</text><text x="86" y="314">10k</text><text x="86" y="203">20k</text><text x="86" y="92">30k</text>
+    </g>
+    <text class="axis" x="100" y="16" font-size="15">Tokens re-read, cumulative</text>
+    <!-- x: turn 0..30 → 100..1210 (37 px/turn) -->
+    <g class="axis" text-anchor="middle">
+      <text x="100" y="448">0</text><text x="285" y="448">5</text><text x="470" y="448">10</text><text x="655" y="448">15</text><text x="840" y="448">20</text><text x="1025" y="448">25</text><text x="1210" y="448">30</text>
+    </g>
+    <text class="axis" x="655" y="470" text-anchor="middle" font-size="15">Turns after the test run</text>
+    <!-- without: 1,134/turn → 30 turns = 34,020 → y = 420 - 34020/90 = 42 -->
+    <path d="M100 420 L1210 42 L1210 420 Z" fill="#d95926" opacity=".10"/>
+    <path d="M100 420 L1210 42" stroke="#d95926" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <!-- with: 95/turn → 2,850 → y = 420 - 31.7 = 388.3 -->
+    <path d="M100 420 L1210 388.3 L1210 420 Z" fill="#199e70" opacity=".18"/>
+    <path d="M100 420 L1210 388.3" stroke="#199e70" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="1210" cy="42" r="6" fill="#d95926" stroke="#0f1513" stroke-width="2"/>
+    <circle cx="1210" cy="388.3" r="6" fill="#199e70" stroke="#0f1513" stroke-width="2"/>
+    <!-- direct labels -->
+    <text class="lbl" x="1228" y="40">~34,000 tokens</text>
+    <text class="val" x="1228" y="64">without simem</text>
+    <text class="lbl" x="1228" y="386">~2,850 tokens</text>
+    <text class="val" x="1228" y="410">with simem</text>
+    <!-- gap bracket -->
+    <line x1="1180" x2="1180" y1="58" y2="374" stroke="#9fe3c7" stroke-width="1.5" stroke-dasharray="4 5"/>
+    <text x="1162" y="210" text-anchor="end" font-size="26" font-weight="750" fill="#9fe3c7">~31,000 tokens</text>
+    <text x="1162" y="240" text-anchor="end" font-size="18" fill="#b9c7c0">never sent, from one report</text>
+  </svg>
+  <div class="foot"><span>Illustration of the compounding effect. Tokens ≈ characters ÷ 3.6, the rate <code>simem stats</code> uses.</span></div>
+</div>

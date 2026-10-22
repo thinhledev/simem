@@ -1,0 +1,35 @@
+:root {
+  --bg: #0f1513;
+  --panel: #171e1b;
+  --panel-2: #1d2622;
+  --line: #2a3530;
+  --ink: #eef5f1;
+  --ink-2: #b9c7c0;
+  --ink-3: #7f8f88;
+  --brand: #1f5a4c;
+  --mint: #9fe3c7;
+  --with: #199e70;      /* validated dark slot (aqua) - "with simem" */
+  --without: #d95926;   /* validated dark slot (orange) - "without" */
+  --mono: "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); }
+body {
+  font-family: -apple-system, "SF Pro Display", "Inter", "Segoe UI", Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+.frame { position: relative; padding: 64px 72px; height: 100vh; }
+.glow::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(900px 500px at 85% -10%, rgba(159, 227, 199, .10), transparent 60%),
+              radial-gradient(700px 400px at -10% 110%, rgba(31, 90, 76, .35), transparent 60%);
+}
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 22px; letter-spacing: -.01em; color: var(--ink-2); }
+.brand img { width: 34px; height: 34px; }
+.kicker { font: 600 18px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--mint); }
+h1 { margin: 14px 0 0; font-size: 54px; line-height: 1.08; letter-spacing: -.025em; font-weight: 750; }
+.sub { margin-top: 14px; font-size: 24px; line-height: 1.4; color: var(--ink-2); max-width: 1250px; }
+.mint { color: var(--mint); }
+.foot { position: absolute; left: 72px; right: 72px; bottom: 40px; font-size: 17px; color: var(--ink-3); display: flex; justify-content: space-between; }
+code, .mono { font-family: var(--mono); }

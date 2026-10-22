@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+  .frame { padding: 44px 48px; display: grid; grid-template-columns: 1fr 310px; gap: 32px; align-items: center; }
+  h1 { font-size: 40px; margin-top: 18px; }
+  .sub { font-size: 19px; margin-top: 16px; }
+  .cards { display: grid; gap: 12px; position: relative; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; }
+  .num { font-size: 30px; font-weight: 750; letter-spacing: -.02em; color: var(--mint); }
+  .lbl { font-size: 14.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.35; }
+  .tag { font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-left: 6px; vertical-align: 3px; }
+  .left { position: relative; }
+</style>
+<div class="frame glow">
+  <div class="left">
+    <div class="brand"><img src="simem.svg" alt="">simem</div>
+    <h1>Your AI coding agent forgets everything.<br><span class="mint">You pay for it on every turn.</span></h1>
+    <div class="sub">Three problems that quietly drain Claude Code, Codex and Cursor sessions, and the free local tool I built to fix them.</div>
+  </div>
+  <div class="cards">
+    <div class="card"><div class="num">~310k<span class="tag">measured</span></div><div class="lbl">tokens kept out of context in one real project</div></div>
+    <div class="card"><div class="num">81–99%</div><div class="lbl">shorter test &amp; install reports, failures kept word for word</div></div>
+    <div class="card"><div class="num">0</div><div class="lbl">tokens spent building your memory, all on your machine</div></div>
+  </div>
+</div>

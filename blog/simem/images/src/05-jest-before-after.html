@@ -1,0 +1,69 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+  .cols { display: grid; grid-template-columns: 1.08fr 1fr; gap: 28px; margin-top: 30px; }
+  .term { background: #0b0f0e; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 14px 18px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .bar i { width: 12px; height: 12px; border-radius: 50%; background: #3a4842; }
+  .bar b { margin-left: 10px; font-size: 18px; font-weight: 650; }
+  .bar span { margin-left: auto; font: 600 16px var(--mono); padding: 5px 10px; border-radius: 8px; }
+  pre { margin: 0; padding: 16px 20px; font: 15.5px/1.5 var(--mono); color: var(--ink-2); height: 520px; overflow: hidden; }
+  .p { color: #4f9e7e; }
+  .f { color: #ff7b5a; font-weight: 700; }
+  .w { color: var(--ink); }
+  .dim { color: var(--ink-3); font-style: italic; }
+  .stats { display: flex; gap: 14px; margin-top: 22px; }
+  .chip { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; font-size: 19px; color: var(--ink-2); }
+  .chip b { color: var(--mint); font-size: 22px; margin-right: 6px; }
+</style>
+<div class="frame glow">
+  <div class="kicker">Problem 3 · what simem trims</div>
+  <h1>112 lines in. <span class="mint">12 lines out.</span> The failure, word for word.</h1>
+  <div class="cols">
+    <div class="term">
+      <div class="bar"><i></i><i></i><i></i><b>npx jest, as printed</b><span style="background:rgba(217,89,38,.16);color:#ff9a78">4,082 chars</span></div>
+<pre><span class="p"> PASS </span> src/module0.test.ts
+<span class="p"> PASS </span> src/module1.test.ts
+<span class="p"> PASS </span> src/module2.test.ts
+<span class="p"> PASS </span> src/module3.test.ts
+<span class="p"> PASS </span> src/module4.test.ts
+<span class="dim">   … 55 more PASS lines …</span>
+<span class="f"> FAIL </span> <span class="w">src/billing/invoice.test.ts</span>
+<span class="w">  ● computeInvoiceTotal › applies tax</span>
+<span class="w">    expect(received).toBe(expected) // Object.is equality</span>
+<span class="w">    Expected: 120</span>
+<span class="w">    Received: 100</span>
+<span class="w">      at Object.&lt;anonymous&gt; (src/billing/invoice.test.ts:12:23)</span>
+<span class="p">  ✓</span> unrelated passing case 0 (3 ms)
+<span class="p">  ✓</span> unrelated passing case 1 (3 ms)
+<span class="p">  ✓</span> unrelated passing case 2 (3 ms)
+<span class="p">  ✓</span> unrelated passing case 3 (3 ms)
+<span class="dim">   … 36 more passing lines …</span>
+Test Suites: 1 failed, 60 passed, 61 total
+Tests:       1 failed, 340 passed, 341 total
+Time:        8.123 s</pre>
+    </div>
+    <div class="term">
+      <div class="bar"><i></i><i></i><i></i><b>what the agent reads with simem</b><span style="background:rgba(25,158,112,.18);color:#9fe3c7">341 chars</span></div>
+<pre><span class="f">FAIL</span>  <span class="w">src/billing/invoice.test.ts</span>
+<span class="w">  ● computeInvoiceTotal › applies tax</span>
+
+<span class="w">    expect(received).toBe(expected) // Object.is equality</span>
+
+<span class="w">    Expected: 120</span>
+<span class="w">    Received: 100</span>
+
+<span class="w">      at Object.&lt;anonymous&gt; (src/billing/invoice.test.ts:12:23)</span>
+<span class="w">Test Suites: 1 failed, 60 passed, 61 total</span>
+<span class="w">Tests:       1 failed, 340 passed, 341 total</span>
+<span class="w">Time:        8.123 s</span>
+</pre>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="chip"><b>92%</b>shorter</div>
+    <div class="chip"><b>0</b>failure lines dropped</div>
+    <div class="chip"><b>100%</b>of the raw output kept on disk: <code>simem out &lt;id&gt;</code></div>
+  </div>
+</div>

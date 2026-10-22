@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+  .rows { margin-top: 40px; display: grid; gap: 16px; }
+  .row { display: grid; grid-template-columns: 250px 1fr 120px; align-items: center; gap: 22px; }
+  .name { font: 600 22px var(--mono); color: var(--ink); text-align: right; }
+  .track { height: 40px; position: relative; border-left: 2px solid #3a4842; }
+  .fill { height: 100%; background: var(--with); border-radius: 0 4px 4px 0; }
+  .pct { font-size: 26px; font-weight: 750; color: var(--ink); }
+  .zero .track::after { content: "kept whole: every line is a failure"; position: absolute; left: 18px; top: 8px; font-size: 19px; color: var(--mint); }
+  .zero .pct { color: var(--ink-2); }
+</style>
+<div class="frame glow">
+  <div class="kicker">Problem 3 · how much shorter reports get</div>
+  <h1>Noise goes. <span class="mint">Errors never do.</span></h1>
+  <div class="sub">Share of each command report simem removes before the agent reads it, measured on simem's test corpus.</div>
+  <div class="rows">
+    <div class="row"><div class="name">npm install</div><div class="track"><div class="fill" style="width:99%"></div></div><div class="pct">99%</div></div>
+    <div class="row"><div class="name">vitest</div><div class="track"><div class="fill" style="width:99%"></div></div><div class="pct">99%</div></div>
+    <div class="row"><div class="name">node:test</div><div class="track"><div class="fill" style="width:98%"></div></div><div class="pct">98%</div></div>
+    <div class="row"><div class="name">go test</div><div class="track"><div class="fill" style="width:98%"></div></div><div class="pct">98%</div></div>
+    <div class="row"><div class="name">jest</div><div class="track"><div class="fill" style="width:92%"></div></div><div class="pct">92%</div></div>
+    <div class="row"><div class="name">pytest</div><div class="track"><div class="fill" style="width:81%"></div></div><div class="pct">81%</div></div>
+    <div class="row zero"><div class="name">compiler errors</div><div class="track"></div><div class="pct">0%</div></div>
+  </div>
+  <div class="foot"><span>Exact characters before and after. On 1,700 real reports from 32 sessions, where agents had already shortened most output: 22% overall, 46% for tests.</span></div>
+</div>

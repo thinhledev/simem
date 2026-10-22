@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 34px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+  .head { display: flex; align-items: center; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--line); font-weight: 650; font-size: 22px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .head small { margin-left: auto; font-weight: 500; font-size: 15px; color: var(--ink-3); }
+  .body { padding: 20px 26px; font: 18px/1.62 var(--mono); color: var(--ink-2); height: 410px; }
+  .tool { color: var(--ink); }
+  .tool b { display: inline-block; min-width: 82px; color: var(--without); font-weight: 600; }
+  .say { color: var(--ink); font-family: -apple-system, sans-serif; font-size: 19px; }
+  .ask { margin-top: 10px; padding: 10px 14px; border-radius: 10px; background: rgba(217, 89, 38, .12); border: 1px solid rgba(217, 89, 38, .35); color: var(--ink); font-family: -apple-system, sans-serif; font-size: 19px; }
+  .h { color: var(--mint); font-weight: 600; }
+  .k { color: var(--ink); }
+  .note { padding: 14px 26px 18px; font-size: 17px; line-height: 1.4; border-top: 1px solid var(--line); color: var(--ink-2); }
+  .note strong { color: var(--ink); }
+</style>
+<div class="frame glow">
+  <div class="kicker">Problem 1 · every session starts from scratch</div>
+  <h1>Session #48. Same project. <span class="mint">Same questions.</span></h1>
+  <div class="cols">
+    <div class="panel">
+      <div class="head"><span class="dot" style="background:var(--without)"></span>Without memory<small>typical first minutes</small></div>
+      <div class="body">
+        <div class="say">“Let me explore the project structure first.”</div>
+        <div class="tool"><b>Bash</b> ls -la</div>
+        <div class="tool"><b>Read</b> README.md</div>
+        <div class="tool"><b>Read</b> package.json</div>
+        <div class="tool"><b>Search</b> "test" in **/*.json</div>
+        <div class="tool"><b>Read</b> src/memory/store.ts</div>
+        <div class="tool"><b>Read</b> src/memory/items.ts</div>
+        <div class="tool"><b>Read</b> src/compress/filters.ts</div>
+        <div class="tool"><b>Read</b> tsconfig.json</div>
+        <div class="ask">“How do you usually run the tests here?”</div>
+      </div>
+      <div class="note"><strong>Rediscovering yesterday.</strong> And every one of those pages is re-sent on every later turn.</div>
+    </div>
+    <div class="panel">
+      <div class="head"><span class="dot" style="background:var(--with)"></span>With simem<small>real primer, simem's own repo (trimmed)</small></div>
+      <div class="body">
+        <div class="h">## Project memory: coding-agents-orchestrator</div>
+        <div class="h">### Latest work (claude app, 2026-10-19)</div>
+        <div>Title: <span class="k">Local memory and token optimization</span></div>
+        <div>Outcome: <span class="k">Version 2.0.3 is fully released.</span></div>
+        <div class="h">### Decisions &amp; constraints</div>
+        <div>- <span class="k">Must work in the coding agent apps,</span></div>
+        <div>  <span class="k">not just the CLI.</span></div>
+        <div>- <span class="k">Please make sure nothing breaks.</span></div>
+        <div class="h">### Build &amp; test commands that worked here</div>
+        <div>- <span class="k">npm run typecheck</span></div>
+        <div>- <span class="k">node --import tsx --test test/*.test.ts</span></div>
+      </div>
+      <div class="note"><strong>Starts knowing the basics.</strong> The agent still opens files to do the work, not to relearn the project.</div>
+    </div>
+  </div>
+</div>
