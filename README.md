@@ -13,7 +13,7 @@ simem is a **Super Intelligence Memory** for AI coding agents. It remembers what
 [![license](https://img.shields.io/npm/l/@simem/cli.svg)](LICENSE)
 [![Node.js](https://img.shields.io/node/v/@simem/cli.svg)](https://nodejs.org)
 
-**npm:** [`@simem/cli`](https://www.npmjs.com/package/@simem/cli) · **command:** `simem` · **plugins:** Claude Code and Codex marketplace `thinhledev/simem`
+**npm:** [`@simem/cli`](https://www.npmjs.com/package/@simem/cli) · **command:** `simem` · **plugins:** Claude Code and Codex marketplace `thinhledev/simem` · **Agensi:** [simem](https://www.agensi.io/r/THINHLE?to=/skills/simem-super-intelligence-memory)
 
 ## Install
 
@@ -84,6 +84,12 @@ simem init
 ```
 
 Homebrew brings its own Node.js, so this works without Node.js installed. Homebrew 6 installs from taps outside its own collection only after you trust them; the second command trusts just the simem formula. Upgrades (`brew upgrade simem`) keep working in the desktop apps without re-running `simem init`.
+
+### Agensi
+
+[Get simem on Agensi](https://www.agensi.io/r/THINHLE?to=/skills/simem-super-intelligence-memory), the marketplace for agent skills. It's free with an Agensi account. Then say **"set up simem"** in a new session, as above.
+
+<sub>This is my referral link. If you create an Agensi account through it, I earn a commission on skills you buy there in your first 6 months. It costs you nothing extra.</sub>
 
 ## The three problems it solves
 
