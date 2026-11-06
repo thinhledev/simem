@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 2.0.4
+
+### Changed
+- README: simem is also listed on Agensi, the skill marketplace (with a referral link and disclosure).
 
 ### Fixed
 - The large-read and re-read guards no longer stop Claude Code from reading images, PDFs, notebooks, or other binary files. Read shows these visually or as cells, so the guard's "N lines, ~Xk tokens" estimate was wrong and only cost the agent an extra turn (and claimed a saving that never happened).
